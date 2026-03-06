@@ -15,7 +15,7 @@ The system utilizes the blockchain as an immutable, censorship-resistant bulleti
 2.  **VPN Provider (Go Application):**
     *   Runs alongside an `ordexcoind` node (or connects to a remote one).
     *   Publishes "Service Announcement" transactions to the blockchain.
-    *   Listens for incoming VPN connections (WireGuard).
+    *   Listens for incoming TLS connections over TCP and forwards traffic via a TUN interface.
     *   Monitors the blockchain for incoming payments.
     *   Manages a UDP echo server for latency testing.
 
@@ -37,43 +37,43 @@ To announce a VPN service, the Provider broadcasts a transaction containing a sp
 | Field | Size (Bytes) | Description |
 | :--- | :--- | :--- |
 | **Magic Bytes** | 4 | `0x56504E01` ("VPN" v1) |
-| **IP Type** | 1 | `0x04` for IPv4, `0x06` for IPv6 |
-| **IP Address** | 4 or 16 | The public IP of the VPN endpoint |
-| **Port** | 2 | The UDP listening port (uint16, Big Endian) |
-| **Price** | 8 | Cost in Satoshis per session (uint64, Big Endian) |
-| **Public Key** | 32 | Provider's WireGuard Public Key |
+| **IP Type** | 1 | `0x04` for IPv4, `0x06` for IPv6. |
+| **IP Address** | 4 or 16 | The public IP of the VPN endpoint. |
+| **Port** | 2 | The TCP listening port for TLS connections (uint16, Big Endian). |
+| **Price** | 8 | Cost in Satoshis per session (uint64, Big Endian). |
+| **Public Key** | 33 | Provider's compressed `secp256k1` Public Key. |
 
 *Note: If the IP address changes, the provider simply broadcasts a new transaction. Clients always prioritize the most recent transaction from a specific provider identity.*
 
 ### Payment & Authorization (Client -> Provider)
 
-Clients purchase access by sending a transaction to the provider's address (derived from the announcement transaction inputs). This transaction must include an `OP_RETURN` output with the client's public key to authorize the connection.
+Clients purchase access by sending a transaction to the provider's address (derived from the announcement transaction inputs). This transaction must include an `OP_RETURN` output with the client's public key. This key is then used to generate a client certificate to authorize the TLS connection.
 
 **Payload Structure:**
 
 | Field | Size (Bytes) | Description |
 | :--- | :--- | :--- |
 | **Magic Bytes** | 4 | `0x50415901` ("PAY" v1) |
-| **Public Key** | 32 | Client's WireGuard Public Key |
+| **Public Key** | 33 | Client's compressed `secp256k1` Public Key. |
 
 ## 3. Application Logic
 
 ### A. VPN Provider
 
 1.  **Initialization:**
-    *   Generates or loads a WireGuard private/public key.
+    *   Generates or loads a `secp256k1` private/public key (`btcec`).
     *   Detects public IP address (automatically or via config).
-    *   Sets up the WireGuard interface and applies bandwidth limits (Linux only).
+    *   Sets up a TUN interface and applies bandwidth limits (Linux only).
 2.  **Announcement:**
     *   Constructs a raw transaction using `ordexcoind` RPC.
     *   Adds an output with `OP_RETURN` containing the service payload.
     *   Signs and broadcasts the transaction.
     *   Re-announces periodically (e.g., every 24 hours).
 3.  **Service Loop:**
-    *   Listens on the specified UDP port for WireGuard traffic.
+    *   Listens on the specified TCP port for TLS connections.
     *   Runs a UDP echo server for latency checks.
     *   **Payment Monitor:** Scans the blockchain for transactions paying the service price to the provider's address containing a valid "PAY" `OP_RETURN` payload.
-    *   **Access Control:** Updates the WireGuard interface peers list based on valid, non-expired payments.
+    *   **Access Control:** Verifies the client's TLS certificate against a list of authorized public keys derived from valid payments.
 
 ### B. VPN Client
 
@@ -87,10 +87,9 @@ Clients purchase access by sending a transaction to the provider's address (deri
 3.  **Selection:**
     *   User selects a provider from a sorted list (by Country, Speed, or Cost).
 4.  **Connection:**
-    *   Generates a temporary WireGuard key pair.
+    *   Generates a temporary `secp256k1` key pair.
     *   Sends a payment transaction with the generated public key.
-    *   Configures local network interface to tunnel traffic.
-    *   Monitors latency and disconnects if it exceeds a threshold.
+    *   Creates a local TUN interface and establishes a TLS connection to the provider, forwarding traffic between them.
 
 ## 4. Getting Started
 
@@ -100,7 +99,7 @@ Clients purchase access by sending a transaction to the provider's address (deri
 *   **OrdexCoin Core (`ordexcoind`)** running and fully synced.
     *   RPC must be enabled (`server=1`).
     *   Transaction indexing (`txindex=1`) is recommended for faster scanning but not strictly required for basic operation.
-*   **WireGuard** tools installed (`wg`, `ip` command on Linux).
+*   Standard Linux networking tools (`ip`, `tc`).
 *   **GeoIP Database**: Download `GeoLite2-Country.mmdb` from MaxMind and place it in the project root for country detection.
 
 ### Installation
@@ -136,11 +135,11 @@ sudo ./bcvpn start-provider
 
 *   This command will:
     1.  Set up the WireGuard interface (requires `sudo`).
-    2.  Apply bandwidth limits (if configured).
-    3.  Announce your service on the blockchain (requires wallet funds).
-    4.  Start a payment monitor to listen for incoming customers.
-    5.  Start a UDP echo server for latency testing.
-    6.  Automatically manage the WireGuard peer list based on valid payments.
+    1.  Set up the TUN interface (requires `sudo`).
+    2.  Announce your service on the blockchain (requires wallet funds).
+    3.  Start a payment monitor to listen for incoming customers.
+    4.  Start a UDP echo server for latency testing.
+    5.  Automatically verify connecting clients based on valid payments.
 
 ### For VPN Clients
 
@@ -153,26 +152,14 @@ sudo ./bcvpn start-provider
 2.  **Connect**:
     Follow the interactive prompts in the `scan` command to select a provider. The tool will:
     *   Generate a temporary WireGuard key pair.
+    *   Generate a temporary key pair.
     *   Send the payment transaction.
-    *   Configure your network interface to connect.
-    *   Monitor latency and auto-disconnect if specified.
+    *   Configure a local tunnel to the provider.
 
-3.  **Monitor Status**:
-    View connection stats (data usage, handshake time).
-    ```bash
-    sudo ./bcvpn monitor
-    ```
-
-4.  **Payment History**:
+3.  **Payment History**:
     View a log of past payments.
     ```bash
     ./bcvpn history
-    ```
-
-4.  **Disconnect**:
-    Tear down the connection.
-    ```bash
-    sudo ./bcvpn disconnect
     ```
 
 ## 5. Using Other Blockchains
@@ -191,12 +178,11 @@ To adapt this for another chain:
 
 - [x] **Core Protocol**: Service announcement and payment payloads defined and implemented.
 - [x] **Provider Logic**:
-    - [x] Automatic IP detection.
-    - [x] Service announcement broadcasting (with re-announce).
-    - [x] WireGuard interface setup and management.
-    - [x] Payment monitoring and automatic peer authorization.
-    - [x] Bandwidth limiting (Linux).
-    - [x] UDP Echo server for latency tests.
+  - [x] Automatic IP detection.
+  - [x] Service announcement broadcasting (with re-announce).
+  - [x] TUN interface setup and management (Linux).
+  - [x] Payment monitoring and automatic client authorization via TLS certificate verification.
+  - [x] UDP Echo server for latency tests.
 - [x] **Client Logic**:
     - [x] Blockchain scanning for providers.
     - [x] GeoIP enrichment and Latency testing.
@@ -204,7 +190,6 @@ To adapt this for another chain:
     - [x] Interactive selection and connection.
     - [x] Payment transaction construction (with OP_RETURN).
     - [x] Payment retry mechanism.
-    - [x] Latency monitoring and auto-disconnect.
     - [x] Payment history logging.
 - [x] **Cross-Platform**:
     - [x] Linux support (full feature set).
@@ -223,7 +208,7 @@ To adapt this for another chain:
 - [ ] **Security**
   - [ ] Encrypt the `provider.key` file on disk.
   - [ ] Validate input data from `OP_RETURN` strictly to prevent injection attacks.
-  - [ ] Run the WireGuard interface in a separate network namespace (optional, for better isolation).
+  - [ ] Run the TUN interface in a separate network namespace (optional, for better isolation).
 
 - [ ] **Advanced Features**
   - [ ] **NAT Traversal**: Implement UPnP or NAT-PMP for providers behind home routers.

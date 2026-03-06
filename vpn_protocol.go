@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net"
 
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
+	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 const MagicBytes = 0x56504E01        // "VPN" + Version 1
@@ -16,7 +16,7 @@ type VPNEndpoint struct {
 	IP        net.IP
 	Port      uint16
 	Price     uint64 // Satoshis per session
-	PublicKey []byte // 32 bytes for WireGuard
+	PublicKey []byte // 33 bytes for compressed secp256k1
 }
 
 // EncodePayload creates the OP_RETURN data
@@ -55,8 +55,8 @@ func (v *VPNEndpoint) EncodePayload() ([]byte, error) {
 	}
 
 	// 5. Public Key
-	if len(v.PublicKey) != wgtypes.KeyLen {
-		return nil, fmt.Errorf("invalid pubkey length, expected 32 bytes for WireGuard")
+	if len(v.PublicKey) != btcec.PubKeyBytesLenCompressed {
+		return nil, fmt.Errorf("invalid pubkey length, expected %d bytes for compressed key", btcec.PubKeyBytesLenCompressed)
 	}
 	buf.Write(v.PublicKey)
 
@@ -114,7 +114,7 @@ func DecodePayload(data []byte) (*VPNEndpoint, error) {
 
 	// 5. PubKey
 	// The remainder of the payload should be the public key.
-	expectedPubKeyLen := wgtypes.KeyLen
+	expectedPubKeyLen := btcec.PubKeyBytesLenCompressed
 	if buf.Len() != expectedPubKeyLen {
 		return nil, fmt.Errorf("incorrect remaining payload length for public key, expected %d, got %d", expectedPubKeyLen, buf.Len())
 	}
@@ -132,17 +132,17 @@ func DecodePayload(data []byte) (*VPNEndpoint, error) {
 }
 
 // EncodePaymentPayload creates the OP_RETURN data for a payment transaction.
-func EncodePaymentPayload(clientPubKey wgtypes.Key) ([]byte, error) {
+func EncodePaymentPayload(clientPubKey *btcec.PublicKey) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	if err := binary.Write(buf, binary.BigEndian, uint32(PaymentMagicBytes)); err != nil {
 		return nil, err
 	}
-	buf.Write(clientPubKey[:])
+	buf.Write(clientPubKey.SerializeCompressed())
 	return buf.Bytes(), nil
 }
 
 // DecodePaymentPayload parses the OP_RETURN data from a payment transaction.
-func DecodePaymentPayload(data []byte) (*wgtypes.Key, error) {
+func DecodePaymentPayload(data []byte) (*btcec.PublicKey, error) {
 	buf := bytes.NewReader(data)
 	var magic uint32
 	if err := binary.Read(buf, binary.BigEndian, &magic); err != nil {
@@ -151,12 +151,12 @@ func DecodePaymentPayload(data []byte) (*wgtypes.Key, error) {
 	if magic != PaymentMagicBytes {
 		return nil, fmt.Errorf("invalid payment magic bytes")
 	}
-	if buf.Len() != wgtypes.KeyLen {
-		return nil, fmt.Errorf("invalid payload length for public key, expected %d, got %d", wgtypes.KeyLen, buf.Len())
+	if buf.Len() != btcec.PubKeyBytesLenCompressed {
+		return nil, fmt.Errorf("invalid payload length for public key, expected %d, got %d", btcec.PubKeyBytesLenCompressed, buf.Len())
 	}
-	var key wgtypes.Key
-	if _, err := buf.Read(key[:]); err != nil {
-		return nil, fmt.Errorf("could not read public key: %w", err)
+	pubKeyBytes := make([]byte, btcec.PubKeyBytesLenCompressed)
+	if _, err := buf.Read(pubKeyBytes); err != nil {
+		return nil, fmt.Errorf("could not read public key bytes: %w", err)
 	}
-	return &key, nil
+	return btcec.ParsePubKey(pubKeyBytes)
 }

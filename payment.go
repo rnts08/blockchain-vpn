@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 // GetProviderPaymentAddress inspects the announcement transaction to find the
@@ -66,7 +66,7 @@ func GetProviderPaymentAddress(client *rpcclient.Client, announcementTxID string
 }
 
 // SendPayment sends the specified amount to the provider's address.
-func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amountSatoshis uint64, clientPubKey wgtypes.Key) (*chainhash.Hash, error) {
+func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amountSatoshis uint64, clientPubKey *btcec.PublicKey) (*chainhash.Hash, error) {
 	// 1. Create the OP_RETURN script with the client's public key.
 	paymentPayload, err := EncodePaymentPayload(clientPubKey)
 	if err != nil {

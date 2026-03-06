@@ -12,7 +12,6 @@ import (
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"golang.zx2c4.com/wireguard/wgctrl"
 )
 
 // This file provides a basic example of a VPN provider application that
@@ -117,38 +116,6 @@ func StartEchoServer(port int) {
 		if _, err := conn.WriteToUDP(buf[0:n], remoteaddr); err != nil {
 			log.Printf("Error writing echo to UDP: %v", err)
 		}
-	}
-}
-
-// MonitorBandwidth periodically logs the total data transfer for a WireGuard interface.
-func MonitorBandwidth(ifaceName string, interval time.Duration) {
-	wgClient, err := wgctrl.New()
-	if err != nil {
-		log.Printf("bandwidth-monitor: failed to open wgctrl: %v", err)
-		return
-	}
-	defer wgClient.Close()
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	log.Printf("Bandwidth monitor started for interface %s (reporting every %v)", ifaceName, interval)
-
-	for range ticker.C {
-		device, err := wgClient.Device(ifaceName)
-		if err != nil {
-			// Don't log fatal, just skip this tick. The interface might be down temporarily.
-			log.Printf("bandwidth-monitor: could not get device %s: %v", ifaceName, err)
-			continue
-		}
-
-		var totalRx, totalTx int64
-		for _, peer := range device.Peers {
-			totalRx += peer.ReceiveBytes
-			totalTx += peer.TransmitBytes
-		}
-
-		log.Printf("Bandwidth usage for %s: Received: %s, Sent: %s", ifaceName, formatBytes(totalRx), formatBytes(totalTx))
 	}
 }
 

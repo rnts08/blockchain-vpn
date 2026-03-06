@@ -26,10 +26,14 @@ type ProviderConfig struct {
 	PrivateKeyFile string `json:"private_key_file"`
 	BandwidthLimit string `json:"bandwidth_limit"` // e.g. "10mbit"
 	BandwidthMonitorInterval string `json:"bandwidth_monitor_interval"`
+	TunIP                    string `json:"tun_ip"`
+	TunSubnet                string `json:"tun_subnet"`
 }
 
 type ClientConfig struct {
 	InterfaceName string `json:"interface_name"`
+	TunIP         string `json:"tun_ip"`
+	TunSubnet     string `json:"tun_subnet"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -63,9 +67,13 @@ func GenerateDefaultConfig(path string) error {
 			PrivateKeyFile: "provider.key",
 			BandwidthLimit: "10mbit",
 			BandwidthMonitorInterval: "30s",
+			TunIP:          "10.10.0.1",
+			TunSubnet:      "24",
 		},
 		Client: ClientConfig{
 			InterfaceName: "wg0",
+			TunIP:         "10.10.0.2",
+			TunSubnet:     "24",
 		},
 	}
 

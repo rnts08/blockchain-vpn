@@ -2,24 +2,22 @@ package main
 
 import (
 	"bufio"
-	"encoding/base64"
+	"crypto/x509"
 	"fmt"
 	"log"
 	"net"
 	"os"
-	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"flag"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 const defaultConfigPath = "config.json"
@@ -42,10 +40,6 @@ func main() {
 
 	// Subcommands
 	scanCmd := flag.NewFlagSet("scan", flag.ExitOnError)
-	connectCmd := flag.NewFlagSet("connect", flag.ExitOnError)
-	disconnectCmd := flag.NewFlagSet("disconnect", flag.ExitOnError)
-	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
-	monitorCmd := flag.NewFlagSet("monitor", flag.ExitOnError)
 	startProviderCmd := flag.NewFlagSet("start-provider", flag.ExitOnError)
 	historyCmd := flag.NewFlagSet("history", flag.ExitOnError)
 	rebroadcastCmd := flag.NewFlagSet("rebroadcast", flag.ExitOnError)
@@ -57,22 +51,8 @@ func main() {
 	scanDryRun := scanCmd.Bool("dry-run", false, "Simulate connection without spending funds or modifying interfaces")
 	historySinceLast := historyCmd.Bool("since-last-payment", false, "Show wallet transactions since the last recorded payment")
 
-	// Connect specific flags
-	connectPeerKey := connectCmd.String("peerkey", "", "The public key of the VPN endpoint")
-	connectEndpoint := connectCmd.String("endpoint", "", "The endpoint address of the VPN (ip:port)")
-	connectMaxLatency := connectCmd.Duration("max-latency", 0, "Automatically disconnect if latency exceeds this duration (e.g. 500ms)")
-
-	// Disconnect specific flags
-	disconnectIface := disconnectCmd.String("iface", cfg.Client.InterfaceName, "The name of the local tunnel interface")
-
-	// Status specific flags
-	statusIface := statusCmd.String("iface", cfg.Client.InterfaceName, "The name of the local tunnel interface")
-
-	// Monitor specific flags
-	monitorIface := monitorCmd.String("iface", cfg.Client.InterfaceName, "The name of the local tunnel interface to monitor")
-
 	if len(os.Args) < 2 {
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'scan', 'connect', 'disconnect', 'status', 'monitor', or 'history' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'scan', or 'history' subcommands")
 		os.Exit(1)
 	}
 
@@ -82,20 +62,10 @@ func main() {
 		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
 		defer client.Shutdown()
 
-		// Setup the WireGuard interface
-		if err := SetupTunnel(cfg.Provider.InterfaceName); err != nil {
-			log.Fatalf("Failed to setup tunnel interface: %v", err)
-		}
-
-		// Apply bandwidth limit if configured
-		if err := SetBandwidthLimit(cfg.Provider.InterfaceName, cfg.Provider.BandwidthLimit); err != nil {
-			log.Printf("Warning: Failed to set bandwidth limit: %v", err)
-		}
-
 		// Create the authorization manager
 		authManager := NewAuthManager()
 
-		endpoint, providerKey, err := buildProviderEndpoint(&cfg.Provider)
+		endpoint, providerKey, err := buildProviderEndpoint(&cfg.Provider, cfg.Provider.PrivateKeyFile)
 		if err != nil {
 			log.Fatalf("Failed to build provider endpoint: %v", err)
 		}
@@ -119,24 +89,9 @@ func main() {
 		// Start payment monitor in a goroutine
 		go MonitorPayments(client, authManager, cfg.Provider.Price)
 
-		// Start the WireGuard server to manage authorized peers
-		go func() {
-			log.Println("Starting WireGuard peer manager...")
-			if err := StartVPNServer(&cfg.Provider, providerKey, authManager); err != nil {
-				log.Fatalf("VPN Server failed: %v", err)
-			}
-		}()
+		// Start the provider's main server loop
+		go StartProviderServer(&cfg.Provider, providerKey, authManager)
 
-		// Start bandwidth monitor in a goroutine
-		monitorInterval, err := time.ParseDuration(cfg.Provider.BandwidthMonitorInterval)
-		if err != nil {
-			log.Printf("Warning: Invalid bandwidth_monitor_interval '%s', using default 30s. Error: %v", cfg.Provider.BandwidthMonitorInterval, err)
-			monitorInterval = 30 * time.Second
-		}
-		go MonitorBandwidth(cfg.Provider.InterfaceName, monitorInterval)
-
-		// Then start the echo server, which blocks forever.
-		// In a real app, this would run alongside the WireGuard listener.
 		StartEchoServer(cfg.Provider.ListenPort)
 
 	case "rebroadcast":
@@ -144,7 +99,7 @@ func main() {
 		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
 		defer client.Shutdown()
 
-		endpoint, _, err := buildProviderEndpoint(&cfg.Provider)
+		endpoint, _, err := buildProviderEndpoint(&cfg.Provider, cfg.Provider.PrivateKeyFile)
 		if err != nil {
 			log.Fatalf("Failed to build provider endpoint for rebroadcast: %v", err)
 		}
@@ -236,48 +191,7 @@ func main() {
 		}
 		fmt.Println()
 
-		interactiveConnect(client, chainParams, filteredEndpoints, cfg.Client.InterfaceName, *connectMaxLatency, *scanDryRun)
-
-	case "connect":
-		connectCmd.Parse(os.Args[2:])
-		// This command is now less useful with the interactive scan, but kept for manual connections.
-		// We'll use the client interface name from the config.
-		connectIface := cfg.Client.InterfaceName
-
-		if *connectPeerKey == "" || *connectEndpoint == "" {
-			log.Fatal("The --peerkey and --endpoint flags are required for the connect command.")
-		}
-		handleConnect(*connectIface, *connectPeerKey, *connectEndpoint, *connectMaxLatency)
-
-	case "disconnect":
-		disconnectCmd.Parse(os.Args[2:])
-		fmt.Printf("Tearing down interface %s...\n", *disconnectIface)
-		if err := TeardownTunnel(*disconnectIface); err != nil {
-			log.Fatalf("Failed to disconnect: %v", err)
-		}
-		fmt.Printf("Successfully disconnected %s.\n", *disconnectIface)
-
-	case "status":
-		statusCmd.Parse(os.Args[2:])
-		device, err := GetTunnelStatus(*statusIface)
-		if err != nil {
-			log.Fatalf("Failed to get status for %s: %v", *statusIface, err)
-		}
-		printStatus(device)
-
-	case "monitor":
-		monitorCmd.Parse(os.Args[2:])
-		for {
-			fmt.Print("\033[H\033[2J") // Clear screen
-			device, err := GetTunnelStatus(*monitorIface)
-			if err != nil {
-				log.Printf("Failed to get status for %s: %v. Is the interface up?", *monitorIface, err)
-			} else {
-				printStatus(device)
-			}
-			fmt.Printf("\nMonitoring... (Press Ctrl+C to exit)\n")
-			time.Sleep(2 * time.Second)
-		}
+		interactiveConnect(client, chainParams, filteredEndpoints, &cfg.Client, *scanDryRun)
 
 	case "history":
 		historyCmd.Parse(os.Args[2:])
@@ -338,26 +252,8 @@ func main() {
 		}
 
 	default:
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'scan', 'connect', 'disconnect', 'status', 'monitor', or 'history' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'scan', or 'history' subcommands")
 		os.Exit(1)
-	}
-}
-
-func printStatus(device *wgtypes.Device) {
-	fmt.Printf("Interface: %s\n", device.Name)
-	fmt.Printf("  Public Key: %s\n", device.PublicKey.String())
-	fmt.Printf("  Listen Port: %d\n", device.ListenPort)
-	fmt.Printf("  Peers: %d\n", len(device.Peers))
-	for _, peer := range device.Peers {
-		fmt.Printf("    - Peer: %s\n", peer.PublicKey.String())
-		fmt.Printf("      Endpoint: %s\n", peer.Endpoint.String())
-		fmt.Printf("      Allowed IPs: %v\n", peer.AllowedIPs)
-		if peer.LastHandshakeTime.IsZero() {
-			fmt.Printf("      Latest Handshake: Never\n")
-		} else {
-			fmt.Printf("      Latest Handshake: %s ago\n", time.Since(peer.LastHandshakeTime).Round(time.Second))
-		}
-		fmt.Printf("      Transfer: Rx %s, Tx %s\n", formatBytes(peer.ReceiveBytes), formatBytes(peer.TransmitBytes))
 	}
 }
 
@@ -377,95 +273,39 @@ func connectRPC(host, user, pass string) *rpcclient.Client {
 	return client
 }
 
-func handleConnectWithKey(ifaceName string, localKey wgtypes.Key, peerKeyB64 string, endpointAddr string, maxLatency time.Duration) {
-	fmt.Printf("Using local public key: %s\n", localKey.PublicKey().String())
-
-	// 2. Parse the peer's public key.
-	peerKey, err := wgtypes.ParseKey(peerKeyB64)
-	if err != nil {
-		log.Fatalf("Failed to parse peer public key: %v", err)
-	}
-
-	// 3. Define the allowed IPs for the peer. For a full tunnel, this is 0.0.0.0/0.
-	_, fullTunnel, _ := net.ParseCIDR("0.0.0.0/0")
-	allowedIPs := []net.IPNet{*fullTunnel}
-
-	// 4. Configure the tunnel.
-	// Note: This function requires elevated privileges to modify network interfaces.
-	fmt.Println("Attempting to configure WireGuard interface. This may require root/administrator privileges.")
-	err = ConfigureTunnel(ifaceName, localKey, peerKey, endpointAddr, allowedIPs)
-	if err != nil {
-		log.Fatalf("Failed to configure tunnel: %v", err)
-	}
-	log.Printf("Successfully configured WireGuard interface %q. You may now need to configure IP addresses and routes.", ifaceName)
-
-	// Monitor and Wait
-	log.Println("Tunnel established. Press Ctrl+C to disconnect.")
-
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-
-	// Start latency monitor if enabled
-	if maxLatency > 0 {
-		go func() {
-			log.Printf("Monitoring latency (limit: %v)...", maxLatency)
-			ticker := time.NewTicker(5 * time.Second)
-			defer ticker.Stop()
-
-			// Parse endpoint for measurement
-			host, portStr, _ := net.SplitHostPort(endpointAddr)
-			port, _ := strconv.Atoi(portStr)
-			ep := &VPNEndpoint{IP: net.ParseIP(host), Port: uint16(port)}
-
-			for {
-				select {
-				case <-stop:
-					return
-				case <-ticker.C:
-					lat := measureLatency(ep)
-					if lat > maxLatency {
-						log.Printf("Latency %v exceeded limit %v. Disconnecting...", lat, maxLatency)
-						stop <- os.Interrupt // Trigger shutdown
-						return
-					}
-				}
-			}
-		}()
-	}
-
-	<-stop
-	log.Println("Shutting down...")
-	TeardownTunnel(ifaceName)
-}
-
-func handleConnect(ifaceName, peerKeyB64, endpointAddr string, maxLatency time.Duration) {
-	// 1. Generate a local private key for the client for a non-payment connection.
-	localKey, err := wgtypes.GeneratePrivateKey()
-	if err != nil {
-		log.Fatalf("Failed to generate private key: %v", err)
-	}
-	handleConnectWithKey(ifaceName, localKey, peerKeyB64, endpointAddr, maxLatency)
-}
-
-func loadOrGenerateKey(path string) (wgtypes.Key, error) {
-	keyData, err := os.ReadFile(path)
+func loadOrGenerateKey(path string) (*btcec.PrivateKey, error) {
+	keyDER, err := os.ReadFile(path)
 	if err == nil {
-		return wgtypes.NewKey(keyData)
+		privKey, err := x509.ParseECPrivateKey(keyDER)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse existing key: %w", err)
+		}
+		return btcec.NewPrivateKeyFromECDSA(privKey), nil
 	}
 
 	log.Printf("Private key not found at %s, generating a new one.", path)
-	newKey, err := wgtypes.GeneratePrivateKey()
+	newKey, err := btcec.NewPrivateKey()
 	if err != nil {
-		return wgtypes.Key{}, err
+		return nil, err
 	}
-	return newKey, os.WriteFile(path, newKey[:], 0600)
+
+	// Save the key in a standard format (e.g., marshaled DER)
+	derKey, err := x509.MarshalECPrivateKey(newKey.ToECDSA())
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal new key: %w", err)
+	}
+
+	if err := os.WriteFile(path, derKey, 0600); err != nil {
+		return nil, fmt.Errorf("failed to save new key: %w", err)
+	}
+	return newKey, nil
 }
 
-func buildProviderEndpoint(cfg *ProviderConfig) (*VPNEndpoint, wgtypes.Key, error) {
+func buildProviderEndpoint(cfg *ProviderConfig, keyPath string) (*VPNEndpoint, *btcec.PrivateKey, error) {
 	// Load or generate provider's private key
-	providerKey, err := loadOrGenerateKey(cfg.PrivateKeyFile)
+	providerKey, err := loadOrGenerateKey(keyPath)
 	if err != nil {
-		return nil, wgtypes.Key{}, fmt.Errorf("could not load or generate provider key: %w", err)
+		return nil, nil, fmt.Errorf("could not load or generate provider key: %w", err)
 	}
 
 	// Auto-locate if country is not configured
@@ -486,7 +326,7 @@ func buildProviderEndpoint(cfg *ProviderConfig) (*VPNEndpoint, wgtypes.Key, erro
 	if cfg.AnnounceIP != "" {
 		announceIP = net.ParseIP(cfg.AnnounceIP)
 		if announceIP == nil {
-			return nil, wgtypes.Key{}, fmt.Errorf("invalid AnnounceIP in config: %s", cfg.AnnounceIP)
+			return nil, nil, fmt.Errorf("invalid AnnounceIP in config: %s", cfg.AnnounceIP)
 		}
 	} else if loc != nil && loc.Query != "" {
 		announceIP = net.ParseIP(loc.Query)
@@ -496,7 +336,7 @@ func buildProviderEndpoint(cfg *ProviderConfig) (*VPNEndpoint, wgtypes.Key, erro
 		var err error
 		announceIP, err = GetPublicIP()
 		if err != nil {
-			return nil, wgtypes.Key{}, fmt.Errorf("failed to detect public IP: %w. Please set announce_ip in config.json", err)
+			return nil, nil, fmt.Errorf("failed to detect public IP: %w. Please set announce_ip in config.json", err)
 		}
 		log.Printf("Detected public IP: %s", announceIP.String())
 	}
@@ -505,13 +345,13 @@ func buildProviderEndpoint(cfg *ProviderConfig) (*VPNEndpoint, wgtypes.Key, erro
 		IP:        announceIP,
 		Port:      uint16(cfg.ListenPort),
 		Price:     cfg.Price,
-		PublicKey: providerKey.PublicKey().Bytes(),
+		PublicKey: providerKey.PubKey().SerializeCompressed(),
 	}
 
 	return endpoint, providerKey, nil
 }
 
-func interactiveConnect(client *rpcclient.Client, chainParams *chaincfg.Params, endpoints []*EnrichedVPNEndpoint, ifaceName string, maxLatency time.Duration, dryRun bool) {
+func interactiveConnect(client *rpcclient.Client, chainParams *chaincfg.Params, endpoints []*EnrichedVPNEndpoint, clientCfg *ClientConfig, dryRun bool) {
 	// Prompt for selection
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter the number of the provider to connect to (or press Enter to quit): ")
@@ -532,11 +372,11 @@ func interactiveConnect(client *rpcclient.Client, chainParams *chaincfg.Params, 
 
 	// Generate a local key pair for this session *before* paying.
 	// In a real app, you might save and reuse this private key.
-	localKey, err := wgtypes.GeneratePrivateKey()
+	localKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		log.Fatalf("Failed to generate local private key: %v", err)
 	}
-	fmt.Printf("\nGenerated temporary client public key: %s\n", localKey.PublicKey().String())
+	fmt.Printf("\nGenerated temporary client public key: %s\n", localKey.PubKey().String())
 
 	// Get provider's payment address
 	fmt.Println("\nDeriving provider's payment address from announcement transaction...")
@@ -566,7 +406,7 @@ func interactiveConnect(client *rpcclient.Client, chainParams *chaincfg.Params, 
 		fmt.Println("Sending payment...")
 		const maxRetries = 3
 		for i := 0; i < maxRetries; i++ {
-			paymentTxID, err = SendPayment(client, providerAddr, selectedEndpoint.ProviderAnnouncement.Endpoint.Price, localKey.PublicKey())
+			paymentTxID, err = SendPayment(client, providerAddr, selectedEndpoint.ProviderAnnouncement.Endpoint.Price, localKey.PubKey())
 			if err == nil {
 				break
 			}
@@ -579,20 +419,20 @@ func interactiveConnect(client *rpcclient.Client, chainParams *chaincfg.Params, 
 		fmt.Printf("Payment sent successfully! Transaction ID: %s\n", paymentTxID.String())
 	}
 
-	if len(selectedEndpoint.ProviderAnnouncement.Endpoint.PublicKey) != wgtypes.KeyLen {
-		log.Fatal("Provider public key is too short.")
+	peerPubKey, err := btcec.ParsePubKey(selectedEndpoint.ProviderAnnouncement.Endpoint.PublicKey)
+	if err != nil {
+		log.Fatalf("Failed to parse provider public key: %v", err)
 	}
-	var peerKey wgtypes.Key
-	copy(peerKey[:], selectedEndpoint.ProviderAnnouncement.Endpoint.PublicKey)
-	peerKeyB64 := base64.StdEncoding.EncodeToString(peerKey[:])
 
 	endpointAddr := fmt.Sprintf("%s:%d", selectedEndpoint.ProviderAnnouncement.Endpoint.IP.String(), selectedEndpoint.ProviderAnnouncement.Endpoint.Port)
 
 	fmt.Printf("\nConnecting to %s...\n", endpointAddr)
 
 	if dryRun {
-		fmt.Printf("[Dry Run] Simulation: Would configure interface %s to connect to %s.\n", ifaceName, endpointAddr)
+		fmt.Printf("[Dry Run] Simulation: Would create TUN interface %s and connect to %s.\n", clientCfg.InterfaceName, endpointAddr)
 	} else {
-		handleConnectWithKey(ifaceName, localKey, peerKeyB64, endpointAddr, maxLatency)
+		if err := ConnectToProvider(clientCfg, localKey, peerPubKey, endpointAddr); err != nil {
+			log.Fatalf("Connection failed: %v", err)
+		}
 	}
 }
