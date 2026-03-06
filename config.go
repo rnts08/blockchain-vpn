@@ -21,9 +21,11 @@ type ProviderConfig struct {
 	InterfaceName  string `json:"interface_name"`
 	ListenPort     int    `json:"listen_port"`
 	AnnounceIP     string `json:"announce_ip"`
+	Country        string `json:"country"` // 2-letter country code (e.g., "US"). Leave empty to auto-detect.
 	Price          uint64 `json:"price_sats_per_session"`
 	PrivateKeyFile string `json:"private_key_file"`
 	BandwidthLimit string `json:"bandwidth_limit"` // e.g. "10mbit"
+	BandwidthMonitorInterval string `json:"bandwidth_monitor_interval"`
 }
 
 type ClientConfig struct {
@@ -55,10 +57,12 @@ func GenerateDefaultConfig(path string) error {
 		Provider: ProviderConfig{
 			InterfaceName:  "wg0",
 			ListenPort:     51820,
-			AnnounceIP:     "1.2.3.4",
+			AnnounceIP:     "", // Leave empty to auto-detect public IP
+			Country:        "", // Leave empty to auto-detect country
 			Price:          1000,
 			PrivateKeyFile: "provider.key",
 			BandwidthLimit: "10mbit",
+			BandwidthMonitorInterval: "30s",
 		},
 		Client: ClientConfig{
 			InterfaceName: "wg0",

@@ -3,11 +3,8 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"net/http"
-	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -15,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"golang.zx2c4.com/wireguard/wgctrl"
 )
 
 // This file provides a basic example of a VPN provider application that
@@ -122,38 +120,36 @@ func StartEchoServer(port int) {
 	}
 }
 
-// GetPublicIP attempts to determine the public IP address of the provider
-// by querying external IP echo services.
-func GetPublicIP() (net.IP, error) {
-	services := []string{
-		"https://api.ipify.org",
-		"https://ifconfig.me/ip",
-		"https://icanhazip.com",
-		"https://checkip.amazonaws.com",
+// MonitorBandwidth periodically logs the total data transfer for a WireGuard interface.
+func MonitorBandwidth(ifaceName string, interval time.Duration) {
+	wgClient, err := wgctrl.New()
+	if err != nil {
+		log.Printf("bandwidth-monitor: failed to open wgctrl: %v", err)
+		return
 	}
+	defer wgClient.Close()
 
-	for _, service := range services {
-		client := http.Client{
-			Timeout: 5 * time.Second,
-		}
-		resp, err := client.Get(service)
-		if err != nil {
-			continue
-		}
-		defer resp.Body.Close()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 
-		body, err := io.ReadAll(resp.Body)
+	log.Printf("Bandwidth monitor started for interface %s (reporting every %v)", ifaceName, interval)
+
+	for range ticker.C {
+		device, err := wgClient.Device(ifaceName)
 		if err != nil {
+			// Don't log fatal, just skip this tick. The interface might be down temporarily.
+			log.Printf("bandwidth-monitor: could not get device %s: %v", ifaceName, err)
 			continue
 		}
 
-		ipStr := strings.TrimSpace(string(body))
-		ip := net.ParseIP(ipStr)
-		if ip != nil {
-			return ip, nil
+		var totalRx, totalTx int64
+		for _, peer := range device.Peers {
+			totalRx += peer.ReceiveBytes
+			totalTx += peer.TransmitBytes
 		}
+
+		log.Printf("Bandwidth usage for %s: Received: %s, Sent: %s", ifaceName, formatBytes(totalRx), formatBytes(totalTx))
 	}
-	return nil, fmt.Errorf("failed to determine public IP from any service")
 }
 
 // MonitorPayments checks for incoming transactions to the wallet.

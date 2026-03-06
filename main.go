@@ -48,11 +48,14 @@ func main() {
 	monitorCmd := flag.NewFlagSet("monitor", flag.ExitOnError)
 	startProviderCmd := flag.NewFlagSet("start-provider", flag.ExitOnError)
 	historyCmd := flag.NewFlagSet("history", flag.ExitOnError)
+	rebroadcastCmd := flag.NewFlagSet("rebroadcast", flag.ExitOnError)
 
 	// Scan specific flags
 	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
 	scanSortBy := scanCmd.String("sort", "latency", "Sort providers by 'price', 'country', or 'latency'")
 	scanCountry := scanCmd.String("country", "", "Filter providers by country code (e.g., US, DE)")
+	scanDryRun := scanCmd.Bool("dry-run", false, "Simulate connection without spending funds or modifying interfaces")
+	historySinceLast := historyCmd.Bool("since-last-payment", false, "Show wallet transactions since the last recorded payment")
 
 	// Connect specific flags
 	connectPeerKey := connectCmd.String("peerkey", "", "The public key of the VPN endpoint")
@@ -69,7 +72,7 @@ func main() {
 	monitorIface := monitorCmd.String("iface", cfg.Client.InterfaceName, "The name of the local tunnel interface to monitor")
 
 	if len(os.Args) < 2 {
-		fmt.Println("expected 'generate-config', 'start-provider', 'scan', 'connect', 'disconnect', 'status', 'monitor', or 'history' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'scan', 'connect', 'disconnect', 'status', 'monitor', or 'history' subcommands")
 		os.Exit(1)
 	}
 
@@ -92,33 +95,9 @@ func main() {
 		// Create the authorization manager
 		authManager := NewAuthManager()
 
-		// Load or generate provider's private key
-		providerKey, err := loadOrGenerateKey(cfg.Provider.PrivateKeyFile)
+		endpoint, providerKey, err := buildProviderEndpoint(&cfg.Provider)
 		if err != nil {
-			log.Fatalf("Could not load or generate provider key: %v", err)
-		}
-
-		var announceIP net.IP
-		if cfg.Provider.AnnounceIP != "" {
-			announceIP = net.ParseIP(cfg.Provider.AnnounceIP)
-			if announceIP == nil {
-				log.Fatalf("Invalid AnnounceIP in config: %s", cfg.Provider.AnnounceIP)
-			}
-		} else {
-			log.Println("AnnounceIP not set, attempting to detect public IP...")
-			var err error
-			announceIP, err = GetPublicIP()
-			if err != nil {
-				log.Fatalf("Failed to detect public IP: %v. Please set announce_ip in config.json", err)
-			}
-			log.Printf("Detected public IP: %s", announceIP.String())
-		}
-
-		endpoint := &VPNEndpoint{
-			IP:        announceIP,
-			Port:      uint16(cfg.Provider.ListenPort),
-			Price:     cfg.Provider.Price,
-			PublicKey: providerKey.PublicKey().Bytes(),
+			log.Fatalf("Failed to build provider endpoint: %v", err)
 		}
 
 		// Start re-announcement loop in a goroutine
@@ -148,9 +127,33 @@ func main() {
 			}
 		}()
 
+		// Start bandwidth monitor in a goroutine
+		monitorInterval, err := time.ParseDuration(cfg.Provider.BandwidthMonitorInterval)
+		if err != nil {
+			log.Printf("Warning: Invalid bandwidth_monitor_interval '%s', using default 30s. Error: %v", cfg.Provider.BandwidthMonitorInterval, err)
+			monitorInterval = 30 * time.Second
+		}
+		go MonitorBandwidth(cfg.Provider.InterfaceName, monitorInterval)
+
 		// Then start the echo server, which blocks forever.
 		// In a real app, this would run alongside the WireGuard listener.
 		StartEchoServer(cfg.Provider.ListenPort)
+
+	case "rebroadcast":
+		rebroadcastCmd.Parse(os.Args[2:])
+		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
+		defer client.Shutdown()
+
+		endpoint, _, err := buildProviderEndpoint(&cfg.Provider)
+		if err != nil {
+			log.Fatalf("Failed to build provider endpoint for rebroadcast: %v", err)
+		}
+
+		log.Println("Re-broadcasting service announcement...")
+		if err := AnnounceService(client, endpoint); err != nil {
+			log.Fatalf("Service announcement failed: %v", err)
+		}
+		log.Println("Service announcement re-broadcasted successfully.")
 
 	case "scan":
 		scanCmd.Parse(os.Args[2:])
@@ -233,77 +236,7 @@ func main() {
 		}
 		fmt.Println()
 
-		// Prompt for selection
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Enter the number of the provider to connect to (or press Enter to quit): ")
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-
-		if input == "" {
-			fmt.Println("Exiting.")
-			return
-		}
-
-		choice, err := strconv.Atoi(input)
-		if err != nil || choice < 0 || choice >= len(filteredEndpoints) {
-			log.Fatalf("Invalid selection: %q", input)
-		}
-
-		selectedEndpoint := filteredEndpoints[choice]
-
-		// Generate a local key pair for this session *before* paying.
-		// In a real app, you might save and reuse this private key.
-		localKey, err := wgtypes.GeneratePrivateKey()
-		if err != nil {
-			log.Fatalf("Failed to generate local private key: %v", err)
-		}
-		fmt.Printf("\nGenerated temporary client public key: %s\n", localKey.PublicKey().String())
-
-		// Get provider's payment address
-		fmt.Println("\nDeriving provider's payment address from announcement transaction...")
-		providerAddr, err := GetProviderPaymentAddress(client, selectedEndpoint.TxID, chainParams)
-		if err != nil {
-			log.Fatalf("Could not get provider payment address: %v", err)
-		}
-		fmt.Printf("Provider's payment address: %s\n", providerAddr.String())
-		fmt.Printf("Payment required: %d satoshis\n", selectedEndpoint.ProviderAnnouncement.Endpoint.Price)
-
-		// Confirm payment
-		fmt.Print("Proceed with payment? (y/n): ")
-		confirm, _ := reader.ReadString('\n')
-		if strings.TrimSpace(strings.ToLower(confirm)) != "y" {
-			fmt.Println("Payment cancelled. Exiting.")
-			return
-		}
-
-		// Send payment
-		fmt.Println("Sending payment...")
-		var paymentTxID *chainhash.Hash
-		const maxRetries = 3
-		for i := 0; i < maxRetries; i++ {
-			paymentTxID, err = SendPayment(client, providerAddr, selectedEndpoint.ProviderAnnouncement.Endpoint.Price, localKey.PublicKey())
-			if err == nil {
-				break
-			}
-			log.Printf("Payment failed (attempt %d/%d): %v. Retrying in 2s...", i+1, maxRetries, err)
-			time.Sleep(2 * time.Second)
-		}
-		if err != nil {
-			log.Fatalf("Failed to send payment after %d attempts: %v", maxRetries, err)
-		}
-		fmt.Printf("Payment sent successfully! Transaction ID: %s\n", paymentTxID.String())
-
-		if len(selectedEndpoint.ProviderAnnouncement.Endpoint.PublicKey) != wgtypes.KeyLen {
-			log.Fatal("Provider public key is too short.")
-		}
-		var peerKey wgtypes.Key
-		copy(peerKey[:], selectedEndpoint.ProviderAnnouncement.Endpoint.PublicKey)
-		peerKeyB64 := base64.StdEncoding.EncodeToString(peerKey[:])
-
-		endpointAddr := fmt.Sprintf("%s:%d", selectedEndpoint.ProviderAnnouncement.Endpoint.IP.String(), selectedEndpoint.ProviderAnnouncement.Endpoint.Port)
-
-		fmt.Printf("\nConnecting to %s...\n", endpointAddr)
-		handleConnectWithKey(cfg.Client.InterfaceName, localKey, peerKeyB64, endpointAddr, *connectMaxLatency)
+		interactiveConnect(client, chainParams, filteredEndpoints, cfg.Client.InterfaceName, *connectMaxLatency, *scanDryRun)
 
 	case "connect":
 		connectCmd.Parse(os.Args[2:])
@@ -348,24 +281,64 @@ func main() {
 
 	case "history":
 		historyCmd.Parse(os.Args[2:])
-		records, err := LoadHistory()
-		if err != nil {
-			log.Fatalf("Failed to load history: %v", err)
-		}
 
-		if len(records) == 0 {
-			fmt.Println("No payment history found.")
-			return
-		}
+		if *historySinceLast {
+			records, err := LoadHistory()
+			if err != nil {
+				log.Fatalf("Failed to load history: %v", err)
+			}
+			if len(records) == 0 {
+				log.Println("No payment history found to use as a time reference.")
+				return
+			}
 
-		fmt.Printf("%-25s %-15s %-40s %s\n", "Timestamp", "Amount (sats)", "Provider", "TxID")
-		fmt.Println(strings.Repeat("-", 120))
-		for _, r := range records {
-			fmt.Printf("%-25s %-15d %-40s %s\n", r.Timestamp.Format("2006-01-02 15:04:05"), r.Amount, r.Provider, r.TxID)
+			sort.Slice(records, func(i, j int) bool {
+				return records[i].Timestamp.After(records[j].Timestamp)
+			})
+			lastPayment := records[0]
+			log.Printf("Checking for wallet transactions since last payment on %v", lastPayment.Timestamp.Format(time.RFC3339))
+
+			client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
+			defer client.Shutdown()
+
+			transactions, err := client.ListTransactionsCount("*", 1000, 0)
+			if err != nil {
+				log.Fatalf("Failed to list transactions: %v", err)
+			}
+
+			fmt.Println("\nRecent wallet transactions since last payment:")
+			fmt.Printf("%-10s %-25s %-15s %s\n", "Category", "Timestamp", "Amount", "TxID")
+			fmt.Println(strings.Repeat("-", 100))
+
+			found := false
+			for _, tx := range transactions {
+				txTime := time.Unix(tx.Time, 0)
+				if txTime.After(lastPayment.Timestamp) {
+					found = true
+					fmt.Printf("%-10s %-25s %-15.8f %s\n", tx.Category, txTime.Format("2006-01-02 15:04:05"), tx.Amount, tx.TxID)
+				}
+			}
+			if !found {
+				fmt.Println("No new transactions found.")
+			}
+		} else {
+			records, err := LoadHistory()
+			if err != nil {
+				log.Fatalf("Failed to load history: %v", err)
+			}
+			if len(records) == 0 {
+				fmt.Println("No payment history found.")
+				return
+			}
+			fmt.Printf("%-25s %-15s %-40s %s\n", "Timestamp", "Amount (sats)", "Provider", "TxID")
+			fmt.Println(strings.Repeat("-", 120))
+			for _, r := range records {
+				fmt.Printf("%-25s %-15d %-40s %s\n", r.Timestamp.Format("2006-01-02 15:04:05"), r.Amount, r.Provider, r.TxID)
+			}
 		}
 
 	default:
-		fmt.Println("expected 'generate-config', 'start-provider', 'scan', 'connect', 'disconnect', 'status', 'monitor', or 'history' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'scan', 'connect', 'disconnect', 'status', 'monitor', or 'history' subcommands")
 		os.Exit(1)
 	}
 }
@@ -386,19 +359,6 @@ func printStatus(device *wgtypes.Device) {
 		}
 		fmt.Printf("      Transfer: Rx %s, Tx %s\n", formatBytes(peer.ReceiveBytes), formatBytes(peer.TransmitBytes))
 	}
-}
-
-func formatBytes(b int64) string {
-	const unit = 1024
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 func connectRPC(host, user, pass string) *rpcclient.Client {
@@ -499,4 +459,140 @@ func loadOrGenerateKey(path string) (wgtypes.Key, error) {
 		return wgtypes.Key{}, err
 	}
 	return newKey, os.WriteFile(path, newKey[:], 0600)
+}
+
+func buildProviderEndpoint(cfg *ProviderConfig) (*VPNEndpoint, wgtypes.Key, error) {
+	// Load or generate provider's private key
+	providerKey, err := loadOrGenerateKey(cfg.PrivateKeyFile)
+	if err != nil {
+		return nil, wgtypes.Key{}, fmt.Errorf("could not load or generate provider key: %w", err)
+	}
+
+	// Auto-locate if country is not configured
+	var loc *GeoLocation
+	if cfg.Country == "" {
+		var err error
+		log.Println("Country not set in config, attempting to auto-locate...")
+		loc, err = AutoLocate()
+		if err != nil {
+			log.Printf("Warning: Failed to auto-locate: %v", err)
+		} else {
+			cfg.Country = loc.CountryCode
+			log.Printf("Auto-detected location: %s, %s", loc.City, loc.Country)
+		}
+	}
+
+	var announceIP net.IP
+	if cfg.AnnounceIP != "" {
+		announceIP = net.ParseIP(cfg.AnnounceIP)
+		if announceIP == nil {
+			return nil, wgtypes.Key{}, fmt.Errorf("invalid AnnounceIP in config: %s", cfg.AnnounceIP)
+		}
+	} else if loc != nil && loc.Query != "" {
+		announceIP = net.ParseIP(loc.Query)
+		log.Printf("Using auto-detected public IP: %s", announceIP.String())
+	} else {
+		log.Println("AnnounceIP not set, attempting to detect public IP...")
+		var err error
+		announceIP, err = GetPublicIP()
+		if err != nil {
+			return nil, wgtypes.Key{}, fmt.Errorf("failed to detect public IP: %w. Please set announce_ip in config.json", err)
+		}
+		log.Printf("Detected public IP: %s", announceIP.String())
+	}
+
+	endpoint := &VPNEndpoint{
+		IP:        announceIP,
+		Port:      uint16(cfg.ListenPort),
+		Price:     cfg.Price,
+		PublicKey: providerKey.PublicKey().Bytes(),
+	}
+
+	return endpoint, providerKey, nil
+}
+
+func interactiveConnect(client *rpcclient.Client, chainParams *chaincfg.Params, endpoints []*EnrichedVPNEndpoint, ifaceName string, maxLatency time.Duration, dryRun bool) {
+	// Prompt for selection
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter the number of the provider to connect to (or press Enter to quit): ")
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+
+	if input == "" {
+		fmt.Println("Exiting.")
+		return
+	}
+
+	choice, err := strconv.Atoi(input)
+	if err != nil || choice < 0 || choice >= len(endpoints) {
+		log.Fatalf("Invalid selection: %q", input)
+	}
+
+	selectedEndpoint := endpoints[choice]
+
+	// Generate a local key pair for this session *before* paying.
+	// In a real app, you might save and reuse this private key.
+	localKey, err := wgtypes.GeneratePrivateKey()
+	if err != nil {
+		log.Fatalf("Failed to generate local private key: %v", err)
+	}
+	fmt.Printf("\nGenerated temporary client public key: %s\n", localKey.PublicKey().String())
+
+	// Get provider's payment address
+	fmt.Println("\nDeriving provider's payment address from announcement transaction...")
+	providerAddr, err := GetProviderPaymentAddress(client, selectedEndpoint.TxID, chainParams)
+	if err != nil {
+		log.Fatalf("Could not get provider payment address: %v", err)
+	}
+	fmt.Printf("Provider's payment address: %s\n", providerAddr.String())
+	fmt.Printf("Payment required: %d satoshis\n", selectedEndpoint.ProviderAnnouncement.Endpoint.Price)
+
+	// Confirm payment
+	fmt.Print("Proceed with payment? (y/n): ")
+	if dryRun {
+		fmt.Print("(Dry Run) ")
+	}
+	confirm, _ := reader.ReadString('\n')
+	if strings.TrimSpace(strings.ToLower(confirm)) != "y" {
+		fmt.Println("Payment cancelled. Exiting.")
+		return
+	}
+
+	// Send payment
+	var paymentTxID *chainhash.Hash
+	if dryRun {
+		fmt.Println("[Dry Run] Simulation: Payment skipped. No funds spent.")
+	} else {
+		fmt.Println("Sending payment...")
+		const maxRetries = 3
+		for i := 0; i < maxRetries; i++ {
+			paymentTxID, err = SendPayment(client, providerAddr, selectedEndpoint.ProviderAnnouncement.Endpoint.Price, localKey.PublicKey())
+			if err == nil {
+				break
+			}
+			log.Printf("Payment failed (attempt %d/%d): %v. Retrying in 2s...", i+1, maxRetries, err)
+			time.Sleep(2 * time.Second)
+		}
+		if err != nil {
+			log.Fatalf("Failed to send payment after %d attempts: %v", maxRetries, err)
+		}
+		fmt.Printf("Payment sent successfully! Transaction ID: %s\n", paymentTxID.String())
+	}
+
+	if len(selectedEndpoint.ProviderAnnouncement.Endpoint.PublicKey) != wgtypes.KeyLen {
+		log.Fatal("Provider public key is too short.")
+	}
+	var peerKey wgtypes.Key
+	copy(peerKey[:], selectedEndpoint.ProviderAnnouncement.Endpoint.PublicKey)
+	peerKeyB64 := base64.StdEncoding.EncodeToString(peerKey[:])
+
+	endpointAddr := fmt.Sprintf("%s:%d", selectedEndpoint.ProviderAnnouncement.Endpoint.IP.String(), selectedEndpoint.ProviderAnnouncement.Endpoint.Port)
+
+	fmt.Printf("\nConnecting to %s...\n", endpointAddr)
+
+	if dryRun {
+		fmt.Printf("[Dry Run] Simulation: Would configure interface %s to connect to %s.\n", ifaceName, endpointAddr)
+	} else {
+		handleConnectWithKey(ifaceName, localKey, peerKeyB64, endpointAddr, maxLatency)
+	}
 }
