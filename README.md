@@ -197,12 +197,19 @@ To adapt this for another chain:
 
 ### Todo List
 
+- [ ] **Core VPN Functionality**
+  - [x] **Provider NAT**: Implement firewall rules (iptables/nftables) to NAT traffic from the TUN interface to the internet, allowing clients to access external sites.
+  - [x] **Client Routing**: Implement logic to modify the client's system routing table to direct all traffic through the TUN interface upon connection.
+  - [x] **Client DNS**: Configure the client's DNS settings upon connection to prevent DNS leaks.
+  - [x] **Dynamic IP Management**: Replace static TUN IPs with a dynamic IP address pool managed by the provider.
+
 - [ ] **Robustness & Error Handling**
-  - [ ] Handle blockchain reorgs in the Payment Monitor (remove authorization if payment tx is orphaned).
-  - [ ] Validate `chaincfg` parameters dynamically for Altchains beyond standard testnets.
+  - [x] Handle blockchain reorgs in the Payment Monitor (remove authorization if payment tx is orphaned).
+  - [x] Validate `chaincfg` parameters dynamically for Altchains beyond standard testnets.
+  - [x] Graceful shutdown and cleanup of TUN interfaces and firewall rules.
 
 - [ ] **Cross-Platform Support**
-  - [ ] Replace `exec.Command("ip", ...)` with a cross-platform library for interface management (Windows/macOS support).
+  - [x] Replace `exec.Command("ip", ...)` calls with a Go-native library (`netlink`) for Linux.
   - [ ] Ensure file paths for config and keys are OS-agnostic.
 
 - [ ] **Security**
@@ -213,8 +220,7 @@ To adapt this for another chain:
 - [ ] **Advanced Features**
   - [ ] **NAT Traversal**: Implement UPnP or NAT-PMP for providers behind home routers.
   - [ ] **Dynamic Pricing**: Allow providers to update price without re-announcing (or minimize re-announcement cost).
-  - [ ] **Session Management**: Implement logic to handle session expiration gracefully (auto-disconnect or auto-renew).
-  - [ ] **Multi-Chain Support**: Abstract the `chaincfg` dependency to easily switch between Bitcoin, Litecoin, OrdexCoin, etc. via config.
+  - [x] **Session Management**: Implement logic to handle session expiration gracefully (auto-disconnect or auto-renew).
 
 ## License
 

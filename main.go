@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/x509"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,6 +60,9 @@ func main() {
 
 	switch os.Args[1] {
 	case "start-provider":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
 		startProviderCmd.Parse(os.Args[2:])
 		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
 		defer client.Shutdown()
@@ -72,27 +77,38 @@ func main() {
 
 		// Start re-announcement loop in a goroutine
 		go func() {
+			ticker := time.NewTicker(24 * time.Hour)
+			defer ticker.Stop()
+
 			// Announce immediately on start
 			if err := AnnounceService(client, endpoint); err != nil {
 				log.Printf("Initial service announcement failed: %v", err)
 			}
-			// Then announce on a schedule
-			ticker := time.NewTicker(24 * time.Hour)
-			defer ticker.Stop()
-			for range ticker.C {
-				if err := AnnounceService(client, endpoint); err != nil {
-					log.Printf("Scheduled re-announcement failed: %v", err)
+
+			// Then announce on a schedule, checking for shutdown signal
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := AnnounceService(client, endpoint); err != nil {
+						log.Printf("Scheduled re-announcement failed: %v", err)
+					}
 				}
 			}
 		}()
 
 		// Start payment monitor in a goroutine
-		go MonitorPayments(client, authManager, cfg.Provider.Price)
+		go MonitorPayments(ctx, client, authManager, cfg.Provider.Price)
 
 		// Start the provider's main server loop
-		go StartProviderServer(&cfg.Provider, providerKey, authManager)
+		go StartProviderServer(ctx, &cfg.Provider, providerKey, authManager)
 
-		StartEchoServer(cfg.Provider.ListenPort)
+		// Start echo server and block until shutdown
+		go StartEchoServer(ctx, cfg.Provider.ListenPort)
+
+		<-ctx.Done()
+		log.Println("Shutting down provider...")
 
 	case "rebroadcast":
 		rebroadcastCmd.Parse(os.Args[2:])
@@ -111,27 +127,35 @@ func main() {
 		log.Println("Service announcement re-broadcasted successfully.")
 
 	case "scan":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
 		scanCmd.Parse(os.Args[2:])
 		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
 		defer client.Shutdown()
 
-		// Detect Chain
-		chainInfo, err := client.GetBlockChainInfo()
+		// Detect Chain by genesis block hash for accuracy.
+		genesisHash, err := client.GetBlockHash(0)
 		if err != nil {
-			log.Fatalf("Failed to get blockchain info: %v", err)
+			log.Fatalf("Failed to get genesis block hash from RPC: %v", err)
 		}
 
 		var chainParams *chaincfg.Params
-		switch chainInfo.Chain {
-		case "main":
+		switch *genesisHash {
+		case *chaincfg.MainNetParams.GenesisHash:
 			chainParams = &chaincfg.MainNetParams
-		case "test":
+			log.Println("Detected chain: Bitcoin Mainnet")
+		case *chaincfg.TestNet3Params.GenesisHash:
 			chainParams = &chaincfg.TestNet3Params
-		case "regtest":
+			log.Println("Detected chain: Bitcoin Testnet3")
+		case *chaincfg.RegressionNetParams.GenesisHash:
 			chainParams = &chaincfg.RegressionNetParams
+			log.Println("Detected chain: Bitcoin Regtest")
+		case *chaincfg.SimNetParams.GenesisHash:
+			chainParams = &chaincfg.SimNetParams
+			log.Println("Detected chain: Bitcoin Simnet")
 		default:
-			log.Printf("Warning: Unknown chain '%s', defaulting to MainNet parameters", chainInfo.Chain)
-			chainParams = &chaincfg.MainNetParams
+			log.Fatalf("Unknown blockchain. Genesis hash %s does not match any known Bitcoin chain. This tool currently only supports Bitcoin-based chains.", genesisHash.String())
 		}
 
 		fmt.Println("Scanning for VPN providers...")
@@ -191,7 +215,7 @@ func main() {
 		}
 		fmt.Println()
 
-		interactiveConnect(client, chainParams, filteredEndpoints, &cfg.Client, *scanDryRun)
+		interactiveConnect(ctx, client, chainParams, filteredEndpoints, &cfg.Client, *scanDryRun)
 
 	case "history":
 		historyCmd.Parse(os.Args[2:])
@@ -351,7 +375,7 @@ func buildProviderEndpoint(cfg *ProviderConfig, keyPath string) (*VPNEndpoint, *
 	return endpoint, providerKey, nil
 }
 
-func interactiveConnect(client *rpcclient.Client, chainParams *chaincfg.Params, endpoints []*EnrichedVPNEndpoint, clientCfg *ClientConfig, dryRun bool) {
+func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainParams *chaincfg.Params, endpoints []*EnrichedVPNEndpoint, clientCfg *ClientConfig, dryRun bool) {
 	// Prompt for selection
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter the number of the provider to connect to (or press Enter to quit): ")
@@ -431,8 +455,14 @@ func interactiveConnect(client *rpcclient.Client, chainParams *chaincfg.Params, 
 	if dryRun {
 		fmt.Printf("[Dry Run] Simulation: Would create TUN interface %s and connect to %s.\n", clientCfg.InterfaceName, endpointAddr)
 	} else {
-		if err := ConnectToProvider(clientCfg, localKey, peerPubKey, endpointAddr); err != nil {
-			log.Fatalf("Connection failed: %v", err)
+		err := ConnectToProvider(ctx, clientCfg, localKey, peerPubKey, endpointAddr)
+		select {
+		case <-ctx.Done():
+			log.Println("Disconnecting...")
+		default:
+			if err != nil {
+				log.Fatalf("Connection failed: %v", err)
+			}
 		}
 	}
 }

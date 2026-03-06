@@ -9,9 +9,9 @@ Adjust these variables to match your system configuration:
 ```bash
 PHY_IFACE="eth0"          # Your physical network interface (e.g., eth0, wlan0)
 PHY_GW="192.168.1.1"      # Your physical default gateway
-PROVIDER_PORT="51820"     # The UDP port your Provider node listens on
-PROVIDER_IFACE="wg0"      # The WireGuard interface for your Provider clients
-CLIENT_IFACE="wg1"        # The WireGuard interface for your outgoing Client connection
+PROVIDER_PORT="51820"     # The TCP port your Provider node listens on
+PROVIDER_IFACE="bcvpn0"     # The TUN interface for your Provider clients
+CLIENT_IFACE="bcvpn1"       # The TUN interface for your outgoing Client connection
 MARK_ID="0x100"           # Arbitrary firewall mark ID
 TABLE_ID="200"            # Arbitrary routing table ID
 ```

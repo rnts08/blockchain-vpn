@@ -59,7 +59,7 @@ func GenerateDefaultConfig(path string) error {
 			Pass: "yourrpcpassword",
 		},
 		Provider: ProviderConfig{
-			InterfaceName:  "wg0",
+			InterfaceName:  "bcvpn0",
 			ListenPort:     51820,
 			AnnounceIP:     "", // Leave empty to auto-detect public IP
 			Country:        "", // Leave empty to auto-detect country
@@ -71,7 +71,7 @@ func GenerateDefaultConfig(path string) error {
 			TunSubnet:      "24",
 		},
 		Client: ClientConfig{
-			InterfaceName: "wg0",
+			InterfaceName: "bcvpn1",
 			TunIP:         "10.10.0.2",
 			TunSubnet:     "24",
 		},

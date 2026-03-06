@@ -40,6 +40,32 @@ func (am *AuthManager) IsPeerAuthorized(peerKey *btcec.PublicKey) bool {
 	return ok && time.Now().Before(expiration)
 }
 
+// DeauthorizePeer removes a peer from the authorized list.
+func (am *AuthManager) DeauthorizePeer(peerKey *btcec.PublicKey) {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	keyStr := hex.EncodeToString(peerKey.SerializeCompressed())
+	delete(am.authorizedPeers, keyStr)
+	log.Printf("De-authorized peer %s", peerKey.String())
+}
+
+// DeauthorizeAllPeers clears the entire authorization list. Used for reorgs.
+func (am *AuthManager) DeauthorizeAllPeers() {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	am.authorizedPeers = make(map[string]time.Time)
+	log.Println("All peers have been de-authorized due to a potential reorg.")
+}
+
+// GetPeerExpiration returns the expiration time for a given peer.
+func (am *AuthManager) GetPeerExpiration(peerKey *btcec.PublicKey) (time.Time, bool) {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	keyStr := hex.EncodeToString(peerKey.SerializeCompressed())
+	expiration, ok := am.authorizedPeers[keyStr]
+	return expiration, ok
+}
+
 // GetAuthorizedPeers returns a map of currently authorized peer public keys (hex-encoded).
 func (am *AuthManager) GetAuthorizedPeers() map[string]bool {
 	am.mu.RLock()

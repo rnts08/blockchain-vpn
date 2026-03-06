@@ -99,7 +99,8 @@ A unified dashboard showing the health of both Client and Provider interfaces.
 
 *   **Physical Interface (eth0):** `192.168.1.5` (Up)
 *   **Provider Tunnel (wg0):** `10.0.0.1` (Listening on UDP :51820)
-*   **Client Tunnel (wg1):** `10.0.1.5` (Connected to Peer X)
+*   **Provider Tunnel (bcvpn0):** `10.10.0.1` (Listening on TCP :51820)
+*   **Client Tunnel (bcvpn1):** `10.10.0.2` (Connected to Peer X)
 
 ---
 
