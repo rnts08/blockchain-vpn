@@ -15,6 +15,17 @@ const resolvConfPath = "/etc/resolv.conf"
 const resolvBackupPath = "/etc/resolv.conf.bcvpn-backup"
 const secureDNS = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n"
 
+var (
+	linuxGetDefaultGateway = getDefaultGateway
+	linuxSetupRouting      = setupRouting
+	linuxRestoreRouting    = restoreRouting
+	linuxSetupDNS          = setupDNS
+	linuxRestoreDNS        = restoreDNS
+	linuxReadFile          = os.ReadFile
+	linuxWriteFile         = os.WriteFile
+	linuxRemoveFile        = os.Remove
+)
+
 func configureTunInterface(ifaceName, ip, subnetMask string) error {
 	link, err := netlink.LinkByName(ifaceName)
 	if err != nil {
@@ -34,26 +45,26 @@ func configureTunInterface(ifaceName, ip, subnetMask string) error {
 }
 
 func configureClientNetwork(ifaceName, providerHost string) (func(), error) {
-	defaultGW, err := getDefaultGateway()
+	defaultGW, err := linuxGetDefaultGateway()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := setupRouting(ifaceName, providerHost, defaultGW); err != nil {
+	if err := linuxSetupRouting(ifaceName, providerHost, defaultGW); err != nil {
 		return nil, err
 	}
 
 	dnsConfigured := false
-	if err := setupDNS(); err != nil {
+	if err := linuxSetupDNS(); err != nil {
 		log.Printf("Warning: failed to set DNS automatically: %v", err)
 	} else {
 		dnsConfigured = true
 	}
 
 	cleanup := func() {
-		restoreRouting(ifaceName, providerHost)
+		linuxRestoreRouting(ifaceName, providerHost)
 		if dnsConfigured {
-			restoreDNS()
+			linuxRestoreDNS()
 		}
 	}
 	return cleanup, nil
@@ -108,26 +119,26 @@ func restoreRouting(ifaceName, providerHost string) {
 }
 
 func setupDNS() error {
-	content, err := os.ReadFile(resolvConfPath)
+	content, err := linuxReadFile(resolvConfPath)
 	if err != nil {
 		return fmt.Errorf("failed to read resolv.conf: %w", err)
 	}
-	if err := os.WriteFile(resolvBackupPath, content, 0644); err != nil {
+	if err := linuxWriteFile(resolvBackupPath, content, 0644); err != nil {
 		return fmt.Errorf("failed to backup resolv.conf: %w", err)
 	}
-	if err := os.WriteFile(resolvConfPath, []byte(secureDNS), 0644); err != nil {
+	if err := linuxWriteFile(resolvConfPath, []byte(secureDNS), 0644); err != nil {
 		return fmt.Errorf("failed to write new resolv.conf: %w", err)
 	}
 	return nil
 }
 
 func restoreDNS() {
-	content, err := os.ReadFile(resolvBackupPath)
+	content, err := linuxReadFile(resolvBackupPath)
 	if err != nil {
 		return
 	}
-	if err := os.WriteFile(resolvConfPath, content, 0644); err != nil {
+	if err := linuxWriteFile(resolvConfPath, content, 0644); err != nil {
 		return
 	}
-	_ = os.Remove(resolvBackupPath)
+	_ = linuxRemoveFile(resolvBackupPath)
 }

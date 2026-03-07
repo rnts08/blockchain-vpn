@@ -14,6 +14,7 @@ import (
 )
 
 var serviceLineRe = regexp.MustCompile(`^\(\d+\)\s+(.+)$`)
+var darwinRunCommand = runCmd
 
 func configureTunInterface(ifaceName, ip, subnetMask string) error {
 	mask, err := cidrMaskFromPrefix(subnetMask)
@@ -21,7 +22,7 @@ func configureTunInterface(ifaceName, ip, subnetMask string) error {
 		return err
 	}
 
-	_, err = runCmd("ifconfig", ifaceName, "inet", ip, ip, "netmask", mask, "up")
+	_, err = darwinRunCommand("ifconfig", ifaceName, "inet", ip, ip, "netmask", mask, "up")
 	if err != nil {
 		return fmt.Errorf("failed to configure TUN interface %s: %w", ifaceName, err)
 	}
@@ -84,19 +85,19 @@ func setupDNS(defaultIface string) (func(), error) {
 		return nil, err
 	}
 
-	if _, err := runCmd("networksetup", "-setdnsservers", service, "1.1.1.1", "8.8.8.8"); err != nil {
+	if _, err := darwinRunCommand("networksetup", "-setdnsservers", service, "1.1.1.1", "8.8.8.8"); err != nil {
 		return nil, fmt.Errorf("failed to set DNS servers for %s: %w", service, err)
 	}
 
 	restore := func() {
 		if hadCustom && len(servers) > 0 {
 			args := append([]string{"-setdnsservers", service}, servers...)
-			if _, err := runCmd("networksetup", args...); err != nil {
+			if _, err := darwinRunCommand("networksetup", args...); err != nil {
 				log.Printf("Warning: failed to restore DNS for %s: %v", service, err)
 			}
 			return
 		}
-		if _, err := runCmd("networksetup", "-setdnsservers", service, "Empty"); err != nil {
+		if _, err := darwinRunCommand("networksetup", "-setdnsservers", service, "Empty"); err != nil {
 			log.Printf("Warning: failed to clear DNS for %s: %v", service, err)
 		}
 	}
@@ -105,7 +106,7 @@ func setupDNS(defaultIface string) (func(), error) {
 }
 
 func getCurrentDNSServers(service string) ([]string, bool, error) {
-	out, err := runCmd("networksetup", "-getdnsservers", service)
+	out, err := darwinRunCommand("networksetup", "-getdnsservers", service)
 	if err != nil {
 		return nil, false, err
 	}
@@ -121,7 +122,7 @@ func getCurrentDNSServers(service string) ([]string, bool, error) {
 }
 
 func findNetworkServiceForDevice(device string) (string, error) {
-	out, err := runCmd("networksetup", "-listnetworkserviceorder")
+	out, err := darwinRunCommand("networksetup", "-listnetworkserviceorder")
 	if err != nil {
 		return "", fmt.Errorf("failed to list network services: %w", err)
 	}
@@ -146,7 +147,7 @@ func findNetworkServiceForDevice(device string) (string, error) {
 }
 
 func getDefaultRouteInfo() (gateway string, iface string, err error) {
-	out, err := runCmd("route", "-n", "get", "default")
+	out, err := darwinRunCommand("route", "-n", "get", "default")
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get default route: %w", err)
 	}
@@ -184,7 +185,7 @@ func cidrMaskFromPrefix(prefix string) (string, error) {
 }
 
 func routeCmd(args ...string) error {
-	_, err := runCmd("route", args...)
+	_, err := darwinRunCommand("route", args...)
 	if err != nil {
 		// Route add/delete might fail for already-present/absent entries; treat as non-fatal.
 		if strings.Contains(err.Error(), "File exists") || strings.Contains(err.Error(), "not in table") {

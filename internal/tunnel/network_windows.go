@@ -18,12 +18,17 @@ type windowsDefaultRoute struct {
 	NextHop        string
 }
 
+var (
+	windowsRunCommand    = runWindowsCmd
+	windowsRunPowerShell = runPowerShell
+)
+
 func configureTunInterface(ifaceName, ip, subnetMask string) error {
 	mask, err := cidrMaskFromPrefix(subnetMask)
 	if err != nil {
 		return err
 	}
-	_, err = runWindowsCmd("netsh", "interface", "ipv4", "set", "address", fmt.Sprintf("name=%s", ifaceName), "static", ip, mask)
+	_, err = windowsRunCommand("netsh", "interface", "ipv4", "set", "address", fmt.Sprintf("name=%s", ifaceName), "static", ip, mask)
 	if err != nil {
 		return fmt.Errorf("failed to configure TUN interface %s: %w", ifaceName, err)
 	}
@@ -62,23 +67,23 @@ func setupWindowsRouting(tunIfIndex int, providerHost, defaultGW string, default
 	}
 
 	// Keep provider control channel outside tunnel.
-	_, _ = runWindowsCmd("route", "ADD", providerHost, "MASK", "255.255.255.255", defaultGW, "METRIC", "1", "IF", strconv.Itoa(defaultIfIndex))
+	_, _ = windowsRunCommand("route", "ADD", providerHost, "MASK", "255.255.255.255", defaultGW, "METRIC", "1", "IF", strconv.Itoa(defaultIfIndex))
 
 	// Full tunnel split default route.
-	if _, err := runWindowsCmd("route", "ADD", "0.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex)); err != nil {
+	if _, err := windowsRunCommand("route", "ADD", "0.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex)); err != nil {
 		return fmt.Errorf("failed to add route 0.0.0.0/1 via interface index %d: %w", tunIfIndex, err)
 	}
-	if _, err := runWindowsCmd("route", "ADD", "128.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex)); err != nil {
-		_, _ = runWindowsCmd("route", "DELETE", "0.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex))
+	if _, err := windowsRunCommand("route", "ADD", "128.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex)); err != nil {
+		_, _ = windowsRunCommand("route", "DELETE", "0.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex))
 		return fmt.Errorf("failed to add route 128.0.0.0/1 via interface index %d: %w", tunIfIndex, err)
 	}
 	return nil
 }
 
 func restoreWindowsRouting(tunIfIndex int, providerHost string) {
-	_, _ = runWindowsCmd("route", "DELETE", providerHost)
-	_, _ = runWindowsCmd("route", "DELETE", "0.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex))
-	_, _ = runWindowsCmd("route", "DELETE", "128.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex))
+	_, _ = windowsRunCommand("route", "DELETE", providerHost)
+	_, _ = windowsRunCommand("route", "DELETE", "0.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex))
+	_, _ = windowsRunCommand("route", "DELETE", "128.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex))
 }
 
 func setupWindowsDNS(ifaceAlias string) (func(), error) {
@@ -87,25 +92,25 @@ func setupWindowsDNS(ifaceAlias string) (func(), error) {
 		return nil, err
 	}
 
-	if _, err := runPowerShell(fmt.Sprintf(`Set-DnsClientServerAddress -InterfaceAlias '%s' -ServerAddresses @('1.1.1.1','8.8.8.8')`, psEscape(ifaceAlias))); err != nil {
+	if _, err := windowsRunPowerShell(fmt.Sprintf(`Set-DnsClientServerAddress -InterfaceAlias '%s' -ServerAddresses @('1.1.1.1','8.8.8.8')`, psEscape(ifaceAlias))); err != nil {
 		return nil, fmt.Errorf("failed to set DNS servers for %s: %w", ifaceAlias, err)
 	}
 
 	return func() {
 		if len(servers) == 0 {
-			_, _ = runPowerShell(fmt.Sprintf(`Set-DnsClientServerAddress -InterfaceAlias '%s' -ResetServerAddresses`, psEscape(ifaceAlias)))
+			_, _ = windowsRunPowerShell(fmt.Sprintf(`Set-DnsClientServerAddress -InterfaceAlias '%s' -ResetServerAddresses`, psEscape(ifaceAlias)))
 			return
 		}
 		var quoted []string
 		for _, s := range servers {
 			quoted = append(quoted, fmt.Sprintf("'%s'", psEscape(s)))
 		}
-		_, _ = runPowerShell(fmt.Sprintf(`Set-DnsClientServerAddress -InterfaceAlias '%s' -ServerAddresses @(%s)`, psEscape(ifaceAlias), strings.Join(quoted, ",")))
+		_, _ = windowsRunPowerShell(fmt.Sprintf(`Set-DnsClientServerAddress -InterfaceAlias '%s' -ServerAddresses @(%s)`, psEscape(ifaceAlias), strings.Join(quoted, ",")))
 	}, nil
 }
 
 func getWindowsDNSServers(ifaceAlias string) ([]string, error) {
-	out, err := runPowerShell(fmt.Sprintf(`$x = Get-DnsClientServerAddress -InterfaceAlias '%s' -AddressFamily IPv4; if ($x -eq $null -or $x.ServerAddresses.Count -eq 0) { '[]' } else { $x.ServerAddresses | ConvertTo-Json -Compress }`, psEscape(ifaceAlias)))
+	out, err := windowsRunPowerShell(fmt.Sprintf(`$x = Get-DnsClientServerAddress -InterfaceAlias '%s' -AddressFamily IPv4; if ($x -eq $null -or $x.ServerAddresses.Count -eq 0) { '[]' } else { $x.ServerAddresses | ConvertTo-Json -Compress }`, psEscape(ifaceAlias)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get DNS settings: %w", err)
 	}
@@ -131,7 +136,7 @@ func getWindowsDNSServers(ifaceAlias string) ([]string, error) {
 }
 
 func getWindowsInterfaceIndex(ifaceAlias string) (int, error) {
-	out, err := runPowerShell(fmt.Sprintf(`(Get-NetIPInterface -AddressFamily IPv4 -InterfaceAlias '%s' | Select-Object -First 1 -ExpandProperty InterfaceIndex)`, psEscape(ifaceAlias)))
+	out, err := windowsRunPowerShell(fmt.Sprintf(`(Get-NetIPInterface -AddressFamily IPv4 -InterfaceAlias '%s' | Select-Object -First 1 -ExpandProperty InterfaceIndex)`, psEscape(ifaceAlias)))
 	if err != nil {
 		return 0, fmt.Errorf("failed to get interface index for %s: %w", ifaceAlias, err)
 	}
@@ -143,7 +148,7 @@ func getWindowsInterfaceIndex(ifaceAlias string) (int, error) {
 }
 
 func getWindowsDefaultRoute() (*windowsDefaultRoute, error) {
-	out, err := runPowerShell(`$r = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric,InterfaceMetric | Select-Object -First 1 InterfaceAlias,InterfaceIndex,NextHop; $r | ConvertTo-Json -Compress`)
+	out, err := windowsRunPowerShell(`$r = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric,InterfaceMetric | Select-Object -First 1 InterfaceAlias,InterfaceIndex,NextHop; $r | ConvertTo-Json -Compress`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query default route: %w", err)
 	}

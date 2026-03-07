@@ -10,7 +10,7 @@
 - [x] Implement provider egress NAT backend for macOS.
 - [x] Implement provider egress NAT backend for Windows.
 - [x] Add cross-platform kill switch mode (block outbound traffic if tunnel drops unexpectedly).
-- [ ] Add integration tests that verify route and DNS restore logic on each supported OS backend.
+- [x] Add integration tests that verify route and DNS restore logic on each supported OS backend.
 
 ## 3. Reliability and Observability
 - [ ] Add provider/client runtime metrics endpoint (session count, throughput, errors, health state).
