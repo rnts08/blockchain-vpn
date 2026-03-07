@@ -2,25 +2,33 @@ package tunnel
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
+	"fmt"
+	"net"
 	"testing"
+	"time"
 )
 
-func TestMeasureURLThroughputKbps(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		buf := make([]byte, 512*1024)
-		for i := range buf {
-			buf[i] = 'a'
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(buf)
-	}))
-	defer srv.Close()
+func TestMeasureProviderThroughputKbps(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	kbps, err := measureURLThroughputKbps(context.Background(), srv.URL)
+	// Pick a random local port
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("measureURLThroughputKbps failed: %v", err)
+		t.Fatalf("failed to listen: %v", err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close() // StartThroughputServer will bind it again
+
+	go StartThroughputServer(ctx, port)
+
+	// Give it a moment to bind
+	time.Sleep(100 * time.Millisecond)
+
+	endpoint := fmt.Sprintf("127.0.0.1:%d", port)
+	kbps, err := MeasureProviderThroughputKbps(context.Background(), endpoint)
+	if err != nil {
+		t.Fatalf("MeasureProviderThroughputKbps failed: %v", err)
 	}
 	if kbps == 0 {
 		t.Fatalf("expected non-zero throughput")

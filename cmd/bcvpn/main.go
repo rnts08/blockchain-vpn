@@ -211,6 +211,15 @@ func main() {
 				stop()
 			}
 		}()
+		go func() {
+			defer providerWG.Done()
+			if cfg.Provider.ThroughputProbePort > 0 {
+				if err := tunnel.StartThroughputServer(ctx, cfg.Provider.ThroughputProbePort); err != nil {
+					log.Printf("Throughput server exited with error: %v", err)
+					stop()
+				}
+			}
+		}()
 
 		<-ctx.Done()
 		log.Println("Shutting down provider...")

@@ -13,7 +13,7 @@ func TestRunClientPostConnectChecks_StrictFailsWhenIPUnchanged(t *testing.T) {
 	restore := mockSecurityCheckFns(
 		func() (net.IP, error) { return net.ParseIP("203.0.113.5"), nil },
 		func() (*geoip.GeoLocation, error) { return &geoip.GeoLocation{CountryCode: "US"}, nil },
-		func(context.Context) (uint32, error) { return 50000, nil },
+		func(context.Context, string) (uint32, error) { return 50000, nil },
 	)
 	defer restore()
 
@@ -32,7 +32,7 @@ func TestRunClientPostConnectChecks_StrictFailsOnCountryMismatch(t *testing.T) {
 	restore := mockSecurityCheckFns(
 		func() (net.IP, error) { return net.ParseIP("203.0.113.10"), nil },
 		func() (*geoip.GeoLocation, error) { return &geoip.GeoLocation{CountryCode: "DE"}, nil },
-		func(context.Context) (uint32, error) { return 50000, nil },
+		func(context.Context, string) (uint32, error) { return 50000, nil },
 	)
 	defer restore()
 
@@ -51,7 +51,7 @@ func TestRunClientPostConnectChecks_NonStrictAllowsWarnings(t *testing.T) {
 	restore := mockSecurityCheckFns(
 		func() (net.IP, error) { return net.ParseIP("203.0.113.10"), nil },
 		func() (*geoip.GeoLocation, error) { return &geoip.GeoLocation{CountryCode: "DE"}, nil },
-		func(context.Context) (uint32, error) { return 1, nil },
+		func(context.Context, string) (uint32, error) { return 1, nil },
 	)
 	defer restore()
 
@@ -68,7 +68,7 @@ func TestRunClientPostConnectChecks_NonStrictAllowsWarnings(t *testing.T) {
 func mockSecurityCheckFns(
 	pubIP func() (net.IP, error),
 	locate func() (*geoip.GeoLocation, error),
-	throughput func(context.Context) (uint32, error),
+	throughput func(context.Context, string) (uint32, error),
 ) func() {
 	prevPub := getPublicIPFn
 	prevLoc := autoLocateFn

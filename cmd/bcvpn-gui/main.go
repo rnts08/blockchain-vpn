@@ -1315,6 +1315,13 @@ func (s *guiState) startProvider(password string) error {
 				s.appendLog("Echo server error: " + err.Error())
 			}
 		}()
+		go func() {
+			if s.cfg.Provider.ThroughputProbePort > 0 {
+				if err := tunnel.StartThroughputServer(ctx, s.cfg.Provider.ThroughputProbePort); err != nil {
+					s.appendLog("Throughput server error: " + err.Error())
+				}
+			}
+		}()
 		if err := tunnel.StartProviderServer(ctx, &s.cfg.Provider, &s.cfg.Security, providerKey, authManager); err != nil {
 			s.appendLog("Provider server error: " + err.Error())
 		}

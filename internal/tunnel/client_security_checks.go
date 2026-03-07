@@ -3,10 +3,8 @@ package tunnel
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"net/http"
 	"strings"
 	"time"
 
@@ -23,12 +21,9 @@ type ClientSecurityExpectations struct {
 }
 
 var (
-	getPublicIPFn = util.GetPublicIP
-	autoLocateFn  = geoip.AutoLocate
-	httpClientFn  = func(timeout time.Duration) *http.Client {
-		return &http.Client{Timeout: timeout}
-	}
-	measureThroughputFn = measureDownloadThroughputKbps
+	getPublicIPFn       = util.GetPublicIP
+	autoLocateFn        = geoip.AutoLocate
+	measureThroughputFn = MeasureProviderThroughputKbps
 )
 
 func runClientPostConnectChecks(ctx context.Context, expected ClientSecurityExpectations, preConnectIP net.IP) error {
@@ -54,7 +49,7 @@ func runClientPostConnectChecks(ctx context.Context, expected ClientSecurityExpe
 		return err
 	}
 	if expected.VerifyThroughputAfter && expected.ExpectedBandwidthKB > 0 {
-		if err := checkThroughput(ctx, expected.ExpectedBandwidthKB, expected.StrictVerification); err != nil {
+		if err := verifyProviderThroughput(ctx, expected.ProviderHost, expected.ExpectedBandwidthKB, expected.StrictVerification); err != nil {
 			return err
 		}
 	}
@@ -180,17 +175,24 @@ func checkCountryHeuristic(egressIP net.IP, expectedCountry string, strict bool)
 	return nil
 }
 
-func checkThroughput(ctx context.Context, expectedBandwidthKB uint32, strict bool) error {
-	measured, err := measureThroughputFn(ctx)
+func verifyProviderThroughput(ctx context.Context, endpointHost string, expectedBandwidthKB uint32, strict bool) error {
+	// Extract just the IP if it includes a port
+	host := endpointHost
+	if h, _, err := net.SplitHostPort(endpointHost); err == nil {
+		host = h
+	}
+
+	addr := fmt.Sprintf("%s:51821", host) // By default, throughput port is 51821 // TODO: pass actual port via ProviderAnnouncement
+	measured, err := MeasureProviderThroughputKbps(ctx, addr)
 	if err != nil {
-		msg := fmt.Sprintf("throughput verification unavailable: %v", err)
+		msg := fmt.Sprintf("provider-assisted throughput verification unavailable or failed: %v", err)
 		if strict {
 			return fmt.Errorf("strict verification failed: %s", msg)
 		}
 		log.Printf("Security check warning: %s", msg)
 		return nil
 	}
-	log.Printf("Security check: measured downstream throughput %d Kbps", measured)
+	log.Printf("Security check: measured provider-assisted downstream throughput %d Kbps", measured)
 	threshold := float64(expectedBandwidthKB) * 0.50
 	if float64(measured) < threshold {
 		msg := fmt.Sprintf("measured throughput %d Kbps below expected threshold %.0f Kbps", measured, threshold)
@@ -200,52 +202,6 @@ func checkThroughput(ctx context.Context, expectedBandwidthKB uint32, strict boo
 		log.Printf("Security check warning: %s", msg)
 		return nil
 	}
-	log.Printf("Security check: throughput verification passed against advertised %d Kbps", expectedBandwidthKB)
+	log.Printf("Security check: provider throughput verification passed against advertised %d Kbps", expectedBandwidthKB)
 	return nil
-}
-
-func measureDownloadThroughputKbps(ctx context.Context) (uint32, error) {
-	sources := []string{
-		"https://speed.cloudflare.com/__down?bytes=4000000",
-		"https://speed.hetzner.de/10MB.bin",
-		"https://proof.ovh.net/files/1Mb.dat",
-	}
-	for _, u := range sources {
-		val, err := measureURLThroughputKbps(ctx, u)
-		if err == nil {
-			return val, nil
-		}
-	}
-	return 0, fmt.Errorf("all throughput sources failed")
-}
-
-func measureURLThroughputKbps(ctx context.Context, url string) (uint32, error) {
-	reqCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
-	if err != nil {
-		return 0, err
-	}
-	start := time.Now()
-	resp, err := httpClientFn(8 * time.Second).Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return 0, fmt.Errorf("status %s", resp.Status)
-	}
-	n, err := io.CopyN(io.Discard, resp.Body, 2*1024*1024)
-	if err != nil && err != io.EOF {
-		return 0, err
-	}
-	elapsed := time.Since(start)
-	if elapsed <= 0 {
-		return 0, fmt.Errorf("invalid elapsed time")
-	}
-	kbps := uint32(float64(n*8) / elapsed.Seconds() / 1000.0)
-	if kbps == 0 {
-		return 0, fmt.Errorf("measured zero throughput")
-	}
-	return kbps, nil
 }

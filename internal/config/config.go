@@ -65,6 +65,7 @@ type ProviderConfig struct {
 	MaxSessionDurationSecs      int    `json:"max_session_duration_secs"` // 0 = no limit
 	AnnouncementFeeTargetBlocks int    `json:"announcement_fee_target_blocks"`
 	AnnouncementFeeMode         string `json:"announcement_fee_mode"` // "conservative" or "economical"
+	ThroughputProbePort         int    `json:"throughput_probe_port"` // 0 = disable provider-assisted probes
 }
 
 type ClientConfig struct {
@@ -200,6 +201,7 @@ func GenerateDefaultConfig(path string) error {
 			MaxSessionDurationSecs:      0,
 			AnnouncementFeeTargetBlocks: 6,
 			AnnouncementFeeMode:         "conservative",
+			ThroughputProbePort:         51821,
 		},
 		Client: ClientConfig{
 			InterfaceName:              "bcvpn1",
