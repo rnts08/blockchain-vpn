@@ -160,7 +160,7 @@ If the application detects a potential conflict (e.g., the user tries to connect
 
 ```text
 +-----------------------------------------------------------------------+
-|  BLOCKCHAIN VPN                                      [ Wallet: 500 $ ]|
+|  OCX BLOCKCHAIN VPN                             [ Wallet: 500.42 OCX ]|
 +-----------------------------------------------------------------------+
 |  [ PROVIDER ]    [ CLIENT ]    [ STATUS ]    [ SETTINGS ]             |
 +-----------------------------------------------------------------------+
@@ -175,7 +175,7 @@ If the application detects a potential conflict (e.g., the user tries to connect
 |                                                                       |
 |  Pricing:    [ 100 ] Sats/Hour                                        |
 |                                                                       |
-|  Payout To:  [ ord1qxy2...89a ]                                       |
+|  Payout To:  [ ocx1qxy2...89a ]                                       |
 |                                                                       |
 |  -------------------------------------------------------------------  |
 |                                                                       |
