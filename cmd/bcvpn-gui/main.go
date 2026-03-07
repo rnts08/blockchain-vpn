@@ -22,6 +22,7 @@ import (
 	"blockchain-vpn/internal/geoip"
 	"blockchain-vpn/internal/history"
 	"blockchain-vpn/internal/nat"
+	"blockchain-vpn/internal/obs"
 	"blockchain-vpn/internal/protocol"
 	"blockchain-vpn/internal/tunnel"
 	"blockchain-vpn/internal/util"
@@ -117,6 +118,12 @@ func main() {
 		dialog.ShowError(fmt.Errorf("initialization failed: %w", err), w)
 		return
 	}
+	logFormat := strings.TrimSpace(state.cfg.Logging.Format)
+	if env := strings.TrimSpace(os.Getenv("BCVPN_LOG_FORMAT")); env != "" {
+		logFormat = env
+	}
+	obs.ConfigureLogging(logFormat, "bcvpn-gui")
+	_ = tunnel.RecoverPendingNetworkState()
 
 	if state.firstRun {
 		w.SetContent(buildSetupWizard(w, state))
@@ -393,6 +400,8 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	healthEnabled.SetChecked(s.cfg.Provider.HealthCheckEnabled)
 	healthIntervalEntry := widget.NewEntry()
 	healthIntervalEntry.SetText(s.cfg.Provider.HealthCheckInterval)
+	metricsAddrEntry := widget.NewEntry()
+	metricsAddrEntry.SetText(s.cfg.Provider.MetricsListenAddr)
 	passwordEntry := widget.NewPasswordEntry()
 	passwordEntry.SetPlaceHolder("Provider key password")
 
@@ -457,6 +466,7 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.Provider.CertRotateBeforeHours = rotate
 		s.cfg.Provider.HealthCheckEnabled = healthEnabled.Checked
 		s.cfg.Provider.HealthCheckInterval = strings.TrimSpace(healthIntervalEntry.Text)
+		s.cfg.Provider.MetricsListenAddr = strings.TrimSpace(metricsAddrEntry.Text)
 		if err := saveConfig(s.cfgPath, s.cfg); err != nil {
 			dialog.ShowError(err, w)
 			return
@@ -525,6 +535,7 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewFormItem("Rotate Before Hours", rotateEntry),
 		widget.NewFormItem("Health Checks", healthEnabled),
 		widget.NewFormItem("Health Check Interval", healthIntervalEntry),
+		widget.NewFormItem("Metrics Listen Addr", metricsAddrEntry),
 		widget.NewFormItem("Key Password", passwordEntry),
 	)
 
@@ -552,6 +563,8 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	clientTunIPEntry.SetText(s.cfg.Client.TunIP)
 	clientTunSubnetEntry := widget.NewEntry()
 	clientTunSubnetEntry.SetText(s.cfg.Client.TunSubnet)
+	clientMetricsAddrEntry := widget.NewEntry()
+	clientMetricsAddrEntry.SetText(s.cfg.Client.MetricsListenAddr)
 	clientKillSwitch := widget.NewCheck("Enable Kill Switch", nil)
 	clientKillSwitch.SetChecked(s.cfg.Client.EnableKillSwitch)
 	dryRun := widget.NewCheck("Dry run (no payment, no interface changes)", nil)
@@ -615,6 +628,7 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.Client.InterfaceName = strings.TrimSpace(clientIfaceEntry.Text)
 		s.cfg.Client.TunIP = strings.TrimSpace(clientTunIPEntry.Text)
 		s.cfg.Client.TunSubnet = strings.TrimSpace(clientTunSubnetEntry.Text)
+		s.cfg.Client.MetricsListenAddr = strings.TrimSpace(clientMetricsAddrEntry.Text)
 		s.cfg.Client.EnableKillSwitch = clientKillSwitch.Checked
 		if err := saveConfig(s.cfgPath, s.cfg); err != nil {
 			dialog.ShowError(err, w)
@@ -630,13 +644,15 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		countryEntry,
 	)
 	settingsRow := container.NewGridWithColumns(
-		6,
+		8,
 		widget.NewLabel("Interface"),
 		clientIfaceEntry,
 		widget.NewLabel("TUN IP"),
 		clientTunIPEntry,
 		widget.NewLabel("Subnet"),
 		clientTunSubnetEntry,
+		widget.NewLabel("Metrics"),
+		clientMetricsAddrEntry,
 	)
 	actionRow := container.NewGridWithColumns(5, scanBtn, connectBtn, saveClientBtn, clientKillSwitch, dryRun)
 
@@ -677,6 +693,12 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	rpcUser.SetText(s.cfg.RPC.User)
 	rpcPass := widget.NewPasswordEntry()
 	rpcPass.SetText(s.cfg.RPC.Pass)
+	logFormat := widget.NewSelect([]string{"text", "json"}, nil)
+	if strings.TrimSpace(s.cfg.Logging.Format) == "" {
+		logFormat.SetSelected("text")
+	} else {
+		logFormat.SetSelected(s.cfg.Logging.Format)
+	}
 	statusOut := widget.NewMultiLineEntry()
 	statusOut.Disable()
 	statusOut.SetMinRowsVisible(6)
@@ -686,6 +708,7 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.RPC.Host = strings.TrimSpace(rpcHost.Text)
 		s.cfg.RPC.User = strings.TrimSpace(rpcUser.Text)
 		s.cfg.RPC.Pass = strings.TrimSpace(rpcPass.Text)
+		s.cfg.Logging.Format = strings.TrimSpace(logFormat.Selected)
 		if err := config.Validate(s.cfg); err != nil {
 			s.mu.Unlock()
 			dialog.ShowError(fmt.Errorf("config validation failed: %w", err), w)
@@ -726,6 +749,7 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewFormItem("RPC Host", rpcHost),
 		widget.NewFormItem("RPC User", rpcUser),
 		widget.NewFormItem("RPC Pass", rpcPass),
+		widget.NewFormItem("Log Format", logFormat),
 	)
 	buttons := container.NewGridWithColumns(3, saveBtn, validateBtn, defaultsBtn)
 
@@ -742,6 +766,9 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 func applyDefaultConfigValues(cfg *config.Config) {
 	if strings.TrimSpace(cfg.RPC.Host) == "" {
 		cfg.RPC.Host = "localhost:18443"
+	}
+	if strings.TrimSpace(cfg.Logging.Format) == "" {
+		cfg.Logging.Format = "text"
 	}
 	if strings.TrimSpace(cfg.Provider.InterfaceName) == "" {
 		cfg.Provider.InterfaceName = "bcvpn0"
@@ -764,6 +791,9 @@ func applyDefaultConfigValues(cfg *config.Config) {
 	if strings.TrimSpace(cfg.Provider.HealthCheckInterval) == "" {
 		cfg.Provider.HealthCheckInterval = "30s"
 	}
+	if strings.TrimSpace(cfg.Provider.MetricsListenAddr) == "" {
+		cfg.Provider.MetricsListenAddr = ""
+	}
 	if cfg.Provider.CertLifetimeHours == 0 {
 		cfg.Provider.CertLifetimeHours = 720
 	}
@@ -778,6 +808,9 @@ func applyDefaultConfigValues(cfg *config.Config) {
 	}
 	if strings.TrimSpace(cfg.Client.TunSubnet) == "" {
 		cfg.Client.TunSubnet = "24"
+	}
+	if strings.TrimSpace(cfg.Client.MetricsListenAddr) == "" {
+		cfg.Client.MetricsListenAddr = ""
 	}
 }
 

@@ -95,8 +95,12 @@ type ClientMap struct {
 // StartProviderServer sets up the TUN interface and listens for TLS connections.
 func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKey *btcec.PrivateKey, authManager *auth.AuthManager) {
 	if err := EnsureElevatedPrivileges(); err != nil {
+		recordRuntimeError(err)
 		log.Fatalf("Provider requires automatic networking privileges: %v", err)
 	}
+	startMetricsServer(cfg.MetricsListenAddr)
+	setProviderRunning(true)
+	defer setProviderRunning(false)
 
 	if err := applyProviderIsolation(cfg.IsolationMode); err != nil {
 		log.Printf("Warning: could not apply provider isolation mode %q: %v", cfg.IsolationMode, err)
@@ -108,6 +112,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 	certRotateBefore := time.Duration(cfg.CertRotateBeforeHours) * time.Hour
 	tlsConfig, err := buildRotatingServerTLSConfig(ctx, privKey, certLifetime, certRotateBefore)
 	if err != nil {
+		recordRuntimeError(err)
 		log.Fatalf("Failed to generate server TLS config: %v", err)
 	}
 
@@ -119,6 +124,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 	listenAddr := fmt.Sprintf("0.0.0.0:%d", cfg.ListenPort)
 	listener, err := tls.Listen("tcp", listenAddr, tlsConfig)
 	if err != nil {
+		recordRuntimeError(err)
 		log.Fatalf("Failed to start TLS listener: %v", err)
 	}
 	defer listener.Close()
@@ -131,6 +137,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 
 	iface, err := createTunInterface(cfg.InterfaceName, cfg.TunIP, cfg.TunSubnet)
 	if err != nil {
+		recordRuntimeError(err)
 		log.Fatalf("Failed to create provider TUN interface: %v", err)
 	}
 	defer iface.Close()
@@ -138,6 +145,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 	if cfg.EnableEgressNAT {
 		natCleanup, err := setupProviderEgressNAT(iface.Name(), cfg.TunIP, cfg.TunSubnet, cfg.NATOutboundInterface)
 		if err != nil {
+			recordRuntimeError(err)
 			log.Printf("Warning: failed to configure provider egress NAT: %v", err)
 		} else if natCleanup != nil {
 			defer natCleanup()
@@ -168,6 +176,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 				log.Println("Provider server shutting down.")
 				return
 			default:
+				recordRuntimeError(err)
 				log.Printf("Failed to accept connection: %v", err)
 				continue
 			}
@@ -179,6 +188,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 		if len(state.PeerCertificates) == 0 {
 			log.Printf("Connection from %s rejected: no client certificate provided", conn.RemoteAddr())
 			conn.Close()
+			recordRuntimeError(fmt.Errorf("client connection rejected: no certificate"))
 			continue
 		}
 
@@ -186,16 +196,19 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 		if err != nil {
 			log.Printf("Connection from %s rejected: %v", conn.RemoteAddr(), err)
 			conn.Close()
+			recordRuntimeError(err)
 			continue
 		}
 		if err := policy.check(clientPubKey); err != nil {
 			log.Printf("Connection from %s rejected by policy: %v", conn.RemoteAddr(), err)
 			conn.Close()
+			recordRuntimeError(err)
 			continue
 		}
 		if !authManager.IsPeerAuthorized(clientPubKey) {
 			log.Printf("Connection from %s rejected: client %s is not authorized", conn.RemoteAddr(), hex.EncodeToString(clientPubKey.SerializeCompressed()))
 			conn.Close()
+			recordRuntimeError(fmt.Errorf("unauthorized client: %s", hex.EncodeToString(clientPubKey.SerializeCompressed())))
 			continue
 		}
 
@@ -206,6 +219,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 		if err != nil {
 			log.Printf("Failed to allocate IP for client: %v", err)
 			conn.Close()
+			recordRuntimeError(err)
 			continue
 		}
 
@@ -214,6 +228,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 			log.Printf("Failed to send IP assignment: %v", err)
 			ipPool.Release(assignedIP)
 			conn.Close()
+			recordRuntimeError(err)
 			continue
 		}
 
@@ -222,6 +237,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 		session := newClientSession(conn, limitBytesPerSec)
 		clients.m[assignedIP.String()] = session
 		clients.mu.Unlock()
+		sessionOpened()
 
 		// Handle client traffic and session
 		go func(c net.Conn, ip net.IP, pk *btcec.PublicKey) {
@@ -231,6 +247,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 				clients.mu.Lock()
 				delete(clients.m, ip.String())
 				clients.mu.Unlock()
+				sessionClosed()
 				log.Printf("Client %s (%s) disconnected.", hex.EncodeToString(pk.SerializeCompressed()), c.RemoteAddr())
 			}()
 
@@ -261,6 +278,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 				session.stats.upstreamBytes.Load(),
 				session.stats.downstreamBytes.Load(),
 			)
+			recordTraffic(session.stats.upstreamBytes.Load(), session.stats.downstreamBytes.Load())
 		}(conn, assignedIP, clientPubKey)
 	}
 }
@@ -297,8 +315,12 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 // ConnectToProvider connects to a provider and sets up the client-side tunnel.
 func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, localPrivKey *btcec.PrivateKey, serverPubKey *btcec.PublicKey, endpoint string) error {
 	if err := EnsureElevatedPrivileges(); err != nil {
+		recordRuntimeError(err)
 		return fmt.Errorf("client requires automatic networking privileges: %w", err)
 	}
+	startMetricsServer(cfg.MetricsListenAddr)
+	setClientConnected(true)
+	defer setClientConnected(false)
 
 	tlsConfig, err := GenerateClientTLSConfig(localPrivKey, serverPubKey)
 	if err != nil {
@@ -313,6 +335,7 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, localPrivK
 	log.Printf("Dialing %s...", endpoint)
 	conn, err := tls.Dial("tcp", endpoint, tlsConfig)
 	if err != nil {
+		recordRuntimeError(err)
 		return fmt.Errorf("failed to connect to provider: %w", err)
 	}
 	defer conn.Close()
@@ -325,6 +348,7 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, localPrivK
 	// Handshake: Read assigned IP
 	ipStr, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
+		recordRuntimeError(err)
 		return fmt.Errorf("failed to read assigned IP from provider: %w", err)
 	}
 	assignedIP := strings.TrimSpace(ipStr)
@@ -332,6 +356,7 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, localPrivK
 
 	iface, err := createTunInterface(cfg.InterfaceName, assignedIP, cfg.TunSubnet)
 	if err != nil {
+		recordRuntimeError(err)
 		return fmt.Errorf("failed to create client TUN interface: %w", err)
 	}
 	defer iface.Close()
@@ -346,6 +371,7 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, localPrivK
 	if cfg.EnableKillSwitch {
 		cleanupKillSwitch, err := setupKillSwitch(iface.Name(), providerHost)
 		if err != nil {
+			recordRuntimeError(err)
 			return fmt.Errorf("failed to activate kill switch: %w", err)
 		}
 		if cleanupKillSwitch != nil {
@@ -357,8 +383,8 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, localPrivK
 	log.Printf("Successfully connected to %s. Tunnel is active.", endpoint)
 
 	// Forward packets
-	go copyStreamWithControl(conn, iface, nil, nil)
-	copyStreamWithControl(iface, conn, nil, nil) // Block on this one until connection closes
+	go copyStreamWithControl(conn, iface, func(n int) { recordTraffic(int64(n), 0) }, nil)
+	copyStreamWithControl(iface, conn, func(n int) { recordTraffic(0, int64(n)) }, nil) // Block on this one until connection closes
 
 	return nil
 }

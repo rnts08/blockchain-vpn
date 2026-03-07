@@ -144,6 +144,7 @@ Generate a default configuration file:
 Edit `config.json` to match your environment:
 
 *   **rpc**: Connection details for your local `ordexcoind` node.
+*   **logging**: Runtime log output format (`text` or `json`).
 *   **provider**: Settings if you intend to sell VPN service (IP, Port, Price, `enable_egress_nat`, `nat_outbound_interface`, `isolation_mode`, `allowlist_file`, `denylist_file`, `cert_lifetime_hours`, `cert_rotate_before_hours`, `health_check_enabled`, `health_check_interval`).
 *   **client**: Settings for connecting to others (Interface Name).
 *   By default, the app stores `config.json`, `provider.key`, and `history.json` in your OS user config directory under `BlockchainVPN` (for example `~/.config/BlockchainVPN` on Linux).
@@ -156,6 +157,9 @@ Sample `config.json`:
     "host": "localhost:18443",
     "user": "yourrpcuser",
     "pass": "yourrpcpassword"
+  },
+  "logging": {
+    "format": "text"
   },
   "provider": {
     "interface_name": "bcvpn0",
@@ -175,6 +179,7 @@ Sample `config.json`:
     "cert_rotate_before_hours": 24,
     "health_check_enabled": true,
     "health_check_interval": "30s",
+    "metrics_listen_addr": "127.0.0.1:9090",
     "bandwidth_monitor_interval": "30s",
     "tun_ip": "10.10.0.1",
     "tun_subnet": "24"
@@ -183,7 +188,8 @@ Sample `config.json`:
     "interface_name": "bcvpn1",
     "tun_ip": "10.10.0.2",
     "tun_subnet": "24",
-    "enable_kill_switch": false
+    "enable_kill_switch": false,
+    "metrics_listen_addr": "127.0.0.1:9091"
   }
 }
 ```
@@ -247,6 +253,18 @@ To start selling bandwidth:
     ./bcvpn config validate
     ```
 
+7.  **Runtime Metrics Endpoint (Optional)**:
+    Set `provider.metrics_listen_addr` or `client.metrics_listen_addr` to expose:
+    ```bash
+    curl http://127.0.0.1:9090/metrics.json
+    ```
+
+8.  **Structured Logs (Optional)**:
+    Set `logging.format` to `json` in `config.json`, or override at runtime:
+    ```bash
+    BCVPN_LOG_FORMAT=json ./bcvpn status --json
+    ```
+
 ## 5. Using Other Blockchains
 
 While designed for OrdexCoin, this software is compatible with most Bitcoin-derived blockchains (Bitcoin, Litecoin, Dogecoin, etc.) that support `OP_RETURN` and the standard RPC interface.
@@ -279,6 +297,9 @@ To adapt this for another chain:
 - [x] RPC retry + exponential backoff for transient failures.
 - [x] Payment history storage and reporting.
 - [x] Machine-readable status output for automation (`bcvpn status --json`).
+- [x] Runtime metrics endpoint (`/metrics.json`) for provider/client health and throughput.
+- [x] Structured JSON log mode for CLI/GUI backend actions.
+- [x] Crash-safe route/DNS restore marker recovery on startup.
 - [x] Scriptable CLI config subcommands (`config get/set/validate`).
 - [x] Cross-platform GUI application (`cmd/bcvpn-gui`) using Fyne.
 - [x] GUI first-run setup wizard (config, RPC, key, privilege checks).

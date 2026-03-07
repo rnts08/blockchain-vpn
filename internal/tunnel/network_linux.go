@@ -60,12 +60,18 @@ func configureClientNetwork(ifaceName, providerHost string) (func(), error) {
 	} else {
 		dnsConfigured = true
 	}
+	_ = writeCleanupMarker(networkCleanupMarker{
+		IfaceName:     ifaceName,
+		ProviderHost:  providerHost,
+		DNSConfigured: dnsConfigured,
+	})
 
 	cleanup := func() {
 		linuxRestoreRouting(ifaceName, providerHost)
 		if dnsConfigured {
 			linuxRestoreDNS()
 		}
+		clearCleanupMarker()
 	}
 	return cleanup, nil
 }

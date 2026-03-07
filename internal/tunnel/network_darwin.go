@@ -40,15 +40,34 @@ func configureClientNetwork(ifaceName, providerHost string) (func(), error) {
 	}
 
 	restoreDNS := func() {}
+	var dnsService string
+	var dnsServers []string
+	var hadCustomDNS bool
 	if fn, err := setupDNS(defaultIface); err != nil {
 		log.Printf("Warning: failed to set DNS automatically on macOS: %v", err)
 	} else {
 		restoreDNS = fn
+		svc, servers, hadCustom, getErr := snapshotDNSState(defaultIface)
+		if getErr == nil {
+			dnsService = svc
+			dnsServers = servers
+			hadCustomDNS = hadCustom
+		}
 	}
+	_ = writeCleanupMarker(networkCleanupMarker{
+		IfaceName:     ifaceName,
+		ProviderHost:  providerHost,
+		DefaultGW:     defaultGW,
+		DNSConfigured: dnsService != "",
+		DNSService:    dnsService,
+		DNSServers:    dnsServers,
+	})
 
 	return func() {
 		restoreRouting(ifaceName, providerHost, defaultGW)
 		restoreDNS()
+		_ = hadCustomDNS
+		clearCleanupMarker()
 	}, nil
 }
 
@@ -69,7 +88,11 @@ func setupRouting(ifaceName, providerHost, defaultGW string) error {
 }
 
 func restoreRouting(ifaceName, providerHost, defaultGW string) {
-	_ = routeCmd("-n", "delete", "-host", providerHost, defaultGW)
+	if strings.TrimSpace(defaultGW) != "" {
+		_ = routeCmd("-n", "delete", "-host", providerHost, defaultGW)
+	} else {
+		_ = routeCmd("-n", "delete", "-host", providerHost)
+	}
 	_ = routeCmd("-n", "delete", "-net", "0.0.0.0/1", "-interface", ifaceName)
 	_ = routeCmd("-n", "delete", "-net", "128.0.0.0/1", "-interface", ifaceName)
 }
@@ -103,6 +126,30 @@ func setupDNS(defaultIface string) (func(), error) {
 	}
 
 	return restore, nil
+}
+
+func snapshotDNSState(defaultIface string) (service string, servers []string, hadCustom bool, err error) {
+	service, err = findNetworkServiceForDevice(defaultIface)
+	if err != nil {
+		return "", nil, false, err
+	}
+	servers, hadCustom, err = getCurrentDNSServers(service)
+	if err != nil {
+		return "", nil, false, err
+	}
+	return service, servers, hadCustom, nil
+}
+
+func restoreDNSForService(service string, servers []string, hadCustom bool) {
+	if strings.TrimSpace(service) == "" {
+		return
+	}
+	if hadCustom && len(servers) > 0 {
+		args := append([]string{"-setdnsservers", service}, servers...)
+		_, _ = darwinRunCommand("networksetup", args...)
+		return
+	}
+	_, _ = darwinRunCommand("networksetup", "-setdnsservers", service, "Empty")
 }
 
 func getCurrentDNSServers(service string) ([]string, bool, error) {

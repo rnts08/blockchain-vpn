@@ -54,10 +54,20 @@ func configureClientNetwork(ifaceName, providerHost string) (func(), error) {
 		restoreWindowsRouting(tunIfIndex, providerHost)
 		return nil, err
 	}
+	servers, _ := getWindowsDNSServers(defaultRoute.InterfaceAlias)
+	_ = writeCleanupMarker(networkCleanupMarker{
+		IfaceName:      ifaceName,
+		ProviderHost:   providerHost,
+		TunIfIndex:     tunIfIndex,
+		DefaultIfAlias: defaultRoute.InterfaceAlias,
+		DNSConfigured:  true,
+		DNSServers:     servers,
+	})
 
 	return func() {
 		restoreWindowsRouting(tunIfIndex, providerHost)
 		restoreDNS()
+		clearCleanupMarker()
 	}, nil
 }
 

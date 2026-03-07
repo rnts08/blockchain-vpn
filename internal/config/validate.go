@@ -40,6 +40,11 @@ func Validate(cfg *Config) error {
 			errs = append(errs, fmt.Errorf("provider.health_check_interval is invalid: %w", err))
 		}
 	}
+	if strings.TrimSpace(cfg.Provider.MetricsListenAddr) != "" {
+		if _, err := net.ResolveTCPAddr("tcp", strings.TrimSpace(cfg.Provider.MetricsListenAddr)); err != nil {
+			errs = append(errs, fmt.Errorf("provider.metrics_listen_addr is invalid: %w", err))
+		}
+	}
 
 	switch strings.ToLower(strings.TrimSpace(cfg.Provider.IsolationMode)) {
 	case "", "none", "sandbox":
@@ -55,6 +60,17 @@ func Validate(cfg *Config) error {
 	}
 	if !isValidPrefix(cfg.Client.TunSubnet) {
 		errs = append(errs, fmt.Errorf("client.tun_subnet must be a valid IPv4 prefix length"))
+	}
+	if strings.TrimSpace(cfg.Client.MetricsListenAddr) != "" {
+		if _, err := net.ResolveTCPAddr("tcp", strings.TrimSpace(cfg.Client.MetricsListenAddr)); err != nil {
+			errs = append(errs, fmt.Errorf("client.metrics_listen_addr is invalid: %w", err))
+		}
+	}
+
+	switch strings.ToLower(strings.TrimSpace(cfg.Logging.Format)) {
+	case "", "text", "json":
+	default:
+		errs = append(errs, fmt.Errorf("logging.format must be one of: text, json"))
 	}
 
 	return errors.Join(errs...)

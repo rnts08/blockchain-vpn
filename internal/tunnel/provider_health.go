@@ -38,13 +38,16 @@ func startProviderHealthChecks(ctx context.Context, cfg *config.ProviderConfig, 
 }
 
 func runProviderHealthCheck(tunIfName, listenAddr string) {
-	if err := checkTunInterfaceUp(tunIfName); err != nil {
-		log.Printf("Healthcheck warning: TUN interface unhealthy (%s): %v", tunIfName, err)
+	tunErr := checkTunInterfaceUp(tunIfName)
+	if tunErr != nil {
+		log.Printf("Healthcheck warning: TUN interface unhealthy (%s): %v", tunIfName, tunErr)
 	}
 
-	if err := checkListenerBound(listenAddr); err != nil {
-		log.Printf("Healthcheck warning: listener unhealthy (%s): %v", listenAddr, err)
+	listenerErr := checkListenerBound(listenAddr)
+	if listenerErr != nil {
+		log.Printf("Healthcheck warning: listener unhealthy (%s): %v", listenAddr, listenerErr)
 	}
+	recordHealthStatus(tunErr == nil, listenerErr == nil)
 }
 
 func checkTunInterfaceUp(name string) error {

@@ -13,9 +13,9 @@
 - [x] Add integration tests that verify route and DNS restore logic on each supported OS backend.
 
 ## 3. Reliability and Observability
-- [ ] Add provider/client runtime metrics endpoint (session count, throughput, errors, health state).
-- [ ] Add structured JSON log mode for both CLI and GUI backend actions.
-- [ ] Add persistent crash-safe cleanup markers to restore route/DNS state after abnormal termination.
+- [x] Add provider/client runtime metrics endpoint (session count, throughput, errors, health state).
+- [x] Add structured JSON log mode for both CLI and GUI backend actions.
+- [x] Add persistent crash-safe cleanup markers to restore route/DNS state after abnormal termination.
 
 ## 4. Security Hardening
 - [ ] Add optional hardware-backed key storage integration where available (Keychain/DPAPI/libsecret).

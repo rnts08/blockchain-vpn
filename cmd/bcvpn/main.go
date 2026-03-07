@@ -26,6 +26,7 @@ import (
 	"blockchain-vpn/internal/geoip"
 	"blockchain-vpn/internal/history"
 	"blockchain-vpn/internal/nat"
+	"blockchain-vpn/internal/obs"
 	"blockchain-vpn/internal/protocol"
 	"blockchain-vpn/internal/tunnel"
 	"blockchain-vpn/internal/util"
@@ -61,6 +62,12 @@ func main() {
 	if err := config.ResolveProviderKeyPath(cfg, configPath); err != nil {
 		log.Fatalf("Failed to resolve provider key path: %v", err)
 	}
+	logFormat := strings.TrimSpace(cfg.Logging.Format)
+	if env := strings.TrimSpace(os.Getenv("BCVPN_LOG_FORMAT")); env != "" {
+		logFormat = env
+	}
+	obs.ConfigureLogging(logFormat, "bcvpn-cli")
+	_ = tunnel.RecoverPendingNetworkState()
 
 	// Subcommands
 	scanCmd := flag.NewFlagSet("scan", flag.ExitOnError)
@@ -779,6 +786,8 @@ func getConfigField(cfg *config.Config, key string) (any, error) {
 		return cfg.Provider.TunIP, nil
 	case "provider.tun_subnet":
 		return cfg.Provider.TunSubnet, nil
+	case "provider.metrics_listen_addr":
+		return cfg.Provider.MetricsListenAddr, nil
 	case "client.interface_name":
 		return cfg.Client.InterfaceName, nil
 	case "client.tun_ip":
@@ -787,6 +796,10 @@ func getConfigField(cfg *config.Config, key string) (any, error) {
 		return cfg.Client.TunSubnet, nil
 	case "client.enable_kill_switch":
 		return cfg.Client.EnableKillSwitch, nil
+	case "client.metrics_listen_addr":
+		return cfg.Client.MetricsListenAddr, nil
+	case "logging.format":
+		return cfg.Logging.Format, nil
 	default:
 		return nil, fmt.Errorf("unknown key %q", key)
 	}
@@ -868,6 +881,8 @@ func setConfigField(cfg *config.Config, key string, value string) error {
 		cfg.Provider.TunIP = value
 	case "provider.tun_subnet":
 		cfg.Provider.TunSubnet = value
+	case "provider.metrics_listen_addr":
+		cfg.Provider.MetricsListenAddr = value
 	case "client.interface_name":
 		cfg.Client.InterfaceName = value
 	case "client.tun_ip":
@@ -880,6 +895,10 @@ func setConfigField(cfg *config.Config, key string, value string) error {
 			return err
 		}
 		cfg.Client.EnableKillSwitch = v
+	case "client.metrics_listen_addr":
+		cfg.Client.MetricsListenAddr = value
+	case "logging.format":
+		cfg.Logging.Format = value
 	default:
 		return fmt.Errorf("unknown key %q", key)
 	}
@@ -923,6 +942,9 @@ type statusOutput struct {
 		User           string `json:"user"`
 		PassConfigured bool   `json:"pass_configured"`
 	} `json:"rpc"`
+	Logging struct {
+		Format string `json:"format"`
+	} `json:"logging"`
 	Provider struct {
 		InterfaceName        string `json:"interface_name"`
 		ListenPort           int    `json:"listen_port"`
@@ -937,12 +959,14 @@ type statusOutput struct {
 		BandwidthLimit       string `json:"bandwidth_limit"`
 		TunIP                string `json:"tun_ip"`
 		TunSubnet            string `json:"tun_subnet"`
+		MetricsListenAddr    string `json:"metrics_listen_addr"`
 	} `json:"provider"`
 	Client struct {
-		InterfaceName    string `json:"interface_name"`
-		TunIP            string `json:"tun_ip"`
-		TunSubnet        string `json:"tun_subnet"`
-		EnableKillSwitch bool   `json:"enable_kill_switch"`
+		InterfaceName     string `json:"interface_name"`
+		TunIP             string `json:"tun_ip"`
+		TunSubnet         string `json:"tun_subnet"`
+		EnableKillSwitch  bool   `json:"enable_kill_switch"`
+		MetricsListenAddr string `json:"metrics_listen_addr"`
 	} `json:"client"`
 	History struct {
 		RecordCount int    `json:"record_count"`
@@ -980,6 +1004,7 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	status.RPC.Host = cfg.RPC.Host
 	status.RPC.User = cfg.RPC.User
 	status.RPC.PassConfigured = strings.TrimSpace(cfg.RPC.Pass) != ""
+	status.Logging.Format = cfg.Logging.Format
 
 	status.Provider.InterfaceName = cfg.Provider.InterfaceName
 	status.Provider.ListenPort = cfg.Provider.ListenPort
@@ -994,11 +1019,13 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	status.Provider.BandwidthLimit = cfg.Provider.BandwidthLimit
 	status.Provider.TunIP = cfg.Provider.TunIP
 	status.Provider.TunSubnet = cfg.Provider.TunSubnet
+	status.Provider.MetricsListenAddr = cfg.Provider.MetricsListenAddr
 
 	status.Client.InterfaceName = cfg.Client.InterfaceName
 	status.Client.TunIP = cfg.Client.TunIP
 	status.Client.TunSubnet = cfg.Client.TunSubnet
 	status.Client.EnableKillSwitch = cfg.Client.EnableKillSwitch
+	status.Client.MetricsListenAddr = cfg.Client.MetricsListenAddr
 
 	records, err := history.LoadHistory()
 	if err != nil {
@@ -1060,6 +1087,10 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	fmt.Printf("User: %s\n", status.RPC.User)
 	fmt.Printf("Password Configured: %t\n", status.RPC.PassConfigured)
 	fmt.Println()
+	fmt.Println("Logging")
+	fmt.Println(strings.Repeat("-", 20))
+	fmt.Printf("Format: %s\n", status.Logging.Format)
+	fmt.Println()
 
 	fmt.Println("Provider")
 	fmt.Println(strings.Repeat("-", 20))
@@ -1074,6 +1105,7 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	fmt.Printf("Health Checks: %t (%s)\n", status.Provider.HealthCheckEnabled, status.Provider.HealthCheckInterval)
 	fmt.Printf("Bandwidth Limit: %s\n", status.Provider.BandwidthLimit)
 	fmt.Printf("TUN: %s/%s\n", status.Provider.TunIP, status.Provider.TunSubnet)
+	fmt.Printf("Metrics Listen Addr: %s\n", status.Provider.MetricsListenAddr)
 	fmt.Println()
 
 	fmt.Println("Client")
@@ -1081,6 +1113,7 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	fmt.Printf("Interface: %s\n", status.Client.InterfaceName)
 	fmt.Printf("TUN: %s/%s\n", status.Client.TunIP, status.Client.TunSubnet)
 	fmt.Printf("Kill Switch: %t\n", status.Client.EnableKillSwitch)
+	fmt.Printf("Metrics Listen Addr: %s\n", status.Client.MetricsListenAddr)
 	fmt.Println()
 
 	fmt.Println("History")

@@ -12,6 +12,7 @@ When a client connects to a provider, BlockchainVPN automatically:
 4. Applies DNS servers for leak-resistant resolution.
 5. Restores previous route and DNS state when the session ends.
 6. Optionally enables kill switch rules/routes to block non-tunnel egress during the session.
+7. Writes a crash-safe cleanup marker before network mutation, and restores pending route/DNS state on next app startup after abnormal termination.
 
 Platform backends:
 
@@ -62,3 +63,5 @@ Use:
 ```
 
 `status` reports privilege readiness and key runtime settings required for automated networking.
+
+If metrics addresses are configured, runtime health/session counters are also exposed via `/metrics.json`.

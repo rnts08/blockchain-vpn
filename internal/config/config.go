@@ -12,12 +12,17 @@ type Config struct {
 	RPC      RPCConfig      `json:"rpc"`
 	Provider ProviderConfig `json:"provider"`
 	Client   ClientConfig   `json:"client"`
+	Logging  LoggingConfig  `json:"logging"`
 }
 
 type RPCConfig struct {
 	Host string `json:"host"`
 	User string `json:"user"`
 	Pass string `json:"pass"`
+}
+
+type LoggingConfig struct {
+	Format string `json:"format"` // "text" or "json"
 }
 
 type ProviderConfig struct {
@@ -41,13 +46,15 @@ type ProviderConfig struct {
 	BandwidthMonitorInterval string `json:"bandwidth_monitor_interval"`
 	TunIP                    string `json:"tun_ip"`
 	TunSubnet                string `json:"tun_subnet"`
+	MetricsListenAddr        string `json:"metrics_listen_addr"` // e.g. "127.0.0.1:9090"
 }
 
 type ClientConfig struct {
-	InterfaceName    string `json:"interface_name"`
-	TunIP            string `json:"tun_ip"`
-	TunSubnet        string `json:"tun_subnet"`
-	EnableKillSwitch bool   `json:"enable_kill_switch"`
+	InterfaceName     string `json:"interface_name"`
+	TunIP             string `json:"tun_ip"`
+	TunSubnet         string `json:"tun_subnet"`
+	EnableKillSwitch  bool   `json:"enable_kill_switch"`
+	MetricsListenAddr string `json:"metrics_listen_addr"` // e.g. "127.0.0.1:9091"
 }
 
 const AppConfigDirName = "BlockchainVPN"
@@ -140,6 +147,9 @@ func GenerateDefaultConfig(path string) error {
 			User: "yourrpcuser",
 			Pass: "yourrpcpassword",
 		},
+		Logging: LoggingConfig{
+			Format: "text",
+		},
 		Provider: ProviderConfig{
 			InterfaceName:            "bcvpn0",
 			ListenPort:               51820,
@@ -161,12 +171,14 @@ func GenerateDefaultConfig(path string) error {
 			BandwidthMonitorInterval: "30s",
 			TunIP:                    "10.10.0.1",
 			TunSubnet:                "24",
+			MetricsListenAddr:        "",
 		},
 		Client: ClientConfig{
-			InterfaceName:    "bcvpn1",
-			TunIP:            "10.10.0.2",
-			TunSubnet:        "24",
-			EnableKillSwitch: false,
+			InterfaceName:     "bcvpn1",
+			TunIP:             "10.10.0.2",
+			TunSubnet:         "24",
+			EnableKillSwitch:  false,
+			MetricsListenAddr: "",
 		},
 	}
 
