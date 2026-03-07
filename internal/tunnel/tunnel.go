@@ -94,6 +94,27 @@ type ClientMap struct {
 	mu sync.RWMutex
 }
 
+// AddSession atomically registers a session under ip, respecting maxConsumers.
+// Returns false (and does NOT register the session) if the limit is already reached.
+func (c *ClientMap) AddSession(ip net.IP, session *clientSession, maxConsumers int) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if maxConsumers > 0 && len(c.m) >= maxConsumers {
+		return false
+	}
+	c.m[ip.String()] = session
+	sessionOpened()
+	return true
+}
+
+// RemoveSession unregisters the session for ip and decrements the active-session counter.
+func (c *ClientMap) RemoveSession(ip net.IP) {
+	c.mu.Lock()
+	delete(c.m, ip.String())
+	c.mu.Unlock()
+	sessionClosed()
+}
+
 // StartProviderServer sets up the TUN interface and listens for TLS connections.
 func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *config.SecurityConfig, privKey *btcec.PrivateKey, authManager *auth.AuthManager) error {
 	if err := EnsureElevatedPrivileges(); err != nil {
@@ -291,29 +312,22 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 			continue
 		}
 
-		// Register client
-		clients.mu.Lock()
-		if cfg.MaxConsumers > 0 && len(clients.m) >= cfg.MaxConsumers {
-			clients.mu.Unlock()
+		session := newClientSession(conn, limitBytesPerSec)
+		if !clients.AddSession(assignedIP, session, cfg.MaxConsumers) {
+			log.Printf("Connection from %s rejected: provider at max consumer capacity (%d)", conn.RemoteAddr(), cfg.MaxConsumers)
+			recordEvent("provider", "reject_capacity", conn.RemoteAddr().String())
+			recordRuntimeError(fmt.Errorf("provider max consumer capacity reached"))
 			ipPool.Release(assignedIP)
 			conn.Close()
-			recordRuntimeError(fmt.Errorf("provider max consumer capacity reached"))
 			continue
 		}
-		session := newClientSession(conn, limitBytesPerSec)
-		clients.m[assignedIP.String()] = session
-		clients.mu.Unlock()
-		sessionOpened()
 
 		// Handle client traffic and session
 		go func(c net.Conn, ip net.IP, pk *btcec.PublicKey) {
 			defer c.Close()
 			defer ipPool.Release(ip)
 			defer func() {
-				clients.mu.Lock()
-				delete(clients.m, ip.String())
-				clients.mu.Unlock()
-				sessionClosed()
+				clients.RemoveSession(ip)
 				log.Printf("Client %s (%s) disconnected.", hex.EncodeToString(pk.SerializeCompressed()), c.RemoteAddr())
 				recordEvent("provider", "client_disconnected", c.RemoteAddr().String())
 			}()
