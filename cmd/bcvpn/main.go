@@ -94,10 +94,15 @@ func main() {
 	scanCountry := scanCmd.String("country", "", "Filter providers by country code (e.g., US, DE)")
 	scanDryRun := scanCmd.Bool("dry-run", false, "Simulate connection without spending funds or modifying interfaces")
 	historySinceLast := historyCmd.Bool("since-last-payment", false, "Show wallet transactions since the last recorded payment")
+	startProviderKeyPassEnv := startProviderCmd.String("key-password-env", "", "Env var name containing provider key password (file mode)")
+	rebroadcastKeyPassEnv := rebroadcastCmd.String("key-password-env", "", "Env var name containing provider key password (file mode)")
+	updatePriceKeyPassEnv := updatePriceCmd.String("key-password-env", "", "Env var name containing provider key password (file mode)")
 
 	// Update-price specific flags
 	updatePriceNewPrice := updatePriceCmd.Uint64("price", 0, "The new price in satoshis per session")
 	rotateKeyPath := rotateKeyCmd.String("key-file", "", "Provider private key file to rotate (defaults to provider.private_key_file from config)")
+	rotateOldPassEnv := rotateKeyCmd.String("old-password-env", "", "Env var name containing current key password (file mode)")
+	rotateNewPassEnv := rotateKeyCmd.String("new-password-env", "", "Env var name containing new key password (file mode)")
 	statusJSON := statusCmd.Bool("json", false, "Output status in machine-readable JSON format")
 	configJSON := configCmd.Bool("json", false, "Output in machine-readable JSON format")
 	versionJSON := versionCmd.Bool("json", false, "Output version in machine-readable JSON format")
@@ -123,7 +128,7 @@ func main() {
 
 		authManager := auth.NewAuthManager()
 
-		providerKey, err := getProviderKey(cfg)
+		providerKey, err := getProviderKey(cfg, *startProviderKeyPassEnv)
 		if err != nil {
 			log.Fatalf("Failed to get provider key: %v", err)
 		}
@@ -181,7 +186,7 @@ func main() {
 		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
 		defer client.Shutdown()
 
-		providerKey, err := getProviderKey(cfg)
+		providerKey, err := getProviderKey(cfg, *rebroadcastKeyPassEnv)
 		if err != nil {
 			log.Fatalf("Failed to get provider key: %v", err)
 		}
@@ -211,7 +216,7 @@ func main() {
 		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
 		defer client.Shutdown()
 
-		providerKey, err := getProviderKey(cfg)
+		providerKey, err := getProviderKey(cfg, *updatePriceKeyPassEnv)
 		if err != nil {
 			log.Fatalf("Failed to get provider key: %v", err)
 		}
@@ -292,7 +297,7 @@ func main() {
 		if strings.TrimSpace(*rotateKeyPath) != "" {
 			keyPath = strings.TrimSpace(*rotateKeyPath)
 		}
-		if err := rotateProviderKey(cfg, keyPath); err != nil {
+		if err := rotateProviderKey(cfg, keyPath, *rotateOldPassEnv, *rotateNewPassEnv); err != nil {
 			log.Fatalf("Provider key rotation failed: %v", err)
 		}
 		log.Printf("Provider key rotated successfully. Re-broadcast your service to publish the new public key.")
@@ -492,7 +497,7 @@ func connectRPC(host, user, pass string) *rpcclient.Client {
 	return client
 }
 
-func getProviderKey(cfg *config.Config) (*btcec.PrivateKey, error) {
+func getProviderKey(cfg *config.Config, passwordEnv string) (*btcec.PrivateKey, error) {
 	keyPath := cfg.Provider.PrivateKeyFile
 	resolvedMode, err := crypto.ResolveKeyStorageMode(cfg.Security.KeyStorageMode)
 	if err != nil {
@@ -508,10 +513,21 @@ func getProviderKey(cfg *config.Config) (*btcec.PrivateKey, error) {
 	}
 
 	reader := bufio.NewReader(os.Stdin)
+	passwordFromEnv := []byte{}
+	if name := strings.TrimSpace(passwordEnv); name != "" {
+		value := strings.TrimSpace(os.Getenv(name))
+		if value == "" {
+			return nil, fmt.Errorf("env var %s is empty or not set", name)
+		}
+		passwordFromEnv = []byte(value)
+	}
 	if _, err := os.Stat(keyPath); err == nil {
-		fmt.Print("Enter password to decrypt provider key: ")
-		pass, _ := reader.ReadString('\n')
-		password := []byte(strings.TrimSpace(pass))
+		password := passwordFromEnv
+		if len(password) == 0 {
+			fmt.Print("Enter password to decrypt provider key: ")
+			pass, _ := reader.ReadString('\n')
+			password = []byte(strings.TrimSpace(pass))
+		}
 		key, err := crypto.LoadAndDecryptKey(keyPath, password)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load and decrypt key: %w", err)
@@ -521,14 +537,17 @@ func getProviderKey(cfg *config.Config) (*btcec.PrivateKey, error) {
 	}
 
 	fmt.Println("No provider key found. Let's create a new encrypted key.")
-	fmt.Print("Enter new password for provider key: ")
-	pass1, _ := reader.ReadString('\n')
-	fmt.Print("Confirm new password: ")
-	pass2, _ := reader.ReadString('\n')
-	if strings.TrimSpace(pass1) != strings.TrimSpace(pass2) {
-		return nil, fmt.Errorf("passwords do not match")
+	password := passwordFromEnv
+	if len(password) == 0 {
+		fmt.Print("Enter new password for provider key: ")
+		pass1, _ := reader.ReadString('\n')
+		fmt.Print("Confirm new password: ")
+		pass2, _ := reader.ReadString('\n')
+		if strings.TrimSpace(pass1) != strings.TrimSpace(pass2) {
+			return nil, fmt.Errorf("passwords do not match")
+		}
+		password = []byte(strings.TrimSpace(pass1))
 	}
-	password := []byte(strings.TrimSpace(pass1))
 	if len(password) == 0 {
 		return nil, fmt.Errorf("password cannot be empty")
 	}
@@ -541,7 +560,7 @@ func getProviderKey(cfg *config.Config) (*btcec.PrivateKey, error) {
 	return key, nil
 }
 
-func rotateProviderKey(cfg *config.Config, keyPath string) error {
+func rotateProviderKey(cfg *config.Config, keyPath, oldPasswordEnv, newPasswordEnv string) error {
 	resolvedMode, err := crypto.ResolveKeyStorageMode(cfg.Security.KeyStorageMode)
 	if err != nil {
 		return err
@@ -559,23 +578,29 @@ func rotateProviderKey(cfg *config.Config, keyPath string) error {
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Enter current password to decrypt provider key: ")
-	oldPass, _ := reader.ReadString('\n')
-	oldPassword := []byte(strings.TrimSpace(oldPass))
+	oldPassword := []byte(strings.TrimSpace(os.Getenv(strings.TrimSpace(oldPasswordEnv))))
+	if len(oldPassword) == 0 {
+		fmt.Print("Enter current password to decrypt provider key: ")
+		oldPass, _ := reader.ReadString('\n')
+		oldPassword = []byte(strings.TrimSpace(oldPass))
+	}
 	if len(oldPassword) == 0 {
 		return fmt.Errorf("old password cannot be empty")
 	}
 
-	fmt.Print("Enter new password for rotated provider key: ")
-	pass1, _ := reader.ReadString('\n')
-	fmt.Print("Confirm new password: ")
-	pass2, _ := reader.ReadString('\n')
-	newPassword := strings.TrimSpace(pass1)
+	newPassword := strings.TrimSpace(os.Getenv(strings.TrimSpace(newPasswordEnv)))
 	if newPassword == "" {
-		return fmt.Errorf("new password cannot be empty")
+		fmt.Print("Enter new password for rotated provider key: ")
+		pass1, _ := reader.ReadString('\n')
+		fmt.Print("Confirm new password: ")
+		pass2, _ := reader.ReadString('\n')
+		newPassword = strings.TrimSpace(pass1)
+		if newPassword != strings.TrimSpace(pass2) {
+			return fmt.Errorf("new passwords do not match")
+		}
 	}
-	if newPassword != strings.TrimSpace(pass2) {
-		return fmt.Errorf("new passwords do not match")
+	if strings.TrimSpace(newPassword) == "" {
+		return fmt.Errorf("new password cannot be empty")
 	}
 
 	if err := crypto.RotateProviderKey(keyPath, oldPassword, []byte(newPassword), cfg.Security.KeyStorageMode, cfg.Security.KeyStorageService); err != nil {

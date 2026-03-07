@@ -216,6 +216,13 @@ To start selling bandwidth:
 ./bcvpn start-provider
 ```
 
+Non-interactive key unlock for automation (file mode):
+
+```bash
+export BCVPN_KEY_PASSWORD='your-password'
+./bcvpn start-provider --key-password-env BCVPN_KEY_PASSWORD
+```
+
 *   This command will:
     1.  Set up the provider TUN interface (requires elevated privileges on most systems).
     2.  Announce your service on the blockchain (requires wallet funds).
@@ -247,6 +254,7 @@ To start selling bandwidth:
     Rotate the encrypted provider key file and generate a new provider identity.
     ```bash
     ./bcvpn rotate-provider-key
+    ./bcvpn rotate-provider-key --old-password-env BCVPN_OLD_PASS --new-password-env BCVPN_NEW_PASS
     ```
 
 5.  **Status (Human or JSON)**:

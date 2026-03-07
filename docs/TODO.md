@@ -28,7 +28,7 @@ This list is a new post-MVP backlog based on a full code and docs review.
 - [ ] Add alerting hooks/webhook support for provider failures (listener down, TUN down, auth failures burst).
 
 ## 5. CLI and GUI Quality of Life
-- [ ] Add non-interactive provider key bootstrap/rotate flags for automation (`--password-env`, secure prompt fallback).
+- [x] Add non-interactive provider key bootstrap/rotate flags for automation (`--password-env`, secure prompt fallback).
 - [ ] Add import/export profile support in GUI and CLI (`config export`, `config import --validate`).
 - [ ] Add one-click “copy diagnostics bundle” (status JSON + redacted config + recent logs).
 - [ ] Add provider/client preset templates for common home-router and VPS deployments.
