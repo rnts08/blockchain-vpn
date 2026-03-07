@@ -34,7 +34,7 @@
 - [x] Add optional allowlist/denylist for provider access policies.
 
 ## 6. Product Surface
-- [ ] Implement GUI app based on `docs/GUI.md`.
-- [ ] Add machine-readable status output for automation (`--json` mode).
-- [ ] Add installation and OS-specific privilege setup guides.
+- [x] Implement GUI app based on `docs/GUI.md`.
+- [x] Add machine-readable status output for automation (`--json` mode).
+- [x] Add installation and OS-specific privilege setup guides.
 - [x] Use OS application config directory for `config.json`, `provider.key`, and `history.json`.

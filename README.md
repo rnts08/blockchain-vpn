@@ -99,14 +99,15 @@ Clients purchase access by sending a transaction to the provider's address (deri
 *   **OrdexCoin Core (`ordexcoind`)** running and fully synced.
     *   RPC must be enabled (`server=1`).
     *   Transaction indexing (`txindex=1`) is recommended for faster scanning but not strictly required for basic operation.
-*   On Linux, root/admin access is required to create/configure TUN and route/DNS settings.
-*   On macOS/Windows, automatic route/DNS configuration is currently not implemented; manual setup is required after tunnel connection.
+*   Elevated privileges are required on Linux/macOS/Windows to configure TUN, routes, DNS, and provider NAT features.
 *   **GeoIP Database**: Download `GeoLite2-Country.mmdb` from MaxMind and place it in the project root for country detection.
+*   See [docs/INSTALL.md](docs/INSTALL.md) for OS-specific installation and privilege setup.
 
 ### Installation
 
 ```bash
 go build -o bcvpn ./cmd/bcvpn/
+go build -o bcvpn-gui ./cmd/bcvpn-gui/
 ```
 
 ### Configuration
@@ -206,6 +207,13 @@ To start selling bandwidth:
     ./bcvpn rotate-provider-key
     ```
 
+5.  **Status (Human or JSON)**:
+    Inspect current config/runtime readiness for automation or diagnostics.
+    ```bash
+    ./bcvpn status
+    ./bcvpn status --json
+    ```
+
 ## 5. Using Other Blockchains
 
 While designed for OrdexCoin, this software is compatible with most Bitcoin-derived blockchains (Bitcoin, Litecoin, Dogecoin, etc.) that support `OP_RETURN` and the standard RPC interface.
@@ -238,7 +246,7 @@ To adapt this for another chain:
     - [x] Payment history logging.
 - [x] **Cross-Platform Buildability**:
     - [x] Linux support (full runtime feature set).
-    - [x] Windows/macOS compilation support (networking stubs for unsupported automatic setup).
+    - [x] macOS and Windows route/DNS runtime backends.
 
 ### Todo List
 
@@ -276,11 +284,13 @@ To adapt this for another chain:
   - [x] **Session Management**: Implement logic to handle session expiration gracefully (auto-disconnect or auto-renew).
 
 - [ ] **Future Refactoring & Features**
-  - [ ] **GUI Implementation**: Build a graphical user interface based on `GUI.md`.
+  - [x] **GUI Implementation**: Build a graphical user interface based on `GUI.md`.
   - [x] **Code Structure**: Refactor into logical sub-packages (`internal/protocol`, `internal/tunnel`, etc.).
   - [x] **Coin Selection**: Implement deterministic UTXO selection instead of using the first available.
   - [x] **Fee Estimation**: Replace hardcoded transaction fees with dynamic estimation using `estimatesmartfee` + relay-fee fallback.
   - [x] **Configuration Management**: Move configuration files (`config.json`, `provider.key`, `history.json`) to a dedicated OS application config directory.
+  - [x] **Automation Status Output**: Add machine-readable status output (`bcvpn status --json`).
+  - [x] **Install/Privilege Guides**: Add installation and OS-specific privilege setup guide (`docs/INSTALL.md`).
 
 
 ## 7. Project File Layout

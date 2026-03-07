@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,6 +69,7 @@ func main() {
 	rebroadcastCmd := flag.NewFlagSet("rebroadcast", flag.ExitOnError)
 	updatePriceCmd := flag.NewFlagSet("update-price", flag.ExitOnError)
 	rotateKeyCmd := flag.NewFlagSet("rotate-provider-key", flag.ExitOnError)
+	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
 
 	// Scan specific flags
 	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
@@ -78,9 +81,10 @@ func main() {
 	// Update-price specific flags
 	updatePriceNewPrice := updatePriceCmd.Uint64("price", 0, "The new price in satoshis per session")
 	rotateKeyPath := rotateKeyCmd.String("key-file", "", "Provider private key file to rotate (defaults to provider.private_key_file from config)")
+	statusJSON := statusCmd.Bool("json", false, "Output status in machine-readable JSON format")
 
 	if len(os.Args) < 2 {
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', or 'history' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', or 'status' subcommands")
 		os.Exit(1)
 	}
 
@@ -268,8 +272,12 @@ func main() {
 			handleFullHistory()
 		}
 
+	case "status":
+		statusCmd.Parse(os.Args[2:])
+		handleStatus(cfg, configPath, *statusJSON)
+
 	default:
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', or 'history' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', or 'status' subcommands")
 		os.Exit(1)
 	}
 }
@@ -629,4 +637,216 @@ func handleHistorySinceLast(cfg *config.Config) {
 	if !found {
 		fmt.Println("No new transactions found.")
 	}
+}
+
+type fileStatus struct {
+	Path      string `json:"path"`
+	Exists    bool   `json:"exists"`
+	SizeBytes int64  `json:"size_bytes,omitempty"`
+	ModTime   string `json:"mod_time,omitempty"`
+}
+
+type statusOutput struct {
+	GeneratedAt  string `json:"generated_at"`
+	OS           string `json:"os"`
+	Arch         string `json:"arch"`
+	AppConfigDir string `json:"app_config_dir"`
+	ConfigPath   string `json:"config_path"`
+	Files        struct {
+		Config      fileStatus `json:"config"`
+		ProviderKey fileStatus `json:"provider_key"`
+		History     fileStatus `json:"history"`
+	} `json:"files"`
+	RPC struct {
+		Host           string `json:"host"`
+		User           string `json:"user"`
+		PassConfigured bool   `json:"pass_configured"`
+	} `json:"rpc"`
+	Provider struct {
+		InterfaceName        string `json:"interface_name"`
+		ListenPort           int    `json:"listen_port"`
+		AnnounceIP           string `json:"announce_ip"`
+		Price                uint64 `json:"price_sats_per_session"`
+		EnableNAT            bool   `json:"enable_nat"`
+		EnableEgressNAT      bool   `json:"enable_egress_nat"`
+		NATOutboundInterface string `json:"nat_outbound_interface"`
+		IsolationMode        string `json:"isolation_mode"`
+		HealthCheckEnabled   bool   `json:"health_check_enabled"`
+		HealthCheckInterval  string `json:"health_check_interval"`
+		BandwidthLimit       string `json:"bandwidth_limit"`
+		TunIP                string `json:"tun_ip"`
+		TunSubnet            string `json:"tun_subnet"`
+	} `json:"provider"`
+	Client struct {
+		InterfaceName string `json:"interface_name"`
+		TunIP         string `json:"tun_ip"`
+		TunSubnet     string `json:"tun_subnet"`
+	} `json:"client"`
+	History struct {
+		RecordCount int    `json:"record_count"`
+		LastPayment string `json:"last_payment,omitempty"`
+		LoadError   string `json:"load_error,omitempty"`
+	} `json:"history"`
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
+	status := statusOutput{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		OS:          runtime.GOOS,
+		Arch:        runtime.GOARCH,
+		ConfigPath:  configPath,
+	}
+
+	appConfigDir, err := config.AppConfigDir()
+	if err != nil {
+		status.Warnings = append(status.Warnings, fmt.Sprintf("could not resolve app config dir: %v", err))
+	} else {
+		status.AppConfigDir = appConfigDir
+	}
+
+	status.Files.Config = inspectFile(configPath)
+	status.Files.ProviderKey = inspectFile(cfg.Provider.PrivateKeyFile)
+	if appConfigDir != "" {
+		status.Files.History = inspectFile(filepath.Join(appConfigDir, "history.json"))
+	}
+
+	status.RPC.Host = cfg.RPC.Host
+	status.RPC.User = cfg.RPC.User
+	status.RPC.PassConfigured = strings.TrimSpace(cfg.RPC.Pass) != ""
+
+	status.Provider.InterfaceName = cfg.Provider.InterfaceName
+	status.Provider.ListenPort = cfg.Provider.ListenPort
+	status.Provider.AnnounceIP = cfg.Provider.AnnounceIP
+	status.Provider.Price = cfg.Provider.Price
+	status.Provider.EnableNAT = cfg.Provider.EnableNAT
+	status.Provider.EnableEgressNAT = cfg.Provider.EnableEgressNAT
+	status.Provider.NATOutboundInterface = cfg.Provider.NATOutboundInterface
+	status.Provider.IsolationMode = cfg.Provider.IsolationMode
+	status.Provider.HealthCheckEnabled = cfg.Provider.HealthCheckEnabled
+	status.Provider.HealthCheckInterval = cfg.Provider.HealthCheckInterval
+	status.Provider.BandwidthLimit = cfg.Provider.BandwidthLimit
+	status.Provider.TunIP = cfg.Provider.TunIP
+	status.Provider.TunSubnet = cfg.Provider.TunSubnet
+
+	status.Client.InterfaceName = cfg.Client.InterfaceName
+	status.Client.TunIP = cfg.Client.TunIP
+	status.Client.TunSubnet = cfg.Client.TunSubnet
+
+	records, err := history.LoadHistory()
+	if err != nil {
+		if !os.IsNotExist(err) {
+			status.History.LoadError = err.Error()
+			status.Warnings = append(status.Warnings, fmt.Sprintf("failed to load history: %v", err))
+		}
+	} else {
+		status.History.RecordCount = len(records)
+		if len(records) > 0 {
+			sort.Slice(records, func(i, j int) bool { return records[i].Timestamp.After(records[j].Timestamp) })
+			status.History.LastPayment = records[0].Timestamp.UTC().Format(time.RFC3339)
+		}
+	}
+
+	if !status.Files.ProviderKey.Exists {
+		status.Warnings = append(status.Warnings, "provider key file does not exist; provider mode will generate a new encrypted key on first start")
+	}
+	if strings.TrimSpace(cfg.Provider.AnnounceIP) == "" {
+		status.Warnings = append(status.Warnings, "provider announce_ip is empty; public IP will be auto-detected at runtime")
+	}
+	if cfg.Provider.EnableEgressNAT && strings.TrimSpace(cfg.Provider.NATOutboundInterface) == "" {
+		status.Warnings = append(status.Warnings, "provider egress NAT is enabled but nat_outbound_interface is empty")
+	}
+
+	if jsonMode {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(status); err != nil {
+			log.Fatalf("Failed to encode status JSON: %v", err)
+		}
+		return
+	}
+
+	fmt.Println("BlockchainVPN Status")
+	fmt.Println(strings.Repeat("=", 20))
+	fmt.Printf("Generated At: %s\n", status.GeneratedAt)
+	fmt.Printf("Platform: %s/%s\n", status.OS, status.Arch)
+	fmt.Printf("App Config Dir: %s\n", status.AppConfigDir)
+	fmt.Printf("Config Path: %s\n", status.ConfigPath)
+	fmt.Println()
+
+	fmt.Println("Files")
+	fmt.Println(strings.Repeat("-", 20))
+	fmt.Printf("Config: %s\n", formatFileStatus(status.Files.Config))
+	fmt.Printf("Provider Key: %s\n", formatFileStatus(status.Files.ProviderKey))
+	fmt.Printf("History: %s\n", formatFileStatus(status.Files.History))
+	fmt.Println()
+
+	fmt.Println("RPC")
+	fmt.Println(strings.Repeat("-", 20))
+	fmt.Printf("Host: %s\n", status.RPC.Host)
+	fmt.Printf("User: %s\n", status.RPC.User)
+	fmt.Printf("Password Configured: %t\n", status.RPC.PassConfigured)
+	fmt.Println()
+
+	fmt.Println("Provider")
+	fmt.Println(strings.Repeat("-", 20))
+	fmt.Printf("Interface: %s\n", status.Provider.InterfaceName)
+	fmt.Printf("Listen Port: %d\n", status.Provider.ListenPort)
+	fmt.Printf("Announce IP: %s\n", status.Provider.AnnounceIP)
+	fmt.Printf("Price: %d sats/session\n", status.Provider.Price)
+	fmt.Printf("NAT Traversal: %t\n", status.Provider.EnableNAT)
+	fmt.Printf("Egress NAT: %t\n", status.Provider.EnableEgressNAT)
+	fmt.Printf("NAT Outbound Interface: %s\n", status.Provider.NATOutboundInterface)
+	fmt.Printf("Isolation Mode: %s\n", status.Provider.IsolationMode)
+	fmt.Printf("Health Checks: %t (%s)\n", status.Provider.HealthCheckEnabled, status.Provider.HealthCheckInterval)
+	fmt.Printf("Bandwidth Limit: %s\n", status.Provider.BandwidthLimit)
+	fmt.Printf("TUN: %s/%s\n", status.Provider.TunIP, status.Provider.TunSubnet)
+	fmt.Println()
+
+	fmt.Println("Client")
+	fmt.Println(strings.Repeat("-", 20))
+	fmt.Printf("Interface: %s\n", status.Client.InterfaceName)
+	fmt.Printf("TUN: %s/%s\n", status.Client.TunIP, status.Client.TunSubnet)
+	fmt.Println()
+
+	fmt.Println("History")
+	fmt.Println(strings.Repeat("-", 20))
+	fmt.Printf("Records: %d\n", status.History.RecordCount)
+	if status.History.LastPayment != "" {
+		fmt.Printf("Last Payment: %s\n", status.History.LastPayment)
+	}
+	if status.History.LoadError != "" {
+		fmt.Printf("Load Error: %s\n", status.History.LoadError)
+	}
+
+	if len(status.Warnings) > 0 {
+		fmt.Println()
+		fmt.Println("Warnings")
+		fmt.Println(strings.Repeat("-", 20))
+		for _, warning := range status.Warnings {
+			fmt.Printf("- %s\n", warning)
+		}
+	}
+}
+
+func inspectFile(path string) fileStatus {
+	st := fileStatus{Path: path}
+	if strings.TrimSpace(path) == "" {
+		return st
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return st
+	}
+	st.Exists = true
+	st.SizeBytes = info.Size()
+	st.ModTime = info.ModTime().UTC().Format(time.RFC3339)
+	return st
+}
+
+func formatFileStatus(st fileStatus) string {
+	if !st.Exists {
+		return fmt.Sprintf("%s (missing)", st.Path)
+	}
+	return fmt.Sprintf("%s (size=%d, modified=%s)", st.Path, st.SizeBytes, st.ModTime)
 }
