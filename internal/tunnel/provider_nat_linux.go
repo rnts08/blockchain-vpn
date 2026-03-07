@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+var runNATCommand = runLinuxCommand
+
 func setupProviderEgressNAT(tunIfName, tunIP, tunSubnet, outboundIf string) (func(), error) {
 	if tunIfName == "" {
 		return nil, fmt.Errorf("provider TUN interface name is required")
@@ -29,7 +31,7 @@ func setupProviderEgressNAT(tunIfName, tunIP, tunSubnet, outboundIf string) (fun
 	}
 
 	previousForwarding, _ := os.ReadFile("/proc/sys/net/ipv4/ip_forward")
-	if _, err := runLinuxCommand("sysctl", "-w", "net.ipv4.ip_forward=1"); err != nil {
+	if _, err := runNATCommand("sysctl", "-w", "net.ipv4.ip_forward=1"); err != nil {
 		return nil, fmt.Errorf("failed to enable ipv4 forwarding: %w", err)
 	}
 
@@ -39,7 +41,7 @@ func setupProviderEgressNAT(tunIfName, tunIP, tunSubnet, outboundIf string) (fun
 		{"-t", "nat", "-A", "POSTROUTING", "-s", cidr, "-o", outboundIf, "-j", "MASQUERADE"},
 	}
 	for _, rule := range rules {
-		if _, err := runLinuxCommand("iptables", rule...); err != nil {
+		if _, err := runNATCommand("iptables", rule...); err != nil {
 			restoreProviderNATRules(tunIfName, outboundIf, cidr, previousForwarding)
 			return nil, fmt.Errorf("failed to apply iptables rule %v: %w", rule, err)
 		}
@@ -52,16 +54,16 @@ func setupProviderEgressNAT(tunIfName, tunIP, tunSubnet, outboundIf string) (fun
 }
 
 func restoreProviderNATRules(tunIfName, outboundIf, cidr string, previousForwarding []byte) {
-	_, _ = runLinuxCommand("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", cidr, "-o", outboundIf, "-j", "MASQUERADE")
-	_, _ = runLinuxCommand("iptables", "-D", "FORWARD", "-i", outboundIf, "-o", tunIfName, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT")
-	_, _ = runLinuxCommand("iptables", "-D", "FORWARD", "-i", tunIfName, "-o", outboundIf, "-j", "ACCEPT")
+	_, _ = runNATCommand("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", cidr, "-o", outboundIf, "-j", "MASQUERADE")
+	_, _ = runNATCommand("iptables", "-D", "FORWARD", "-i", outboundIf, "-o", tunIfName, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT")
+	_, _ = runNATCommand("iptables", "-D", "FORWARD", "-i", tunIfName, "-o", outboundIf, "-j", "ACCEPT")
 	if len(previousForwarding) > 0 {
-		_, _ = runLinuxCommand("sysctl", "-w", fmt.Sprintf("net.ipv4.ip_forward=%s", strings.TrimSpace(string(previousForwarding))))
+		_, _ = runNATCommand("sysctl", "-w", fmt.Sprintf("net.ipv4.ip_forward=%s", strings.TrimSpace(string(previousForwarding))))
 	}
 }
 
 func getDefaultOutboundInterface() (string, error) {
-	out, err := runLinuxCommand("ip", "route", "show", "default")
+	out, err := runNATCommand("ip", "route", "show", "default")
 	if err != nil {
 		return "", fmt.Errorf("failed to read default route: %w", err)
 	}

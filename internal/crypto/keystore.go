@@ -251,9 +251,13 @@ func saveSecret(mode, service, account, dpapiPath, secret string) error {
 	}
 }
 
-func commandExists(name string) bool {
+var commandLookup = func(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
+}
+
+func commandExists(name string) bool {
+	return commandLookup(name)
 }
 
 func loadSecretKeychain(service, account string) (string, error) {
