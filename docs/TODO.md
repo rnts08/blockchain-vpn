@@ -1,34 +1,37 @@
-# BlockchainVPN TODO (Open Items)
+# BlockchainVPN TODO
 
-This list contains only remaining work after the latest parity and runtime pass.
+## Completed In 0.3.0
 
-## 1. Marketplace Protocol Completeness
-- [ ] Add a v2 on-chain provider metadata payload that includes:
-  bandwidth offer, max consumers, provider-declared origin/country, and availability flags.
-- [ ] Add scanner support for v2 payloads while keeping backward compatibility with v1 announcements.
-- [ ] Add provider heartbeat/availability broadcasts so clients can prefer currently-online providers.
+### Marketplace Protocol Completeness
+- [x] Added v2 on-chain provider metadata payload with bandwidth, max consumers, country, and availability flags.
+- [x] Added scanner support for v1 and v2 payloads with merged provider state.
+- [x] Added provider heartbeat/availability broadcasts.
 
-## 2. Discovery and Selection UX
-- [ ] Add CLI/GUI filtering and sorting by advertised bandwidth and capacity once v2 metadata is available.
-- [ ] Add richer search filters (country, max price, min bandwidth, max latency, available slots).
-- [ ] Show effective provider score/ranking inputs directly in scan results (price, latency, country confidence, capacity).
+### Discovery and Selection UX
+- [x] Added CLI/GUI sorting by bandwidth and capacity.
+- [x] Added richer search filters (country, max price, min bandwidth, max latency, available slots).
+- [x] Added score/ranking output in CLI/GUI provider listings.
 
-## 3. Client Security Verification
-- [ ] Add OS-native DNS server introspection checks (not only DNS query heuristic) to improve leak detection confidence.
-- [ ] Add optional strict mode to fail connection when country verification or IP verification checks fail.
-- [ ] Add active throughput verification against advertised provider bandwidth after connect.
+### Client Security Verification
+- [x] Added OS-native DNS server introspection checks.
+- [x] Added optional strict verification mode for country/IP checks.
+- [x] Added throughput verification against advertised provider bandwidth after connect.
 
-## 4. Provider Runtime and Lifecycle
-- [ ] Add graceful shutdown wait-groups for provider goroutines (listener, echo, payment monitor, health checks).
-- [ ] Add accept-loop backoff + jitter for repeated listener errors.
-- [ ] Add atomic file writes for config/history/cleanup marker updates.
+### Provider Runtime and Lifecycle
+- [x] Added graceful shutdown wait handling for provider goroutine groups in CLI/GUI control flow.
+- [x] Added accept-loop backoff + jitter on provider listener errors.
+- [x] Added atomic file writes for config/history/cleanup marker updates.
 
-## 5. UX and Operations
-- [ ] Add per-session event timeline (connect/auth/revoke/disconnect/errors) in both CLI and GUI.
-- [ ] Add import/export profile commands and GUI actions.
-- [ ] Add one-click diagnostics bundle export (redacted config + status JSON + recent logs).
+### UX and Operations
+- [x] Added per-session event timeline for CLI (`events`) and GUI (Status tab).
+- [x] Added config import/export support in CLI and GUI.
+- [x] Added diagnostics bundle export in CLI (`diagnostics`) and GUI.
 
-## 6. Tests and Hardening
-- [ ] Add integration tests for post-connect security checks with mocked DNS/IP services.
-- [ ] Add cross-platform integration coverage for cleanup-marker recovery and restore behavior.
-- [ ] Add protocol/property tests for future metadata v2 encoding/decoding and scanner merge logic.
+### Tests and Hardening
+- [x] Added post-connect security verification tests with mocked checks and throughput feature test.
+- [x] Added cleanup-marker recovery coverage on Linux/macOS/Windows integration tests.
+- [x] Added protocol tests/fuzz coverage for v2 metadata and heartbeat decoding.
+
+## Future Iteration Candidates
+- [ ] Move throughput verification to provider-assisted active throughput probes to reduce internet speed test dependency.
+- [ ] Add signed provider reputation/quality metadata and weighted selection policy profiles.

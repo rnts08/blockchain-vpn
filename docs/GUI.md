@@ -14,10 +14,12 @@ The current GUI implementation in `cmd/bcvpn-gui` provides:
 - Preflight privilege checks before provider start and before non-dry-run client payment/connection.
 - Status tab with config path, interface settings, privilege readiness summary, and provider/client metrics snapshot refresh.
 - Status tab includes local doctor checks (config/privilege/tool/key-storage readiness) and version display.
+- Status tab includes runtime event timeline and diagnostics bundle export.
 - Wallet tab showing payment history from `history.json`.
 - First-run setup wizard with steps for config readiness, RPC connectivity, provider key creation, and privilege checks.
 - Auto-elevation relaunch action from the wizard (Linux/macOS/Windows backends).
 - Optional runtime metrics endpoints configurable from Provider/Client panels.
+- Settings tab supports profile import/export path actions.
 
 Items in this document not yet implemented are tracked in `docs/TODO.md`.
 

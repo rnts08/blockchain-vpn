@@ -2,7 +2,7 @@
 
 BlockchainVPN is a peer-to-peer VPN marketplace built on top of the OrdexCoin blockchain. It allows anyone to become a VPN provider by announcing their service on-chain, and allows clients to discover, pay for, and connect to these services in a decentralized, permissionless manner.
 
-Current version: `0.2.0`
+Current version: `0.3.0`
 
 ## 1. Architecture Overview
 
@@ -202,7 +202,9 @@ Sample `config.json`:
     "tun_ip": "10.10.0.2",
     "tun_subnet": "24",
     "enable_kill_switch": false,
-    "metrics_listen_addr": "127.0.0.1:9091"
+    "metrics_listen_addr": "127.0.0.1:9091",
+    "strict_verification": false,
+    "verify_throughput_after_connect": true
   }
 }
 ```
@@ -234,9 +236,9 @@ export BCVPN_KEY_PASSWORD='your-password'
 ### For VPN Clients
 
 1.  **Scan for Providers**:
-    Find available VPNs, sorted by latency, price, or country.
+    Find available VPNs, with filters/sorting for latency, price, country, bandwidth, and capacity.
     ```bash
-    ./bcvpn scan --sort=latency --country=US
+    ./bcvpn scan --sort=score --country=US --max-price=2000 --min-bandwidth-kbps=25000 --max-latency-ms=80 --min-available-slots=2
     ```
 
 2.  **Connect**:
@@ -278,6 +280,12 @@ export BCVPN_KEY_PASSWORD='your-password'
     ./bcvpn config set security.key_storage_mode auto
     ./bcvpn config set security.revocation_cache_file /path/to/revoked_keys.txt
     ./bcvpn config set security.tls_profile compat
+    ./bcvpn config set client.strict_verification true
+    ```
+    Import/export are also supported:
+    ```bash
+    ./bcvpn config export ./my-profile.json
+    ./bcvpn config import ./my-profile.json --validate
     ```
 
 7.  **Runtime Metrics Endpoint (Optional)**:
@@ -310,6 +318,13 @@ export BCVPN_KEY_PASSWORD='your-password'
     ./bcvpn doctor
     ./bcvpn doctor --json
     ```
+11. **Event Timeline and Diagnostics**:
+    ```bash
+    ./bcvpn events --limit=100
+    ./bcvpn events --json
+    ./bcvpn diagnostics
+    ./bcvpn diagnostics --out ./diag.json
+    ```
 
 ## 5. Using Other Blockchains
 
@@ -326,7 +341,9 @@ To adapt this for another chain:
 ### Feature Checklist
 
 - [x] On-chain service announcement and discovery protocol (`OP_RETURN` payloads).
+- [x] v2 provider metadata payload (bandwidth, country, capacity, availability flags) with scanner compatibility for v1/v2.
 - [x] Provider service announcement rebroadcasting and price update announcements.
+- [x] Provider heartbeat/availability broadcasts for freshness-aware discovery.
 - [x] TLS-over-TUN tunnel transport with cert identity bound to provider public key.
 - [x] Payment flow with deterministic UTXO selection and dynamic fee estimation (`estimatesmartfee` + relay fallback).
 - [x] Payment monitor with reorg handling and tx->peer authorization tracking.
@@ -342,6 +359,8 @@ To adapt this for another chain:
 - [x] Client routing and DNS auto-configuration for Linux, macOS, and Windows.
 - [x] Optional cross-platform client kill switch mode.
 - [x] Post-connect client security checks (egress IP transition, DNS leak heuristic, provider-country verification).
+- [x] OS-native DNS introspection checks and optional strict verification mode.
+- [x] Throughput verification against advertised provider bandwidth after connect.
 - [x] RPC retry + exponential backoff for transient failures.
 - [x] Payment history storage and reporting.
 - [x] Machine-readable status output for automation (`bcvpn status --json`).
@@ -352,10 +371,13 @@ To adapt this for another chain:
 - [x] Mutual TLS revocation cache enforcement for provider/client cert identity keys.
 - [x] Configurable TLS minimum version/profile with cipher/profile reporting in `status --json`.
 - [x] Scriptable CLI config subcommands (`config get/set/validate`).
+- [x] CLI config profile export/import (`config export`, `config import`).
+- [x] Runtime event timeline and diagnostics bundle export (`events`, `diagnostics`).
 - [x] Cross-platform GUI application (`cmd/bcvpn-gui`) using Fyne.
 - [x] GUI first-run setup wizard (config, RPC, key, privilege checks).
 - [x] GUI auto-elevation relaunch flow (Linux/macOS/Windows backends).
 - [x] GUI parity for provider controls and diagnostics (rebroadcast, price update, metrics snapshots, doctor checks, version visibility).
+- [x] GUI event timeline and one-click diagnostics/profile import-export actions.
 - [x] OS-agnostic application config directory for `config.json`, `provider.key`, and `history.json`.
 
 ### How It Works
@@ -376,10 +398,8 @@ To adapt this for another chain:
 
 ### Gaps and Improvements
 
-- [ ] Extend on-chain provider metadata to include advertised bandwidth, max consumers, and country/region claims for first-class filtering/sorting.
-- [ ] Add explicit on-chain availability/status heartbeat payload so clients can prefer currently-online providers.
-- [ ] Add measured throughput speed tests during provider scan/connect and expose bandwidth sorting in CLI/GUI.
-- [ ] Add stronger DNS leak verification with resolver-level telemetry per OS backend (beyond current heuristic checks).
+- [ ] Improve throughput verification with provider-assisted active probes (less dependence on external download endpoints).
+- [ ] Add signed provider reputation/quality metadata and configurable weighted-selection profiles.
 
 See [docs/TODO.md](docs/TODO.md) for prioritized next steps.
 

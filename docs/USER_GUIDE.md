@@ -47,7 +47,7 @@ GUI users are guided by the first-run setup wizard.
 ### CLI
 
 1. Scan:
-   - `./bcvpn scan --sort=latency --country=US`
+   - `./bcvpn scan --sort=score --country=US --max-price=2000 --min-bandwidth-kbps=25000 --max-latency-ms=80 --min-available-slots=2`
 2. Select provider in prompt.
 3. Confirm payment.
 4. Tunnel activates and route/DNS are auto-configured.
@@ -74,8 +74,17 @@ GUI users are guided by the first-run setup wizard.
   - `./bcvpn config get`
 - Update single key:
   - `./bcvpn config set client.enable_kill_switch true`
+- Strict verification mode:
+  - `./bcvpn config set client.strict_verification true`
+- Profile export/import:
+  - `./bcvpn config export ./profile.json`
+  - `./bcvpn config import ./profile.json --validate`
 - View payment history:
   - `./bcvpn history`
+- View runtime event timeline:
+  - `./bcvpn events --limit=100`
+- Export diagnostics bundle:
+  - `./bcvpn diagnostics`
 
 ## 7. Safety Notes
 
