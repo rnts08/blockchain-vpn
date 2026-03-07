@@ -83,6 +83,39 @@ func TestWindowsConfigureClientNetworkRepeatedSetupCleanup(t *testing.T) {
 	}
 }
 
+func TestWindowsRecoverPendingNetworkStateFromMarker(t *testing.T) {
+	origCmd := windowsRunCommand
+	origPS := windowsRunPowerShell
+	defer func() {
+		windowsRunCommand = origCmd
+		windowsRunPowerShell = origPS
+	}()
+
+	var cmdCalls []string
+	var psCalls []string
+	windowsRunCommand = func(name string, args ...string) (string, error) {
+		cmdCalls = append(cmdCalls, name+" "+strings.Join(args, " "))
+		return "", nil
+	}
+	windowsRunPowerShell = func(cmd string) (string, error) {
+		psCalls = append(psCalls, cmd)
+		return "", nil
+	}
+
+	err := recoverPendingNetworkStateFromMarker(&networkCleanupMarker{
+		TunIfIndex:     42,
+		ProviderHost:   "1.2.3.4",
+		DNSConfigured:  true,
+		DefaultIfAlias: "Ethernet",
+		DNSServers:     []string{"8.8.8.8", "1.1.1.1"},
+	})
+	if err != nil {
+		t.Fatalf("recoverPendingNetworkStateFromMarker failed: %v", err)
+	}
+	expectContainsWindows(t, cmdCalls, "route DELETE 0.0.0.0 MASK 128.0.0.0 0.0.0.0 IF 42")
+	expectContainsPS(t, psCalls, "Set-DnsClientServerAddress -InterfaceAlias 'Ethernet' -ServerAddresses @('8.8.8.8','1.1.1.1')")
+}
+
 func expectContainsWindows(t *testing.T, calls []string, want string) {
 	t.Helper()
 	for _, c := range calls {

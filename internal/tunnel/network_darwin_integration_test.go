@@ -70,6 +70,32 @@ func TestDarwinConfigureClientNetworkRepeatedSetupCleanup(t *testing.T) {
 	}
 }
 
+func TestDarwinRecoverPendingNetworkStateFromMarker(t *testing.T) {
+	orig := darwinRunCommand
+	defer func() { darwinRunCommand = orig }()
+
+	var calls []string
+	darwinRunCommand = func(name string, args ...string) (string, error) {
+		cmd := name + " " + strings.Join(args, " ")
+		calls = append(calls, cmd)
+		return "", nil
+	}
+
+	err := recoverPendingNetworkStateFromMarker(&networkCleanupMarker{
+		IfaceName:     "utun9",
+		ProviderHost:  "1.2.3.4",
+		DefaultGW:     "192.168.1.1",
+		DNSConfigured: true,
+		DNSService:    "Wi-Fi",
+		DNSServers:    []string{"8.8.8.8", "1.1.1.1"},
+	})
+	if err != nil {
+		t.Fatalf("recoverPendingNetworkStateFromMarker failed: %v", err)
+	}
+	expectContains(t, calls, "route -n delete -net 0.0.0.0/1 -interface utun9")
+	expectContains(t, calls, "networksetup -setdnsservers Wi-Fi 8.8.8.8 1.1.1.1")
+}
+
 func expectContains(t *testing.T, calls []string, want string) {
 	t.Helper()
 	for _, c := range calls {

@@ -807,6 +807,56 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 	}
 	doctorBtn := widget.NewButton("Run Doctor Checks", runDoctor)
 	runDoctor()
+	eventsBox := widget.NewMultiLineEntry()
+	eventsBox.Disable()
+	eventsBox.SetMinRowsVisible(8)
+	refreshEvents := func() {
+		events := tunnel.GetRecentEvents(200)
+		if len(events) == 0 {
+			eventsBox.SetText("No runtime events yet.")
+			return
+		}
+		var out strings.Builder
+		for _, ev := range events {
+			fmt.Fprintf(&out, "%s [%s] %s: %s\n", ev.Time, ev.Role, ev.Type, ev.Detail)
+		}
+		eventsBox.SetText(out.String())
+	}
+	eventsBtn := widget.NewButton("Refresh Events", refreshEvents)
+	refreshEvents()
+	exportDiagBtn := widget.NewButton("Export Diagnostics Bundle", func() {
+		s.mu.Lock()
+		cfgCopy := *s.cfg
+		s.mu.Unlock()
+		dir, err := config.AppConfigDir()
+		if err != nil {
+			s.appendLog("Diagnostics export failed: " + err.Error())
+			return
+		}
+		outPath := filepath.Join(dir, fmt.Sprintf("diagnostics-gui-%s.json", time.Now().UTC().Format("20060102-150405")))
+		payload := map[string]any{
+			"generated_at": time.Now().UTC().Format(time.RFC3339),
+			"version":      version.String(),
+			"config_path":  s.cfgPath,
+			"events":       tunnel.GetRecentEvents(200),
+			"runtime":      tunnel.GetRuntimeMetricsSnapshot(),
+		}
+		cfgCopy.RPC.Pass = ""
+		cfgCopy.Security.MetricsAuthToken = ""
+		payload["config"] = cfgCopy
+		var out bytes.Buffer
+		enc := json.NewEncoder(&out)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(payload); err != nil {
+			s.appendLog("Diagnostics export failed: " + err.Error())
+			return
+		}
+		if err := util.WriteFileAtomic(outPath, out.Bytes(), 0o644); err != nil {
+			s.appendLog("Diagnostics export failed: " + err.Error())
+			return
+		}
+		s.appendLog("Diagnostics exported: " + outPath)
+	})
 
 	return container.NewPadded(container.NewVBox(
 		title,
@@ -814,6 +864,8 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 		widget.NewCard("Interfaces", "Current tunnel interface settings", container.NewVBox(configPath, providerIface, clientIface, clientKill, privLabel)),
 		widget.NewCard("Runtime Metrics", "Provider/client runtime metrics endpoint snapshots", container.NewVBox(refreshBtn, metricsBox)),
 		widget.NewCard("Doctor", "Config/privilege/tool readiness checks", container.NewVBox(doctorBtn, doctorBox)),
+		widget.NewCard("Event Timeline", "Recent runtime session and auth events", container.NewVBox(eventsBtn, eventsBox)),
+		exportDiagBtn,
 		buildLogPanel(s),
 	))
 }
@@ -954,6 +1006,8 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	statusOut := widget.NewMultiLineEntry()
 	statusOut.Disable()
 	statusOut.SetMinRowsVisible(6)
+	profilePath := widget.NewEntry()
+	profilePath.SetPlaceHolder("Profile path for import/export")
 
 	saveBtn := widget.NewButton("Save + Validate", func() {
 		s.mu.Lock()
@@ -1003,6 +1057,51 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.mu.Unlock()
 		statusOut.SetText("Applied defaults for empty fields. Review and click Save + Validate.")
 	})
+	exportBtn := widget.NewButton("Export Profile", func() {
+		p := strings.TrimSpace(profilePath.Text)
+		if p == "" {
+			dialog.ShowError(fmt.Errorf("set a profile path first"), w)
+			return
+		}
+		s.mu.Lock()
+		cfgCopy := *s.cfg
+		s.mu.Unlock()
+		if err := saveConfig(p, &cfgCopy); err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		statusOut.SetText("Profile exported to: " + p)
+	})
+	importBtn := widget.NewButton("Import Profile", func() {
+		p := strings.TrimSpace(profilePath.Text)
+		if p == "" {
+			dialog.ShowError(fmt.Errorf("set a profile path first"), w)
+			return
+		}
+		cfgImported, err := config.LoadConfig(p)
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		if err := config.Validate(cfgImported); err != nil {
+			dialog.ShowError(fmt.Errorf("imported config invalid: %w", err), w)
+			return
+		}
+		if err := config.ResolveProviderKeyPath(cfgImported, p); err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		s.mu.Lock()
+		*s.cfg = *cfgImported
+		err = saveConfig(s.cfgPath, s.cfg)
+		s.mu.Unlock()
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		statusOut.SetText("Profile imported from: " + p)
+		s.appendLog("Imported settings profile.")
+	})
 
 	form := widget.NewForm(
 		widget.NewFormItem("RPC Host", rpcHost),
@@ -1018,11 +1117,13 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewFormItem("Log Level", logLevel),
 	)
 	buttons := container.NewGridWithColumns(3, saveBtn, validateBtn, defaultsBtn)
+	profileRow := container.NewGridWithColumns(3, widget.NewLabel("Profile Path"), profilePath, container.NewGridWithColumns(2, exportBtn, importBtn))
 
 	return container.NewPadded(container.NewVBox(
 		title,
 		hint,
 		widget.NewCard("RPC", "Global daemon connection settings", form),
+		profileRow,
 		buttons,
 		widget.NewCard("Validation Output", "", statusOut),
 		buildLogPanel(s),

@@ -7,10 +7,10 @@ func recoverPendingNetworkStateFromMarker(m *networkCleanupMarker) error {
 		return nil
 	}
 	if m.IfaceName != "" && m.ProviderHost != "" {
-		restoreRouting(m.IfaceName, m.ProviderHost)
+		linuxRestoreRouting(m.IfaceName, m.ProviderHost)
 	}
 	if m.DNSConfigured {
-		restoreDNS()
+		linuxRestoreDNS()
 	}
 	return nil
 }

@@ -140,3 +140,34 @@ func TestLinuxConfigureClientNetworkRepeatedSetupCleanup(t *testing.T) {
 		t.Fatalf("expected %d dns restore calls, got %d", rounds, dnsRestores)
 	}
 }
+
+func TestLinuxRecoverPendingNetworkStateFromMarker(t *testing.T) {
+	origRestoreRouting := linuxRestoreRouting
+	origRestoreDNS := linuxRestoreDNS
+	defer func() {
+		linuxRestoreRouting = origRestoreRouting
+		linuxRestoreDNS = origRestoreDNS
+	}()
+
+	routingCalled := false
+	dnsCalled := false
+	linuxRestoreRouting = func(ifaceName, providerHost string) {
+		routingCalled = true
+		if ifaceName != "bcvpn1" || providerHost != "1.2.3.4" {
+			t.Fatalf("unexpected restore args: %s %s", ifaceName, providerHost)
+		}
+	}
+	linuxRestoreDNS = func() { dnsCalled = true }
+
+	err := recoverPendingNetworkStateFromMarker(&networkCleanupMarker{
+		IfaceName:     "bcvpn1",
+		ProviderHost:  "1.2.3.4",
+		DNSConfigured: true,
+	})
+	if err != nil {
+		t.Fatalf("recoverPendingNetworkStateFromMarker failed: %v", err)
+	}
+	if !routingCalled || !dnsCalled {
+		t.Fatalf("expected routing and DNS restore to be called")
+	}
+}

@@ -125,3 +125,24 @@ func recordHealthStatus(tunOK, listenerOK bool) {
 	runtimeMetrics.lastListenCheck = time.Now()
 	runtimeMetrics.healthMu.Unlock()
 }
+
+func GetRuntimeMetricsSnapshot() map[string]any {
+	runtimeMetrics.healthMu.RLock()
+	defer runtimeMetrics.healthMu.RUnlock()
+	return map[string]any{
+		"provider_running": runtimeMetrics.providerRunning.Load(),
+		"client_connected": runtimeMetrics.clientConnected.Load(),
+		"active_sessions":  runtimeMetrics.activeSessions.Load(),
+		"total_up_bytes":   runtimeMetrics.totalUpBytes.Load(),
+		"total_down_bytes": runtimeMetrics.totalDownBytes.Load(),
+		"error_count":      runtimeMetrics.errorCount.Load(),
+		"health": map[string]any{
+			"tun_ok":              runtimeMetrics.lastTunOK,
+			"tun_checked_at":      runtimeMetrics.lastTunCheck.UTC().Format(time.RFC3339),
+			"listener_ok":         runtimeMetrics.lastListenOK,
+			"listener_checked_at": runtimeMetrics.lastListenCheck.UTC().Format(time.RFC3339),
+		},
+		"last_error": runtimeMetrics.lastError,
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+	}
+}

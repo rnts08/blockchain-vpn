@@ -89,6 +89,8 @@ func main() {
 	configCmd := flag.NewFlagSet("config", flag.ExitOnError)
 	versionCmd := flag.NewFlagSet("version", flag.ExitOnError)
 	doctorCmd := flag.NewFlagSet("doctor", flag.ExitOnError)
+	eventsCmd := flag.NewFlagSet("events", flag.ExitOnError)
+	diagCmd := flag.NewFlagSet("diagnostics", flag.ExitOnError)
 
 	// Scan specific flags
 	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
@@ -113,9 +115,12 @@ func main() {
 	configJSON := configCmd.Bool("json", false, "Output in machine-readable JSON format")
 	versionJSON := versionCmd.Bool("json", false, "Output version in machine-readable JSON format")
 	doctorJSON := doctorCmd.Bool("json", false, "Output doctor results in machine-readable JSON format")
+	eventsJSON := eventsCmd.Bool("json", false, "Output events in JSON format")
+	eventsLimit := eventsCmd.Int("limit", 100, "Maximum number of recent events to show")
+	diagOut := diagCmd.String("out", "", "Output path for diagnostics JSON bundle (default: app config dir)")
 
 	if len(os.Args) < 2 {
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', 'doctor', or 'version' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', 'doctor', 'events', 'diagnostics', or 'version' subcommands")
 		os.Exit(1)
 	}
 
@@ -375,9 +380,18 @@ func main() {
 	case "doctor":
 		doctorCmd.Parse(os.Args[2:])
 		handleDoctor(cfg, *doctorJSON)
+	case "events":
+		eventsCmd.Parse(os.Args[2:])
+		handleEvents(*eventsLimit, *eventsJSON)
+	case "diagnostics":
+		diagCmd.Parse(os.Args[2:])
+		if err := exportDiagnosticsBundle(cfg, configPath, strings.TrimSpace(*diagOut)); err != nil {
+			log.Fatalf("diagnostics export failed: %v", err)
+		}
+		log.Printf("Diagnostics bundle written.")
 
 	default:
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', 'doctor', or 'version' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', 'doctor', 'events', 'diagnostics', or 'version' subcommands")
 		os.Exit(1)
 	}
 }
@@ -501,6 +515,53 @@ func handleDoctor(cfg *config.Config, jsonMode bool) {
 	} else {
 		fmt.Println("Doctor result: issues detected")
 	}
+}
+
+func handleEvents(limit int, jsonMode bool) {
+	events := tunnel.GetRecentEvents(limit)
+	if jsonMode {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(map[string]any{"events": events})
+		return
+	}
+	if len(events) == 0 {
+		fmt.Println("No runtime events recorded yet.")
+		return
+	}
+	for _, ev := range events {
+		fmt.Printf("%s [%s] %s: %s\n", ev.Time, ev.Role, ev.Type, ev.Detail)
+	}
+}
+
+func exportDiagnosticsBundle(cfg *config.Config, configPath, outPath string) error {
+	if strings.TrimSpace(outPath) == "" {
+		dir, err := config.AppConfigDir()
+		if err != nil {
+			return err
+		}
+		outPath = filepath.Join(dir, fmt.Sprintf("diagnostics-%s.json", time.Now().UTC().Format("20060102-150405")))
+	}
+
+	redacted := *cfg
+	redacted.RPC.Pass = ""
+	redacted.Security.MetricsAuthToken = ""
+
+	payload := map[string]any{
+		"generated_at": time.Now().UTC().Format(time.RFC3339),
+		"version":      version.String(),
+		"config_path":  configPath,
+		"config":       redacted,
+		"events":       tunnel.GetRecentEvents(200),
+		"runtime":      tunnel.GetRuntimeMetricsSnapshot(),
+	}
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(payload); err != nil {
+		return err
+	}
+	return util.WriteFileAtomic(outPath, out.Bytes(), 0o644)
 }
 
 func requiredNetworkingTools(goos string) []string {
@@ -1072,6 +1133,8 @@ func handleConfigSubcommand(configPath string, cfg *config.Config, args []string
 		fmt.Println("  bcvpn config get [key]")
 		fmt.Println("  bcvpn config set <key> <value>")
 		fmt.Println("  bcvpn config validate")
+		fmt.Println("  bcvpn config export <path>")
+		fmt.Println("  bcvpn config import <path> [--validate]")
 		return
 	}
 
@@ -1114,9 +1177,49 @@ func handleConfigSubcommand(configPath string, cfg *config.Config, args []string
 			return
 		}
 		fmt.Println("Config is valid.")
+	case "export":
+		if len(args) < 2 {
+			log.Fatal("Usage: bcvpn config export <path>")
+		}
+		dst := strings.TrimSpace(args[1])
+		if dst == "" {
+			log.Fatal("config export path must not be empty")
+		}
+		if err := saveConfigFile(dst, cfg); err != nil {
+			log.Fatalf("config export failed: %v", err)
+		}
+		log.Printf("Exported config to %s", dst)
+	case "import":
+		if len(args) < 2 {
+			log.Fatal("Usage: bcvpn config import <path> [--validate]")
+		}
+		src := strings.TrimSpace(args[1])
+		imported, err := config.LoadConfig(src)
+		if err != nil {
+			log.Fatalf("config import failed: %v", err)
+		}
+		validateImported := true
+		for _, a := range args[2:] {
+			if strings.TrimSpace(a) == "--validate=false" {
+				validateImported = false
+			}
+		}
+		if validateImported {
+			if err := config.Validate(imported); err != nil {
+				log.Fatalf("imported config is invalid: %v", err)
+			}
+		}
+		*cfg = *imported
+		if err := config.ResolveProviderKeyPath(cfg, configPath); err != nil {
+			log.Fatalf("imported config provider key resolution failed: %v", err)
+		}
+		if err := saveConfigFile(configPath, cfg); err != nil {
+			log.Fatalf("failed to write imported config: %v", err)
+		}
+		log.Printf("Imported config from %s", src)
 
 	default:
-		log.Fatalf("unknown config subcommand %q (expected: get, set, validate)", args[0])
+		log.Fatalf("unknown config subcommand %q (expected: get, set, validate, export, import)", args[0])
 	}
 }
 

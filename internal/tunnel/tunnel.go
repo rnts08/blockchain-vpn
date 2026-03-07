@@ -216,6 +216,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 		state := conn.(*tls.Conn).ConnectionState()
 		if len(state.PeerCertificates) == 0 {
 			log.Printf("Connection from %s rejected: no client certificate provided", conn.RemoteAddr())
+			recordEvent("provider", "reject_no_cert", conn.RemoteAddr().String())
 			conn.Close()
 			recordRuntimeError(fmt.Errorf("client connection rejected: no certificate"))
 			continue
@@ -224,12 +225,14 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 		clientPubKey, err := certToBTCECPubKey(state.PeerCertificates[0])
 		if err != nil {
 			log.Printf("Connection from %s rejected: %v", conn.RemoteAddr(), err)
+			recordEvent("provider", "reject_bad_cert", conn.RemoteAddr().String())
 			conn.Close()
 			recordRuntimeError(err)
 			continue
 		}
 		if err := policy.check(clientPubKey); err != nil {
 			log.Printf("Connection from %s rejected by policy: %v", conn.RemoteAddr(), err)
+			recordEvent("provider", "reject_policy", conn.RemoteAddr().String())
 			conn.Close()
 			recordRuntimeError(err)
 			continue
@@ -241,6 +244,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 				recordRuntimeError(revErr)
 			} else if revoked {
 				log.Printf("Connection from %s rejected: client certificate is revoked", conn.RemoteAddr())
+				recordEvent("provider", "reject_revoked", conn.RemoteAddr().String())
 				conn.Close()
 				recordRuntimeError(fmt.Errorf("revoked client certificate: %s", hex.EncodeToString(clientPubKey.SerializeCompressed())))
 				continue
@@ -248,6 +252,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 		}
 		if !authManager.IsPeerAuthorized(clientPubKey) {
 			log.Printf("Connection from %s rejected: client %s is not authorized", conn.RemoteAddr(), hex.EncodeToString(clientPubKey.SerializeCompressed()))
+			recordEvent("provider", "reject_unauthorized", conn.RemoteAddr().String())
 			conn.Close()
 			recordRuntimeError(fmt.Errorf("unauthorized client: %s", hex.EncodeToString(clientPubKey.SerializeCompressed())))
 			continue
@@ -258,6 +263,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 			clients.mu.RUnlock()
 			if active >= cfg.MaxConsumers {
 				log.Printf("Connection from %s rejected: provider at max consumer capacity (%d)", conn.RemoteAddr(), cfg.MaxConsumers)
+				recordEvent("provider", "reject_capacity", conn.RemoteAddr().String())
 				conn.Close()
 				recordRuntimeError(fmt.Errorf("provider max consumer capacity reached"))
 				continue
@@ -265,6 +271,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 		}
 
 		log.Printf("Accepted connection from authorized client %s (%s)", hex.EncodeToString(clientPubKey.SerializeCompressed()), conn.RemoteAddr())
+		recordEvent("provider", "client_connected", conn.RemoteAddr().String())
 
 		// Allocate Dynamic IP
 		assignedIP, err := ipPool.Allocate()
@@ -308,6 +315,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 				clients.mu.Unlock()
 				sessionClosed()
 				log.Printf("Client %s (%s) disconnected.", hex.EncodeToString(pk.SerializeCompressed()), c.RemoteAddr())
+				recordEvent("provider", "client_disconnected", c.RemoteAddr().String())
 			}()
 
 			expiration, ok := authManager.GetPeerExpiration(pk)
@@ -425,9 +433,11 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *confi
 	}
 
 	log.Printf("Dialing %s...", endpoint)
+	recordEvent("client", "connect_attempt", endpoint)
 	conn, err := tls.Dial("tcp", endpoint, tlsConfig)
 	if err != nil {
 		recordRuntimeError(err)
+		recordEvent("client", "connect_failed", endpoint)
 		return fmt.Errorf("failed to connect to provider: %w", err)
 	}
 	defer conn.Close()
@@ -484,10 +494,12 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *confi
 	cancelChecks()
 
 	log.Printf("Successfully connected to %s. Tunnel is active.", endpoint)
+	recordEvent("client", "connected", endpoint)
 
 	// Forward packets
 	go copyStreamWithControl(conn, iface, func(n int) { recordTraffic(int64(n), 0) }, nil)
 	copyStreamWithControl(iface, conn, func(n int) { recordTraffic(0, int64(n)) }, nil) // Block on this one until connection closes
+	recordEvent("client", "disconnected", endpoint)
 
 	return nil
 }
