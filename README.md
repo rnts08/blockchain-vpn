@@ -2,7 +2,7 @@
 
 BlockchainVPN is a peer-to-peer VPN marketplace built on top of the OrdexCoin blockchain. It allows anyone to become a VPN provider by announcing their service on-chain, and allows clients to discover, pay for, and connect to these services in a decentralized, permissionless manner.
 
-Current version: `0.3.0`
+Current version: `0.3.4`
 
 ## 1. Architecture Overview
 
@@ -127,7 +127,9 @@ Or use `Makefile` targets:
 ```bash
 make build            # native CLI
 make build-gui        # native GUI
-make build-cli-all    # cross-platform CLI artifacts
+make build-cli-all    # cross-platform CLI artifacts (Linux/Darwin/Windows)
+make test             # run unit tests
+make tidy             # sync go.mod
 ```
 
 Notes:
@@ -398,14 +400,8 @@ To adapt this for another chain:
 - Other OSes: explicit runtime stubs and clear unsupported errors.
 - Privilege preflight is enforced before provider start and before client payment/connection.
 
-### Gaps and Improvements
-
 - [ ] Improve throughput verification with provider-assisted active probes (less dependence on external download endpoints).
 - [ ] Add signed provider reputation/quality metadata and configurable weighted-selection profiles.
-
-See [docs/TODO.md](docs/TODO.md) for prioritized next steps.
-
-### Documentation
 
 - Detailed install and privilege setup: [docs/INSTALL.md](docs/INSTALL.md)
 - UI design and behavior: [docs/GUI.md](docs/GUI.md)
@@ -417,7 +413,6 @@ See [docs/TODO.md](docs/TODO.md) for prioritized next steps.
 - Provider operations runbook: [docs/OPERATIONS.md](docs/OPERATIONS.md)
 - Automation JSON examples: [docs/AUTOMATION.md](docs/AUTOMATION.md)
 - Versioning policy and release progression: [docs/VERSIONING.md](docs/VERSIONING.md)
-- Engineering roadmap and remaining tasks: [docs/TODO.md](docs/TODO.md)
 - Version history and notable changes: [docs/CHANGELOG.md](docs/CHANGELOG.md)
 
 ## 7. Project File Layout

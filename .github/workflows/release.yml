@@ -1,0 +1,110 @@
+name: CI/CD & Release
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev libxcursor-dev libxinerama-dev libxrandr-dev libxi-dev libasound2-dev libvulkan-dev
+
+      - name: Verify Dependencies
+        run: go mod verify
+
+      - name: Tidy check
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Format Check
+        run: |
+          if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
+            echo "Following files are not formatted:"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: Run Tests
+        run: go test -v ./...
+
+  build-and-release:
+    needs: lint-and-test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Install GUI Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev libxcursor-dev libxinerama-dev libxrandr-dev libxi-dev libasound2-dev libvulkan-dev
+
+      - name: Build CLI (Cross-Platform)
+        run: |
+          mkdir -p dist
+          VERSION=${GITHUB_REF#refs/tags/}
+          COMMIT=$(git rev-parse --short HEAD)
+          LDFLAGS="-X blockchain-vpn/internal/version.Version=$VERSION -X blockchain-vpn/internal/version.GitCommit=$COMMIT -X blockchain-vpn/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          
+          # Linux
+          GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/bcvpn-linux-amd64 ./cmd/bcvpn
+          GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/bcvpn-linux-arm64 ./cmd/bcvpn
+          
+          # Darwin
+          GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/bcvpn-darwin-amd64 ./cmd/bcvpn
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/bcvpn-darwin-arm64 ./cmd/bcvpn
+          
+          # Windows
+          GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/bcvpn-windows-amd64.exe ./cmd/bcvpn
+
+      - name: Build GUI (Linux)
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          COMMIT=$(git rev-parse --short HEAD)
+          LDFLAGS="-X blockchain-vpn/internal/version.Version=$VERSION -X blockchain-vpn/internal/version.GitCommit=$COMMIT -X blockchain-vpn/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/bcvpn-gui-linux-amd64 ./cmd/bcvpn-gui
+
+      - name: Package Release
+        run: |
+          cd dist
+          for f in bcvpn-linux-* bcvpn-darwin-* bcvpn-gui-linux-*; do
+            tar -czvf "${f}.tar.gz" "$f"
+          done
+          for f in *.exe; do
+            zip "${f}.zip" "$f"
+          done
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

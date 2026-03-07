@@ -20,6 +20,12 @@ All notable changes to this project will be documented in this file.
 - Refactored session management in `tunnel.go` with centralized cleanup and leak prevention.
 - Hardened memory safety in packet reading loops with buffer pools and enlarged TUN buffers.
 
+### Infrastructure & CI/CD
+- Added GitHub Action workflow for automated testing, linting, and cross-platform releases.
+- Cleaned up redundant documentation and fully updated `README.md` with current feature set and build guides.
+- Refactored `go.mod` to ensure `github.com/btcsuite/websocket` is a direct dependency.
+- Added cross-platform CLI build targets and Linux GUI build support in CI.
+
 ### Tests & Infrastructure
 - Added integration tests for multi-platform NAT traversal and secure key storage.
 - Refactored keystore for full platform mockability and added cross-platform test coverage.
