@@ -41,6 +41,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
@@ -90,6 +91,7 @@ type guiState struct {
 	clientStatus   binding.String
 	metricsContent binding.String
 	eventsContent  binding.String
+	walletBalance  binding.String
 
 	providerRunning  bool
 	providerStarting bool
@@ -186,12 +188,14 @@ func initState() (*guiState, error) {
 		clientStatus:   binding.NewString(),
 		metricsContent: binding.NewString(),
 		eventsContent:  binding.NewString(),
+		walletBalance:  binding.NewString(),
 		selectedIdx:    -1,
 		clientMgr:      tunnel.NewMultiTunnelManager(),
 	}
 	_ = s.providerStatus.Set("Stopped")
 	_ = s.autoScroll.Set(true)
 	_ = s.clientStatus.Set("Client: Disconnected")
+	_ = s.walletBalance.Set("Balance: --- sats")
 	return s, nil
 }
 
@@ -883,6 +887,7 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 	updateAll := func() {
 		s.updateMetrics()
 		s.updateEvents()
+		s.updateWalletBalance()
 	}
 
 	metricsAutoRefresh.OnChanged = func(checked bool) {
@@ -1332,6 +1337,9 @@ func applyDefaultConfigValues(cfg *config.Config) {
 
 func buildWalletTab(s *guiState) fyne.CanvasObject {
 	title := widget.NewLabelWithStyle("Wallet & History", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	balanceLabel := widget.NewLabelWithData(s.walletBalance)
+	balanceLabel.TextStyle.Bold = true
+
 	historyBox := widget.NewMultiLineEntry()
 	historyBox.Wrapping = fyne.TextWrapWord
 	historyBox.Disable()
@@ -1352,10 +1360,12 @@ func buildWalletTab(s *guiState) fyne.CanvasObject {
 			fmt.Fprintf(&b, "%s | %d sats | %s | %s\n", r.Timestamp.Format(time.RFC3339), r.Amount, r.Provider, r.TxID)
 		}
 		historyBox.SetText(b.String())
+		s.updateWalletBalance()
 	}
 	refresh()
 	return container.NewPadded(container.NewVBox(
 		title,
+		widget.NewCard("Wallet Status", "Current node balance", balanceLabel),
 		widget.NewButton("Reload History", refresh),
 		widget.NewCard("Payment History", "Most recent transactions", historyBox),
 	))
@@ -1454,6 +1464,19 @@ func (s *guiState) updateEvents() {
 		fmt.Fprintf(&out, "%s [%s] %s: %s\n", ev.Time, ev.Role, ev.Type, ev.Detail)
 	}
 	_ = s.eventsContent.Set(out.String())
+}
+
+func (s *guiState) updateWalletBalance() {
+	client := connectRPCWithConfig(s.cfg)
+	defer client.Shutdown()
+
+	balance, err := client.GetBalance("*")
+	if err != nil {
+		_ = s.walletBalance.Set("Balance: [Error] sats")
+		return
+	}
+	sats := uint64(balance.ToUnit(btcutil.AmountSatoshi))
+	_ = s.walletBalance.Set(fmt.Sprintf("Balance: %d sats", sats))
 }
 
 func (s *guiState) appendLog(line string) {

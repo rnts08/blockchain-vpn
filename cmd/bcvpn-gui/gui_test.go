@@ -23,6 +23,7 @@ func TestGUICreation(t *testing.T) {
 		clientStatus:   binding.NewString(),
 		metricsContent: binding.NewString(),
 		eventsContent:  binding.NewString(),
+		walletBalance:  binding.NewString(),
 	}
 	_ = state.providerStatus.Set("Stopped")
 	_ = state.autoScroll.Set(true)
@@ -50,6 +51,7 @@ func TestSettingsTab(t *testing.T) {
 		clientStatus:   binding.NewString(),
 		metricsContent: binding.NewString(),
 		eventsContent:  binding.NewString(),
+		walletBalance:  binding.NewString(),
 	}
 	_ = state.providerStatus.Set("Stopped")
 	_ = state.autoScroll.Set(true)
@@ -76,6 +78,7 @@ func TestWalletTab(t *testing.T) {
 		clientStatus:   binding.NewString(),
 		metricsContent: binding.NewString(),
 		eventsContent:  binding.NewString(),
+		walletBalance:  binding.NewString(),
 	}
 	_ = state.providerStatus.Set("Stopped")
 	_ = state.autoScroll.Set(true)

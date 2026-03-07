@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
  
+## [0.4.9] - 2026-03-07
+
+### GUI/UX Improvements
+- **Item 5.6 Wallet Balance Display**: Added real-time wallet balance display to the "Wallet" tab. The balance is fetched via RPC and integrated into the auto-refresh cycle for continuous updates.
+
 ## [0.4.8] - 2026-03-07
 
 ### GUI/UX Improvements
