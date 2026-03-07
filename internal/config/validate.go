@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 func Validate(cfg *Config) error {
@@ -28,6 +29,12 @@ func Validate(cfg *Config) error {
 	}
 	if strings.TrimSpace(cfg.Provider.AnnounceIP) != "" && net.ParseIP(strings.TrimSpace(cfg.Provider.AnnounceIP)) == nil {
 		errs = append(errs, fmt.Errorf("provider.announce_ip must be a valid IP address when set"))
+	}
+	if country := strings.TrimSpace(cfg.Provider.Country); country != "" && !isISOAlpha2(country) {
+		errs = append(errs, fmt.Errorf("provider.country must be a valid 2-letter country code when set"))
+	}
+	if cfg.Provider.MaxConsumers < 0 {
+		errs = append(errs, fmt.Errorf("provider.max_consumers must be >= 0"))
 	}
 	if strings.TrimSpace(cfg.Provider.TunIP) == "" || net.ParseIP(strings.TrimSpace(cfg.Provider.TunIP)) == nil {
 		errs = append(errs, fmt.Errorf("provider.tun_ip must be a valid IP address"))
@@ -103,4 +110,17 @@ func Validate(cfg *Config) error {
 func isValidPrefix(v string) bool {
 	n, err := strconv.Atoi(strings.TrimSpace(v))
 	return err == nil && n >= 0 && n <= 32
+}
+
+func isISOAlpha2(v string) bool {
+	v = strings.TrimSpace(v)
+	if len(v) != 2 {
+		return false
+	}
+	for _, r := range v {
+		if !unicode.IsLetter(r) {
+			return false
+		}
+	}
+	return true
 }

@@ -1,51 +1,34 @@
-# BlockchainVPN TODO (Next Iteration)
+# BlockchainVPN TODO (Open Items)
 
-This list is a new post-MVP backlog based on a full code and docs review.
+This list contains only remaining work after the latest parity and runtime pass.
 
-## 1. Security and Correctness (Highest Priority)
-- [x] Use cryptographically random X.509 serial numbers for generated TLS certificates (replace fixed serial `1`).
-- [x] Remove `log.Fatalf` from internal runtime packages (`internal/tunnel`, `internal/blockchain`) and return errors to callers for controlled shutdown.
-- [x] Add optional authentication for `/metrics.json` endpoint (token/header) and document safe bind defaults.
-- [x] Add explicit key-storage backend health checks and fallback behavior when secure-store commands/tools are missing at runtime.
-- [x] Add validation and normalization for revocation cache entries (reject duplicates, report invalid line numbers).
+## 1. Marketplace Protocol Completeness
+- [ ] Add a v2 on-chain provider metadata payload that includes:
+  bandwidth offer, max consumers, provider-declared origin/country, and availability flags.
+- [ ] Add scanner support for v2 payloads while keeping backward compatibility with v1 announcements.
+- [ ] Add provider heartbeat/availability broadcasts so clients can prefer currently-online providers.
 
-## 2. Runtime Resilience
-- [ ] Add graceful stop/wait lifecycle for provider goroutines (echo server, payment monitor, health checks, listener workers).
-- [ ] Add exponential backoff + jitter for provider listener accept errors and metrics server restart loops.
-- [ ] Add atomic write helpers for config/history/cleanup-marker updates to reduce corruption risk on crashes.
-- [x] Add startup self-check command (`bcvpn doctor`) to verify TUN, routing tools, key storage backend, and config validity.
+## 2. Discovery and Selection UX
+- [ ] Add CLI/GUI filtering and sorting by advertised bandwidth and capacity once v2 metadata is available.
+- [ ] Add richer search filters (country, max price, min bandwidth, max latency, available slots).
+- [ ] Show effective provider score/ranking inputs directly in scan results (price, latency, country confidence, capacity).
 
-## 3. Networking and Platform Quality
-- [ ] Add Linux nftables backend option for kill switch/NAT where iptables-legacy is unavailable.
-- [ ] Improve Windows routing backend to prefer interface GUID/index stability across reboots/renames.
-- [ ] Add macOS service/interface selection fallback logic when default route lookup is ambiguous (multi-homed hosts).
-- [ ] Add runtime probes that verify DNS leak posture after connect (and surface result in status/GUI).
+## 3. Client Security Verification
+- [ ] Add OS-native DNS server introspection checks (not only DNS query heuristic) to improve leak detection confidence.
+- [ ] Add optional strict mode to fail connection when country verification or IP verification checks fail.
+- [ ] Add active throughput verification against advertised provider bandwidth after connect.
 
-## 4. Observability and Operator UX
-- [x] Add log levels (`debug`, `info`, `warn`, `error`) and include them in JSON log output.
-- [x] Expose provider/client runtime health and metrics in GUI Status tab (not only via endpoint).
-- [ ] Add per-session timeline/events (connect/auth/revoke/disconnect) to CLI/GUI for troubleshooting.
-- [ ] Add alerting hooks/webhook support for provider failures (listener down, TUN down, auth failures burst).
+## 4. Provider Runtime and Lifecycle
+- [ ] Add graceful shutdown wait-groups for provider goroutines (listener, echo, payment monitor, health checks).
+- [ ] Add accept-loop backoff + jitter for repeated listener errors.
+- [ ] Add atomic file writes for config/history/cleanup marker updates.
 
-## 5. CLI and GUI Quality of Life
-- [x] Add non-interactive provider key bootstrap/rotate flags for automation (`--password-env`, secure prompt fallback).
-- [ ] Add import/export profile support in GUI and CLI (`config export`, `config import --validate`).
-- [ ] Add one-click “copy diagnostics bundle” (status JSON + redacted config + recent logs).
-- [ ] Add provider/client preset templates for common home-router and VPS deployments.
+## 5. UX and Operations
+- [ ] Add per-session event timeline (connect/auth/revoke/disconnect/errors) in both CLI and GUI.
+- [ ] Add import/export profile commands and GUI actions.
+- [ ] Add one-click diagnostics bundle export (redacted config + status JSON + recent logs).
 
-## 6. Testing and Release Engineering
-- [x] Add baseline semantic versioning system (`VERSION`, `bcvpn version`, `docs/VERSIONING.md`) starting at `0.1.0`.
-- [x] Add integration test matrix in CI for Linux runtime networking paths with privilege-capable test environment.
-- [x] Add deterministic tests for key storage mode resolution and backend fallback behavior.
-- [x] Add fuzz tests for protocol payload parsing and revocation cache parsing.
-- [x] Add release smoke test scripts for CLI and GUI startup on Linux/macOS/Windows artifacts.
-
-## 7. Documentation
-- [x] Add dedicated security model document (`docs/SECURITY.md`) covering trust boundaries and threat model.
-- [x] Add explicit secure-store backend prerequisites by OS (Keychain/libsecret/DPAPI) with troubleshooting.
-- [x] Add operations runbook for providers (rotation, revocation, incident response, upgrade strategy).
-- [x] Add examples for `status --json` and `/metrics.json` fields for automation tooling.
-
-## Future Iteration Candidates
-- [ ] Add secure auto-fallback path for `key_storage_mode=auto` when backend fails after startup and no password is pre-supplied.
-- [ ] Unify duplicated doctor-check logic between CLI and GUI into shared package.
+## 6. Tests and Hardening
+- [ ] Add integration tests for post-connect security checks with mocked DNS/IP services.
+- [ ] Add cross-platform integration coverage for cleanup-marker recovery and restore behavior.
+- [ ] Add protocol/property tests for future metadata v2 encoding/decoding and scanner merge logic.

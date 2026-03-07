@@ -148,7 +148,7 @@ Edit `config.json` to match your environment:
 *   **rpc**: Connection details for your local `ordexcoind` node.
 *   **logging**: Runtime log output format (`text` or `json`).
 *   **security**: Key storage backend, revocation cache, TLS policy, and metrics auth (`key_storage_mode`, `revocation_cache_file`, `tls_min_version`, `tls_profile`, `metrics_auth_token`).
-*   **provider**: Settings if you intend to sell VPN service (IP, Port, Price, `enable_egress_nat`, `nat_outbound_interface`, `isolation_mode`, `allowlist_file`, `denylist_file`, `cert_lifetime_hours`, `cert_rotate_before_hours`, `health_check_enabled`, `health_check_interval`).
+*   **provider**: Settings if you intend to sell VPN service (IP, Port, Price, `max_consumers`, `enable_egress_nat`, `nat_outbound_interface`, `isolation_mode`, `allowlist_file`, `denylist_file`, `cert_lifetime_hours`, `cert_rotate_before_hours`, `health_check_enabled`, `health_check_interval`).
 *   **client**: Settings for connecting to others (Interface Name).
 *   By default, the app stores `config.json`, `provider.key`, and `history.json` in your OS user config directory under `BlockchainVPN` (for example `~/.config/BlockchainVPN` on Linux).
 
@@ -179,6 +179,7 @@ Sample `config.json`:
     "announce_ip": "",
     "country": "",
     "price_sats_per_session": 1000,
+    "max_consumers": 0,
     "private_key_file": "<APP_CONFIG_DIR>/provider.key",
     "bandwidth_limit": "10mbit",
     "enable_nat": true,
@@ -331,6 +332,7 @@ To adapt this for another chain:
 - [x] Payment monitor with reorg handling and tx->peer authorization tracking.
 - [x] Dynamic provider-side client IP allocation.
 - [x] Throughput accounting and optional bandwidth limiting per session.
+- [x] Provider session-capacity control (`provider.max_consumers`, `0` = unlimited).
 - [x] Active provider health checks for TUN interface and TLS listener.
 - [x] Provider access policies via optional allowlist/denylist files.
 - [x] Provider key encryption at rest and rotation workflow.
@@ -339,6 +341,7 @@ To adapt this for another chain:
 - [x] Provider egress NAT backend on Linux, macOS, and Windows.
 - [x] Client routing and DNS auto-configuration for Linux, macOS, and Windows.
 - [x] Optional cross-platform client kill switch mode.
+- [x] Post-connect client security checks (egress IP transition, DNS leak heuristic, provider-country verification).
 - [x] RPC retry + exponential backoff for transient failures.
 - [x] Payment history storage and reporting.
 - [x] Machine-readable status output for automation (`bcvpn status --json`).
@@ -360,8 +363,8 @@ To adapt this for another chain:
 1.  Provider starts (`start-provider`), optionally opens NAT mappings, announces endpoint to chain, and serves TLS-over-TUN sessions.
 2.  Client scans chain (`scan`), enriches candidates with latency/GeoIP, and selects a provider.
 3.  Client sends on-chain payment containing a temporary public key.
-4.  Provider payment monitor authorizes that key until session expiry.
-5.  Client connects over TLS, receives a dynamic TUN IP, and traffic is forwarded through provider.
+4.  Provider payment monitor authorizes that key until session expiry and enforces optional max active sessions.
+5.  Client connects over TLS, receives a dynamic TUN IP, traffic is forwarded through provider, and post-connect security checks run.
 
 ### Platform Coverage
 
@@ -373,10 +376,10 @@ To adapt this for another chain:
 
 ### Gaps and Improvements
 
-- [ ] Replace fixed TLS certificate serial numbers with random serial generation.
-- [ ] Remove fatal exits from internal runtime packages and bubble errors to CLI/GUI.
-- [ ] Harden metrics endpoint with optional auth and safer default exposure guidance.
-- [ ] Expand runtime backend tests (secure-store behavior, graceful shutdown, DNS leak checks).
+- [ ] Extend on-chain provider metadata to include advertised bandwidth, max consumers, and country/region claims for first-class filtering/sorting.
+- [ ] Add explicit on-chain availability/status heartbeat payload so clients can prefer currently-online providers.
+- [ ] Add measured throughput speed tests during provider scan/connect and expose bandwidth sorting in CLI/GUI.
+- [ ] Add stronger DNS leak verification with resolver-level telemetry per OS backend (beyond current heuristic checks).
 
 See [docs/TODO.md](docs/TODO.md) for prioritized next steps.
 

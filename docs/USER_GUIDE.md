@@ -26,6 +26,7 @@ GUI users are guided by the first-run setup wizard.
 1. Set provider settings:
    - `./bcvpn config set provider.listen_port 51820`
    - `./bcvpn config set provider.price_sats_per_session 1000`
+   - `./bcvpn config set provider.max_consumers 10`
 2. Start provider:
    - `./bcvpn start-provider`
 3. Optional runtime actions:
@@ -37,7 +38,7 @@ GUI users are guided by the first-run setup wizard.
 ### GUI
 
 1. Open **Provider Mode**.
-2. Set port, price, NAT, cert policy, and access policy fields.
+2. Set port, price, max consumers, NAT, cert policy, and access policy fields.
 3. Save config and enter provider key password.
 4. Click **Start Provider**.
 
@@ -50,6 +51,7 @@ GUI users are guided by the first-run setup wizard.
 2. Select provider in prompt.
 3. Confirm payment.
 4. Tunnel activates and route/DNS are auto-configured.
+5. Post-connect security checks run automatically (egress IP transition, DNS checks, country match when available).
 
 ### GUI
 

@@ -42,6 +42,7 @@ type ProviderConfig struct {
 	AnnounceIP               string `json:"announce_ip"`
 	Country                  string `json:"country"` // 2-letter country code (e.g., "US"). Leave empty to auto-detect.
 	Price                    uint64 `json:"price_sats_per_session"`
+	MaxConsumers             int    `json:"max_consumers"` // 0 means unlimited
 	PrivateKeyFile           string `json:"private_key_file"`
 	BandwidthLimit           string `json:"bandwidth_limit"` // e.g. "10mbit"
 	EnableNAT                bool   `json:"enable_nat"`
@@ -176,6 +177,7 @@ func GenerateDefaultConfig(path string) error {
 			AnnounceIP:               "", // Leave empty to auto-detect public IP
 			Country:                  "", // Leave empty to auto-detect country
 			Price:                    1000,
+			MaxConsumers:             0,
 			PrivateKeyFile:           keyPath,
 			BandwidthLimit:           "10mbit",
 			EnableNAT:                true,

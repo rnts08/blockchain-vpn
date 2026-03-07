@@ -380,6 +380,8 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	countryEntry.SetText(s.cfg.Provider.Country)
 	priceEntry := widget.NewEntry()
 	priceEntry.SetText(fmt.Sprintf("%d", s.cfg.Provider.Price))
+	maxConsumersEntry := widget.NewEntry()
+	maxConsumersEntry.SetText(fmt.Sprintf("%d", s.cfg.Provider.MaxConsumers))
 	bwEntry := widget.NewEntry()
 	bwEntry.SetText(s.cfg.Provider.BandwidthLimit)
 	tunIPEntry := widget.NewEntry()
@@ -425,6 +427,11 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 			dialog.ShowError(fmt.Errorf("invalid price: %w", err), w)
 			return
 		}
+		maxConsumers, err := strconv.Atoi(strings.TrimSpace(maxConsumersEntry.Text))
+		if err != nil || maxConsumers < 0 {
+			dialog.ShowError(fmt.Errorf("invalid max consumers: must be a non-negative integer"), w)
+			return
+		}
 		listenPort, err := strconv.Atoi(strings.TrimSpace(listenPortEntry.Text))
 		if err != nil || listenPort <= 0 || listenPort > 65535 {
 			dialog.ShowError(fmt.Errorf("invalid listen port"), w)
@@ -463,6 +470,7 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.Provider.AnnounceIP = announceIP
 		s.cfg.Provider.Country = strings.TrimSpace(countryEntry.Text)
 		s.cfg.Provider.Price = price
+		s.cfg.Provider.MaxConsumers = maxConsumers
 		s.cfg.Provider.BandwidthLimit = strings.TrimSpace(bwEntry.Text)
 		s.cfg.Provider.TunIP = strings.TrimSpace(tunIPEntry.Text)
 		s.cfg.Provider.TunSubnet = strings.TrimSpace(tunSubnetEntry.Text)
@@ -560,6 +568,7 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewFormItem("Announce IP (optional)", announceIPEntry),
 		widget.NewFormItem("Country", countryEntry),
 		widget.NewFormItem("Price (sats/session)", priceEntry),
+		widget.NewFormItem("Max Consumers (0=unlimited)", maxConsumersEntry),
 		widget.NewFormItem("Bandwidth Limit", bwEntry),
 		widget.NewFormItem("Provider TUN IP", tunIPEntry),
 		widget.NewFormItem("Provider TUN Subnet", tunSubnetEntry),
@@ -1281,7 +1290,7 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 		s.appendLog("Dry-run connect completed.")
 		return nil
 	}
-	return tunnel.ConnectToProvider(context.Background(), &s.cfg.Client, &s.cfg.Security, localKey, selected.Endpoint.PublicKey, endpointAddr)
+	return tunnel.ConnectToProvider(context.Background(), &s.cfg.Client, &s.cfg.Security, localKey, selected.Endpoint.PublicKey, endpointAddr, selected.Country)
 }
 
 func saveConfig(path string, cfg *config.Config) error {

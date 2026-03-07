@@ -778,7 +778,7 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 	if dryRun {
 		fmt.Printf("[Dry Run] Simulation: Would create TUN interface %s and connect to %s.\n", clientCfg.InterfaceName, endpointAddr)
 	} else {
-		err := tunnel.ConnectToProvider(ctx, clientCfg, secCfg, localKey, peerPubKey, endpointAddr)
+		err := tunnel.ConnectToProvider(ctx, clientCfg, secCfg, localKey, peerPubKey, endpointAddr, selectedEndpoint.Country)
 		select {
 		case <-ctx.Done():
 			log.Println("Disconnecting...")
@@ -975,6 +975,8 @@ func getConfigField(cfg *config.Config, key string) (any, error) {
 		return cfg.Provider.Country, nil
 	case "provider.price_sats_per_session":
 		return cfg.Provider.Price, nil
+	case "provider.max_consumers":
+		return cfg.Provider.MaxConsumers, nil
 	case "provider.private_key_file":
 		return cfg.Provider.PrivateKeyFile, nil
 	case "provider.bandwidth_limit":
@@ -1064,6 +1066,12 @@ func setConfigField(cfg *config.Config, key string, value string) error {
 			return err
 		}
 		cfg.Provider.Price = v
+	case "provider.max_consumers":
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		cfg.Provider.MaxConsumers = v
 	case "provider.private_key_file":
 		cfg.Provider.PrivateKeyFile = value
 	case "provider.bandwidth_limit":
@@ -1236,7 +1244,9 @@ type statusOutput struct {
 		InterfaceName        string `json:"interface_name"`
 		ListenPort           int    `json:"listen_port"`
 		AnnounceIP           string `json:"announce_ip"`
+		Country              string `json:"country"`
 		Price                uint64 `json:"price_sats_per_session"`
+		MaxConsumers         int    `json:"max_consumers"`
 		EnableNAT            bool   `json:"enable_nat"`
 		EnableEgressNAT      bool   `json:"enable_egress_nat"`
 		NATOutboundInterface string `json:"nat_outbound_interface"`
@@ -1314,7 +1324,9 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	status.Provider.InterfaceName = cfg.Provider.InterfaceName
 	status.Provider.ListenPort = cfg.Provider.ListenPort
 	status.Provider.AnnounceIP = cfg.Provider.AnnounceIP
+	status.Provider.Country = cfg.Provider.Country
 	status.Provider.Price = cfg.Provider.Price
+	status.Provider.MaxConsumers = cfg.Provider.MaxConsumers
 	status.Provider.EnableNAT = cfg.Provider.EnableNAT
 	status.Provider.EnableEgressNAT = cfg.Provider.EnableEgressNAT
 	status.Provider.NATOutboundInterface = cfg.Provider.NATOutboundInterface

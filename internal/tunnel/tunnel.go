@@ -14,6 +14,7 @@ import (
 
 	"blockchain-vpn/internal/auth"
 	"blockchain-vpn/internal/config"
+	"blockchain-vpn/internal/util"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/songgao/water"
@@ -238,6 +239,17 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 			recordRuntimeError(fmt.Errorf("unauthorized client: %s", hex.EncodeToString(clientPubKey.SerializeCompressed())))
 			continue
 		}
+		if cfg.MaxConsumers > 0 {
+			clients.mu.RLock()
+			active := len(clients.m)
+			clients.mu.RUnlock()
+			if active >= cfg.MaxConsumers {
+				log.Printf("Connection from %s rejected: provider at max consumer capacity (%d)", conn.RemoteAddr(), cfg.MaxConsumers)
+				conn.Close()
+				recordRuntimeError(fmt.Errorf("provider max consumer capacity reached"))
+				continue
+			}
+		}
 
 		log.Printf("Accepted connection from authorized client %s (%s)", hex.EncodeToString(clientPubKey.SerializeCompressed()), conn.RemoteAddr())
 
@@ -261,6 +273,13 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 
 		// Register client
 		clients.mu.Lock()
+		if cfg.MaxConsumers > 0 && len(clients.m) >= cfg.MaxConsumers {
+			clients.mu.Unlock()
+			ipPool.Release(assignedIP)
+			conn.Close()
+			recordRuntimeError(fmt.Errorf("provider max consumer capacity reached"))
+			continue
+		}
 		session := newClientSession(conn, limitBytesPerSec)
 		clients.m[assignedIP.String()] = session
 		clients.mu.Unlock()
@@ -340,7 +359,7 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 }
 
 // ConnectToProvider connects to a provider and sets up the client-side tunnel.
-func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *config.SecurityConfig, localPrivKey *btcec.PrivateKey, serverPubKey *btcec.PublicKey, endpoint string) error {
+func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *config.SecurityConfig, localPrivKey *btcec.PrivateKey, serverPubKey *btcec.PublicKey, endpoint string, expectedCountry string) error {
 	if err := EnsureElevatedPrivileges(); err != nil {
 		recordRuntimeError(err)
 		return fmt.Errorf("client requires automatic networking privileges: %w", err)
@@ -384,6 +403,12 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *confi
 	providerHost, _, err := net.SplitHostPort(endpoint)
 	if err != nil {
 		return fmt.Errorf("invalid endpoint format: %w", err)
+	}
+	preConnectIP, preConnectErr := util.GetPublicIP()
+	if preConnectErr != nil {
+		log.Printf("Warning: could not determine pre-connect public IP: %v", preConnectErr)
+	} else {
+		log.Printf("Pre-connect public IP: %s", preConnectIP.String())
 	}
 
 	log.Printf("Dialing %s...", endpoint)
@@ -433,6 +458,10 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *confi
 		}
 		log.Printf("Kill switch enabled for session on interface %s", iface.Name())
 	}
+
+	checkCtx, cancelChecks := context.WithTimeout(context.Background(), 12*time.Second)
+	runClientPostConnectChecks(checkCtx, providerHost, expectedCountry, preConnectIP)
+	cancelChecks()
 
 	log.Printf("Successfully connected to %s. Tunnel is active.", endpoint)
 

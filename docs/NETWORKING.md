@@ -13,6 +13,7 @@ When a client connects to a provider, BlockchainVPN automatically:
 5. Restores previous route and DNS state when the session ends.
 6. Optionally enables kill switch rules/routes to block non-tunnel egress during the session.
 7. Writes a crash-safe cleanup marker before network mutation, and restores pending route/DNS state on next app startup after abnormal termination.
+8. Runs post-connect security checks (DNS reachability, DNS leak heuristic, egress IP change, and optional provider-country verification).
 
 Platform backends:
 

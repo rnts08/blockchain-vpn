@@ -42,6 +42,8 @@ func TestValidateInvalidConfig(t *testing.T) {
 			InterfaceName:       "",
 			ListenPort:          70000,
 			AnnounceIP:          "not-an-ip",
+			Country:             "USA",
+			MaxConsumers:        -1,
 			HealthCheckInterval: "not-a-duration",
 			IsolationMode:       "invalid-mode",
 			TunIP:               "bad-ip",
