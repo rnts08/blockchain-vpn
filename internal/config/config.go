@@ -20,9 +20,10 @@ type Config struct {
 }
 
 type RPCConfig struct {
-	Host string `json:"host"`
-	User string `json:"user"`
-	Pass string `json:"pass"`
+	Host      string `json:"host"`
+	User      string `json:"user"`
+	Pass      string `json:"pass"`
+	EnableTLS bool   `json:"enable_tls"` // Enable TLS for RPC connections (recommended for production)
 }
 
 type LoggingConfig struct {
@@ -171,9 +172,10 @@ func GenerateDefaultConfig(path string) error {
 
 	cfg := Config{
 		RPC: RPCConfig{
-			Host: "localhost:18443",
-			User: "yourrpcuser",
-			Pass: "yourrpcpassword",
+			Host:      "localhost:18443",
+			User:      "yourrpcuser",
+			Pass:      "yourrpcpassword",
+			EnableTLS: true,
 		},
 		Logging: LoggingConfig{
 			Format: "text",

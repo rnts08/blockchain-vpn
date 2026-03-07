@@ -134,7 +134,7 @@ func main() {
 		}
 
 		startProviderCmd.Parse(os.Args[2:])
-		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
+		client := connectRPCWithConfig(cfg)
 		defer client.Shutdown()
 
 		authManager := auth.NewAuthManager()
@@ -239,7 +239,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
+		client := connectRPCWithConfig(cfg)
 		defer client.Shutdown()
 
 		providerKey, err := getProviderKey(cfg, *rebroadcastKeyPassEnv)
@@ -269,7 +269,7 @@ func main() {
 			log.Fatal("--price must be a positive value")
 		}
 
-		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
+		client := connectRPCWithConfig(cfg)
 		defer client.Shutdown()
 
 		providerKey, err := getProviderKey(cfg, *updatePriceKeyPassEnv)
@@ -288,7 +288,7 @@ func main() {
 		defer stop()
 
 		scanCmd.Parse(os.Args[2:])
-		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
+		client := connectRPCWithConfig(cfg)
 		defer client.Shutdown()
 
 		genesisHash, err := client.GetBlockHash(0)
@@ -627,13 +627,13 @@ func handleVersion(jsonMode bool) {
 	}
 }
 
-func connectRPC(host, user, pass string) *rpcclient.Client {
+func connectRPCWithConfig(cfg *config.Config) *rpcclient.Client {
 	connCfg := &rpcclient.ConnConfig{
-		Host:         host,
-		User:         user,
-		Pass:         pass,
+		Host:         cfg.RPC.Host,
+		User:         cfg.RPC.User,
+		Pass:         cfg.RPC.Pass,
 		HTTPPostMode: true,
-		DisableTLS:   true,
+		DisableTLS:   !cfg.RPC.EnableTLS,
 	}
 	client, err := rpcclient.New(connCfg, nil)
 	if err != nil {
@@ -1144,7 +1144,7 @@ func handleHistorySinceLast(cfg *config.Config) {
 	lastPayment := records[0]
 	log.Printf("Checking for wallet transactions since last payment on %v", lastPayment.Timestamp.Format(time.RFC3339))
 
-	client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
+	client := connectRPCWithConfig(cfg)
 	defer client.Shutdown()
 
 	transactions, err := client.ListTransactionsCount("*", 1000)

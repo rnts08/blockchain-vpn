@@ -359,7 +359,7 @@ func checkRPCConnectivity(cfg *config.Config) error {
 		User:         cfg.RPC.User,
 		Pass:         cfg.RPC.Pass,
 		HTTPPostMode: true,
-		DisableTLS:   true,
+		DisableTLS:   !cfg.RPC.EnableTLS,
 	}
 	client, err := rpcclient.New(connCfg, nil)
 	if err != nil {
@@ -974,6 +974,8 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	rpcUser.SetText(s.cfg.RPC.User)
 	rpcPass := widget.NewPasswordEntry()
 	rpcPass.SetText(s.cfg.RPC.Pass)
+	rpcEnableTLS := widget.NewCheck("Enable TLS (recommended)", nil)
+	rpcEnableTLS.SetChecked(s.cfg.RPC.EnableTLS)
 	keyStorageMode := widget.NewSelect([]string{"file", "auto", "keychain", "libsecret", "dpapi"}, nil)
 	if strings.TrimSpace(s.cfg.Security.KeyStorageMode) == "" {
 		keyStorageMode.SetSelected("file")
@@ -1022,6 +1024,7 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.RPC.Host = strings.TrimSpace(rpcHost.Text)
 		s.cfg.RPC.User = strings.TrimSpace(rpcUser.Text)
 		s.cfg.RPC.Pass = strings.TrimSpace(rpcPass.Text)
+		s.cfg.RPC.EnableTLS = rpcEnableTLS.Checked
 		s.cfg.Security.KeyStorageMode = strings.TrimSpace(keyStorageMode.Selected)
 		s.cfg.Security.KeyStorageService = strings.TrimSpace(keyStorageService.Text)
 		s.cfg.Security.RevocationCacheFile = strings.TrimSpace(revocationFile.Text)
@@ -1030,6 +1033,15 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.Security.MetricsAuthToken = strings.TrimSpace(metricsAuthToken.Text)
 		s.cfg.Logging.Format = strings.TrimSpace(logFormat.Selected)
 		s.cfg.Logging.Level = strings.TrimSpace(logLevel.Selected)
+
+		metricsAddrConfigured := strings.TrimSpace(s.cfg.Provider.MetricsListenAddr) != "" || strings.TrimSpace(s.cfg.Client.MetricsListenAddr) != ""
+		metricsAuthConfigured := strings.TrimSpace(s.cfg.Security.MetricsAuthToken) != ""
+		if metricsAddrConfigured && !metricsAuthConfigured {
+			s.mu.Unlock()
+			dialog.ShowError(fmt.Errorf("security error: metrics endpoints are enabled but no auth token is set. Please configure metrics_auth_token or disable metrics endpoints"), w)
+			return
+		}
+
 		if err := config.Validate(s.cfg); err != nil {
 			s.mu.Unlock()
 			dialog.ShowError(fmt.Errorf("config validation failed: %w", err), w)
@@ -1115,6 +1127,7 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewFormItem("RPC Host", rpcHost),
 		widget.NewFormItem("RPC User", rpcUser),
 		widget.NewFormItem("RPC Pass", rpcPass),
+		widget.NewFormItem("RPC TLS", rpcEnableTLS),
 		widget.NewFormItem("Key Storage Mode", keyStorageMode),
 		widget.NewFormItem("Key Storage Service", keyStorageService),
 		widget.NewFormItem("Revocation Cache File", revocationFile),
@@ -1261,7 +1274,7 @@ func (s *guiState) startProvider(password string) error {
 	if err := tunnel.EnsureElevatedPrivileges(); err != nil {
 		return fmt.Errorf("provider networking setup requires elevated privileges: %w", err)
 	}
-	client := connectRPC(s.cfg.RPC.Host, s.cfg.RPC.User, s.cfg.RPC.Pass)
+	client := connectRPCWithConfig(s.cfg)
 	authManager := auth.NewAuthManager()
 
 	providerKey, err := getOrCreateProviderKey(s.cfg, s.cfg.Provider.PrivateKeyFile, password)
@@ -1378,7 +1391,7 @@ func (s *guiState) rebroadcastService(password string) error {
 	cfg := *s.cfg
 	s.mu.Unlock()
 
-	client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
+	client := connectRPCWithConfig(&cfg)
 	defer client.Shutdown()
 
 	key, err := getOrCreateProviderKey(&cfg, cfg.Provider.PrivateKeyFile, password)
@@ -1404,7 +1417,7 @@ func (s *guiState) broadcastPriceUpdate(password string) error {
 	cfg := *s.cfg
 	s.mu.Unlock()
 
-	client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
+	client := connectRPCWithConfig(&cfg)
 	defer client.Shutdown()
 
 	key, err := getOrCreateProviderKey(&cfg, cfg.Provider.PrivateKeyFile, password)
@@ -1415,7 +1428,7 @@ func (s *guiState) broadcastPriceUpdate(password string) error {
 }
 
 func (s *guiState) scanProviders(sortBy, country string, maxPrice uint64, minBandwidthKB uint32, maxLatency time.Duration, minSlots int) error {
-	client := connectRPC(s.cfg.RPC.Host, s.cfg.RPC.User, s.cfg.RPC.Pass)
+	client := connectRPCWithConfig(s.cfg)
 	defer client.Shutdown()
 
 	repPath, _ := blockchain.DefaultReputationStorePath()
@@ -1567,7 +1580,7 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 	selected := s.scanResults[idx]
 	s.mu.Unlock()
 
-	client := connectRPC(s.cfg.RPC.Host, s.cfg.RPC.User, s.cfg.RPC.Pass)
+	client := connectRPCWithConfig(s.cfg)
 	defer client.Shutdown()
 
 	genesisHash, err := client.GetBlockHash(0)
@@ -1586,6 +1599,28 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 	}
 
 	if !dryRun {
+		s.mu.Lock()
+		providerAnnounceIP := s.cfg.Provider.AnnounceIP
+		providerListenPort := s.cfg.Provider.ListenPort
+		s.mu.Unlock()
+
+		endpointIP := selected.Endpoint.IP.String()
+		endpointPort := int(selected.Endpoint.Port)
+
+		if providerAnnounceIP != "" && endpointIP == providerAnnounceIP && endpointPort == providerListenPort {
+			return fmt.Errorf("cannot connect to self: provider and client endpoint are identical (%s:%d). This would create a routing loop", endpointIP, endpointPort)
+		}
+
+		latency := geoip.MeasureLatency(selected.Endpoint)
+		if latency >= time.Hour {
+			return fmt.Errorf("provider liveness check failed: provider at %s:%d is unreachable", endpointIP, endpointPort)
+		}
+		s.appendLog(fmt.Sprintf("Provider liveness verified: %s (latency: %v)", endpointIP, latency.Round(time.Millisecond)))
+
+		if selected.Endpoint.Price == 0 {
+			return fmt.Errorf("invalid provider: price is zero")
+		}
+
 		if err := tunnel.EnsureElevatedPrivileges(); err != nil {
 			return fmt.Errorf("cannot proceed with payment until networking privileges are available: %w", err)
 		}
@@ -1631,13 +1666,13 @@ func saveConfig(path string, cfg *config.Config) error {
 	return util.WriteFileAtomic(path, out.Bytes(), 0o644)
 }
 
-func connectRPC(host, user, pass string) *rpcclient.Client {
+func connectRPCWithConfig(cfg *config.Config) *rpcclient.Client {
 	connCfg := &rpcclient.ConnConfig{
-		Host:         host,
-		User:         user,
-		Pass:         pass,
+		Host:         cfg.RPC.Host,
+		User:         cfg.RPC.User,
+		Pass:         cfg.RPC.Pass,
 		HTTPPostMode: true,
-		DisableTLS:   true,
+		DisableTLS:   !cfg.RPC.EnableTLS,
 	}
 	client, err := rpcclient.New(connCfg, nil)
 	if err != nil {

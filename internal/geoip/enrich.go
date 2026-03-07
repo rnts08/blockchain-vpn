@@ -53,7 +53,7 @@ func EnrichEndpoints(announcements []*blockchain.ProviderAnnouncement) []*Enrich
 			}
 
 			// Latency Test
-			latency := measureLatency(announcement.Endpoint)
+			latency := MeasureLatency(announcement.Endpoint)
 
 			enrichedChan <- &EnrichedVPNEndpoint{ProviderAnnouncement: announcement, Country: country, Latency: latency}
 		}(ann)
@@ -70,9 +70,9 @@ func EnrichEndpoints(announcements []*blockchain.ProviderAnnouncement) []*Enrich
 	return enrichedEndpoints
 }
 
-// measureLatency sends a small UDP packet to the endpoint and measures RTT.
+// MeasureLatency sends a small UDP packet to the endpoint and measures RTT.
 // Returns a large duration if the endpoint is unreachable.
-func measureLatency(endpoint *protocol.VPNEndpoint) time.Duration {
+func MeasureLatency(endpoint *protocol.VPNEndpoint) time.Duration {
 	targetAddr := &net.UDPAddr{IP: endpoint.IP, Port: int(endpoint.Port)}
 	conn, err := net.DialUDP("udp", nil, targetAddr)
 	if err != nil {
