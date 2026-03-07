@@ -218,16 +218,23 @@ func StartEchoServer(ctx context.Context, port int) {
 func MonitorPayments(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, servicePrice uint64) {
 	// Start tracking from the current best block to avoid listing old transactions.
 	var lastBlockHash *chainhash.Hash
-	if info, err := client.GetBlockChainInfo(); err == nil {
+	payments := newPaymentTracker()
+
+	info, err := withRetry(ctx, "GetBlockChainInfo", 5, 1*time.Second, func() (*btcjson.GetBlockChainInfoResult, error) {
+		return client.GetBlockChainInfo()
+	})
+	if err == nil {
 		lastBlockHash, _ = chainhash.NewHashFromStr(info.BestBlockHash)
+	} else {
+		log.Printf("Warning: could not initialize monitor from best block: %v", err)
 	}
 
 	log.Println("Starting payment monitor (polling mode)...")
-	runPaymentMonitorPolling(ctx, client, authManager, servicePrice, lastBlockHash)
+	runPaymentMonitorPolling(ctx, client, authManager, servicePrice, lastBlockHash, payments)
 }
 
 // runPaymentMonitorPolling is a fallback for when block notifications are not available.
-func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, servicePrice uint64, lastBlockHash *chainhash.Hash) {
+func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, servicePrice uint64, lastBlockHash *chainhash.Hash, payments *paymentTracker) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 	for {
@@ -235,13 +242,15 @@ func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, aut
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			result, err := client.ListSinceBlock(lastBlockHash)
+			result, err := withRetry(ctx, "ListSinceBlock", 5, 1*time.Second, func() (*btcjson.ListSinceBlockResult, error) {
+				return client.ListSinceBlock(lastBlockHash)
+			})
 			if err != nil {
 				log.Printf("Error checking payments (polling): %v", err)
 				continue
 			}
 			for _, tx := range result.Transactions {
-				processTxForPayment(client, tx.TxID, tx.Amount, authManager, servicePrice)
+				processTxForPayment(ctx, client, tx.TxID, tx.Amount, tx.Confirmations, authManager, servicePrice, payments)
 			}
 			if hash, err := chainhash.NewHashFromStr(result.LastBlock); err == nil {
 				lastBlockHash = hash
@@ -251,7 +260,7 @@ func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, aut
 }
 
 // processBlockForPayments iterates through transactions in a block and processes them.
-func processBlockForPayments(client *rpcclient.Client, block *btcjson.GetBlockVerboseTxResult, authManager *auth.AuthManager, servicePrice uint64) {
+func processBlockForPayments(ctx context.Context, client *rpcclient.Client, block *btcjson.GetBlockVerboseTxResult, authManager *auth.AuthManager, servicePrice uint64, payments *paymentTracker) {
 	for _, tx := range block.Tx {
 		// We need to check if the transaction involves our wallet.
 		// GetRawTransactionVerbose doesn't tell us this directly.
@@ -264,20 +273,27 @@ func processBlockForPayments(client *rpcclient.Client, block *btcjson.GetBlockVe
 		}
 		txDetails, err := client.GetTransaction(txHash)
 		if err == nil && txDetails.Amount > 0 { // A simple check for received payments
-			processTxForPayment(client, tx.Txid, txDetails.Amount, authManager, servicePrice)
+			processTxForPayment(ctx, client, tx.Txid, txDetails.Amount, int64(txDetails.Confirmations), authManager, servicePrice, payments)
 		}
 	}
 }
 
 // processTxForPayment checks a single transaction for a valid payment payload.
-func processTxForPayment(client *rpcclient.Client, txid string, amount float64, authManager *auth.AuthManager, servicePrice uint64) {
+func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid string, amount float64, confirmations int64, authManager *auth.AuthManager, servicePrice uint64, payments *paymentTracker) {
+	if confirmations < 0 {
+		payments.handleRemovedTx(txid, authManager)
+		return
+	}
+
 	paidAmount, _ := btcutil.NewAmount(amount)
 	if uint64(paidAmount) < servicePrice {
 		return // Not a valid payment amount
 	}
 
 	txHash, _ := chainhash.NewHashFromStr(txid)
-	txVerbose, err := client.GetRawTransactionVerbose(txHash)
+	txVerbose, err := withRetry(ctx, "GetRawTransactionVerbose(payment)", 5, 1*time.Second, func() (*btcjson.TxRawResult, error) {
+		return client.GetRawTransactionVerbose(txHash)
+	})
 	if err != nil {
 		log.Printf("Could not get raw transaction for payment %s: %v", txid, err)
 		return
@@ -294,6 +310,7 @@ func processTxForPayment(client *rpcclient.Client, txid string, amount float64, 
 		}
 		if clientKey, err := protocol.DecodePaymentPayload(payload); err == nil {
 			authManager.AuthorizePeer(clientKey, 24*time.Hour)
+			payments.trackPayment(txid, clientKey)
 		}
 	}
 }

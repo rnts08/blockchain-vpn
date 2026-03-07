@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"strings"
@@ -37,14 +36,6 @@ func createTunInterface(ifaceName string, ip string, subnetMask string) (*water.
 	}
 
 	return iface, nil
-}
-
-// copyStream copies data between two ReadWriteClosers and logs errors.
-func copyStream(dst io.Writer, src io.Reader) {
-	if _, err := io.Copy(dst, src); err != nil {
-		// This error is expected when a connection is closed, so we log it lightly.
-		log.Printf("Info: stream copy ended: %v", err)
-	}
 }
 
 // IPPool manages a pool of dynamic IP addresses.
@@ -97,12 +88,18 @@ func (p *IPPool) Release(ip net.IP) {
 
 // ClientMap maps IP addresses to active connections.
 type ClientMap struct {
-	m  map[string]net.Conn
+	m  map[string]*clientSession
 	mu sync.RWMutex
 }
 
 // StartProviderServer sets up the TUN interface and listens for TLS connections.
 func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKey *btcec.PrivateKey, authManager *auth.AuthManager) {
+	if err := applyProviderIsolation(cfg.IsolationMode); err != nil {
+		log.Printf("Warning: could not apply provider isolation mode %q: %v", cfg.IsolationMode, err)
+	} else if cfg.IsolationMode != "" && cfg.IsolationMode != "none" {
+		log.Printf("Provider isolation mode enabled: %s", cfg.IsolationMode)
+	}
+
 	tlsConfig, err := GenerateServerTLSConfig(privKey)
 	if err != nil {
 		log.Fatalf("Failed to generate server TLS config: %v", err)
@@ -127,9 +124,26 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 	}
 	defer iface.Close()
 
+	if cfg.EnableEgressNAT {
+		natCleanup, err := setupProviderEgressNAT(iface.Name(), cfg.TunIP, cfg.TunSubnet, cfg.NATOutboundInterface)
+		if err != nil {
+			log.Printf("Warning: failed to configure provider egress NAT: %v", err)
+		} else if natCleanup != nil {
+			defer natCleanup()
+			log.Printf("Provider egress NAT enabled for %s", iface.Name())
+		}
+	}
+
+	startProviderHealthChecks(ctx, cfg, iface.Name(), listenAddr)
+
 	// Initialize IP Pool and Client Map
 	ipPool := NewIPPool(cfg.TunIP)
-	clients := &ClientMap{m: make(map[string]net.Conn)}
+	clients := &ClientMap{m: make(map[string]*clientSession)}
+	limitBytesPerSec, err := parseBandwidthLimit(cfg.BandwidthLimit)
+	if err != nil {
+		log.Printf("Warning: invalid provider bandwidth_limit %q: %v (disabling throttle)", cfg.BandwidthLimit, err)
+		limitBytesPerSec = 0
+	}
 
 	// Start the central TUN reader goroutine
 	// This reads packets from the TUN interface and routes them to the correct client connection.
@@ -189,7 +203,8 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 
 		// Register client
 		clients.mu.Lock()
-		clients.m[assignedIP.String()] = conn
+		session := newClientSession(conn, limitBytesPerSec)
+		clients.m[assignedIP.String()] = session
 		clients.mu.Unlock()
 
 		// Handle client traffic and session
@@ -212,10 +227,10 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 			sessionTimer := time.NewTimer(time.Until(expiration))
 			done := make(chan struct{})
 
-			go func() {
-				copyStream(iface, c)
+			go func(sess *clientSession) {
+				copyStreamWithControl(iface, c, sess.stats.addUpstream, sess.upstreamLimiter)
 				close(done)
-			}()
+			}(session)
 
 			select {
 			case <-sessionTimer.C:
@@ -223,6 +238,13 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 			case <-done:
 				sessionTimer.Stop() // Connection closed by client, clean up timer.
 			}
+			log.Printf(
+				"Session stats client=%s duration=%s upstream_bytes=%d downstream_bytes=%d",
+				hex.EncodeToString(pk.SerializeCompressed()),
+				time.Since(session.stats.startedAt).Round(time.Second),
+				session.stats.upstreamBytes.Load(),
+				session.stats.downstreamBytes.Load(),
+			)
 		}(conn, assignedIP, clientPubKey)
 	}
 }
@@ -241,10 +263,16 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 		if n >= 20 && (packet[0]>>4) == 4 {
 			destIP := net.IP(packet[16:20])
 			clients.mu.RLock()
-			conn, ok := clients.m[destIP.String()]
+			session, ok := clients.m[destIP.String()]
 			clients.mu.RUnlock()
 			if ok {
-				conn.Write(packet[:n])
+				if session.downLimiter != nil {
+					session.downLimiter.accountAndThrottle(n)
+				}
+				session.stats.addDownstream(n)
+				if _, err := session.conn.Write(packet[:n]); err != nil {
+					log.Printf("Info: failed to write packet to client %s: %v", destIP.String(), err)
+				}
 			}
 		}
 	}
@@ -298,8 +326,8 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, localPrivK
 	log.Printf("Successfully connected to %s. Tunnel is active.", endpoint)
 
 	// Forward packets
-	go copyStream(conn, iface)
-	copyStream(iface, conn) // Block on this one until connection closes
+	go copyStreamWithControl(conn, iface, nil, nil)
+	copyStreamWithControl(iface, conn, nil, nil) // Block on this one until connection closes
 
 	return nil
 }

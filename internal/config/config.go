@@ -26,6 +26,11 @@ type ProviderConfig struct {
 	PrivateKeyFile           string `json:"private_key_file"`
 	BandwidthLimit           string `json:"bandwidth_limit"` // e.g. "10mbit"
 	EnableNAT                bool   `json:"enable_nat"`
+	EnableEgressNAT          bool   `json:"enable_egress_nat"`
+	NATOutboundInterface     string `json:"nat_outbound_interface"`
+	IsolationMode            string `json:"isolation_mode"` // "none" or "sandbox"
+	HealthCheckEnabled       bool   `json:"health_check_enabled"`
+	HealthCheckInterval      string `json:"health_check_interval"` // e.g. "30s"
 	BandwidthMonitorInterval string `json:"bandwidth_monitor_interval"`
 	TunIP                    string `json:"tun_ip"`
 	TunSubnet                string `json:"tun_subnet"`
@@ -68,6 +73,11 @@ func GenerateDefaultConfig(path string) error {
 			PrivateKeyFile:           "provider.key",
 			BandwidthLimit:           "10mbit",
 			EnableNAT:                true,
+			EnableEgressNAT:          false,
+			NATOutboundInterface:     "",
+			IsolationMode:            "none",
+			HealthCheckEnabled:       true,
+			HealthCheckInterval:      "30s",
 			BandwidthMonitorInterval: "30s",
 			TunIP:                    "10.10.0.1",
 			TunSubnet:                "24",

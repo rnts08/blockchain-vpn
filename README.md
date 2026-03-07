@@ -120,8 +120,43 @@ Generate a default configuration file:
 Edit `config.json` to match your environment:
 
 *   **rpc**: Connection details for your local `ordexcoind` node.
-*   **provider**: Settings if you intend to sell VPN service (IP, Port, Price).
+*   **provider**: Settings if you intend to sell VPN service (IP, Port, Price, `enable_egress_nat`, `nat_outbound_interface`, `isolation_mode`, `health_check_enabled`, `health_check_interval`).
 *   **client**: Settings for connecting to others (Interface Name).
+
+Sample `config.json`:
+
+```json
+{
+  "rpc": {
+    "host": "localhost:18443",
+    "user": "yourrpcuser",
+    "pass": "yourrpcpassword"
+  },
+  "provider": {
+    "interface_name": "bcvpn0",
+    "listen_port": 51820,
+    "announce_ip": "",
+    "country": "",
+    "price_sats_per_session": 1000,
+    "private_key_file": "provider.key",
+    "bandwidth_limit": "10mbit",
+    "enable_nat": true,
+    "enable_egress_nat": false,
+    "nat_outbound_interface": "",
+    "isolation_mode": "none",
+    "health_check_enabled": true,
+    "health_check_interval": "30s",
+    "bandwidth_monitor_interval": "30s",
+    "tun_ip": "10.10.0.1",
+    "tun_subnet": "24"
+  },
+  "client": {
+    "interface_name": "bcvpn1",
+    "tun_ip": "10.10.0.2",
+    "tun_subnet": "24"
+  }
+}
+```
 
 ## Usage
 
@@ -181,6 +216,7 @@ To adapt this for another chain:
   - [x] TUN interface setup and management (Linux).
   - [x] Payment monitoring and automatic client authorization via TLS certificate verification.
   - [x] UDP Echo server for latency tests.
+  - [x] Per-session throughput accounting and bandwidth limit enforcement.
 - [x] **Client Logic**:
     - [x] Blockchain scanning for providers.
     - [x] GeoIP enrichment and Latency testing.
@@ -196,7 +232,7 @@ To adapt this for another chain:
 ### Todo List
 
 - [ ] **Core VPN Functionality**
-  - [ ] **Provider Egress NAT**: Implement portable provider egress/NAT support (platform-specific backend per OS).
+  - [x] **Provider Egress NAT**: Implement provider egress NAT backend (Linux runtime backend with platform stubs).
   - [x] **Client Routing**: Implement logic to modify the client's system routing table to direct all traffic through the TUN interface upon connection.
   - [x] **Client DNS**: Configure the client's DNS settings upon connection to prevent DNS leaks.
   - [x] **Dynamic IP Management**: Replace static TUN IPs with a dynamic IP address pool managed by the provider.
@@ -205,15 +241,19 @@ To adapt this for another chain:
   - [x] Handle blockchain reorgs in the Payment Monitor (remove authorization if payment tx is orphaned).
   - [x] Validate `chaincfg` parameters dynamically for Altchains beyond standard testnets.
   - [x] Graceful shutdown and cleanup of TUN interfaces and firewall rules.
+  - [x] Active health checks for provider TUN interface and TLS listener.
+  - [x] Integration tests for TLS handshake identity validation and stream forwarding/accounting.
+  - [x] Retry and exponential backoff strategy for transient RPC connectivity loss.
 
 - [ ] **Cross-Platform Support**
   - [x] Ensure file paths for config and keys are OS-agnostic.
-  - [ ] Add macOS route + DNS backend.
-  - [ ] Add Windows route + DNS backend.
+  - [x] Add macOS route + DNS backend.
+  - [x] Add Windows route + DNS backend.
 
 - [ ] **Security**
   - [x] Encrypt the `provider.key` file on disk.
   - [x] Validate input data from `OP_RETURN` strictly to prevent injection attacks.
+  - [x] Optional provider sandbox isolation mode (Linux).
   - [ ] Run the TUN interface in a separate network namespace (optional, for better isolation).
 
 - [ ] **Advanced Features**
@@ -224,7 +264,7 @@ To adapt this for another chain:
 - [ ] **Future Refactoring & Features**
   - [ ] **GUI Implementation**: Build a graphical user interface based on `GUI.md`.
   - [x] **Code Structure**: Refactor into logical sub-packages (`internal/protocol`, `internal/tunnel`, etc.).
-  - [ ] **Coin Selection**: Implement intelligent UTXO selection instead of using the first available.
+  - [x] **Coin Selection**: Implement deterministic UTXO selection instead of using the first available.
   - [ ] **Fee Estimation**: Replace hardcoded transaction fees with dynamic estimation using `estimatesmartfee`.
   - [ ] **Configuration Management**: Move all configuration files (`config.json`, `provider.key`, `history.json`) to a dedicated application directory (e.g., `~/.config/BlockchainVPN`).
 

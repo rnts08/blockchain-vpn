@@ -1,7 +1,9 @@
 package blockchain
 
 import (
+	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -26,7 +28,9 @@ func GetProviderPaymentAddress(client *rpcclient.Client, announcementTxID string
 	}
 
 	// Get the announcement transaction itself.
-	txVerbose, err := client.GetRawTransactionVerbose(txHash)
+	txVerbose, err := withRetry(context.Background(), "GetRawTransactionVerbose(announcement)", 4, 500*time.Millisecond, func() (*btcjson.TxRawResult, error) {
+		return client.GetRawTransactionVerbose(txHash)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("could not get raw announcement transaction: %w", err)
 	}
@@ -46,7 +50,9 @@ func GetProviderPaymentAddress(client *rpcclient.Client, announcementTxID string
 	if err != nil {
 		return nil, fmt.Errorf("invalid previous txid: %w", err)
 	}
-	prevTxVerbose, err := client.GetRawTransactionVerbose(prevTxHash)
+	prevTxVerbose, err := withRetry(context.Background(), "GetRawTransactionVerbose(previous)", 4, 500*time.Millisecond, func() (*btcjson.TxRawResult, error) {
+		return client.GetRawTransactionVerbose(prevTxHash)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("could not get raw previous transaction: %w", err)
 	}
@@ -80,14 +86,55 @@ func selectCoins(client *rpcclient.Client, targetAmount btcutil.Amount) ([]btcjs
 		return nil, 0, fmt.Errorf("failed to list unspent outputs: %w", err)
 	}
 
+	return deterministicSelectCoins(unspent, targetAmount)
+}
+
+// deterministicSelectCoins chooses coins with a deterministic strategy:
+// 1) single-UTXO exact match
+// 2) smallest single UTXO that covers target
+// 3) ascending accumulation (smallest-first) until target
+func deterministicSelectCoins(unspent []btcjson.ListUnspentResult, targetAmount btcutil.Amount) ([]btcjson.ListUnspentResult, btcutil.Amount, error) {
+	type entry struct {
+		utxo   btcjson.ListUnspentResult
+		amount btcutil.Amount
+	}
+	entries := make([]entry, 0, len(unspent))
+	for _, u := range unspent {
+		amount, _ := btcutil.NewAmount(u.Amount)
+		entries = append(entries, entry{utxo: u, amount: amount})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].amount != entries[j].amount {
+			return entries[i].amount < entries[j].amount
+		}
+		if entries[i].utxo.TxID != entries[j].utxo.TxID {
+			return entries[i].utxo.TxID < entries[j].utxo.TxID
+		}
+		return entries[i].utxo.Vout < entries[j].utxo.Vout
+	})
+
+	// Prefer exact match.
+	for _, e := range entries {
+		if e.amount == targetAmount {
+			return []btcjson.ListUnspentResult{e.utxo}, e.amount, nil
+		}
+	}
+
+	// Then smallest single coin over target.
+	for _, e := range entries {
+		if e.amount > targetAmount {
+			return []btcjson.ListUnspentResult{e.utxo}, e.amount, nil
+		}
+	}
+
+	// Finally accumulate largest first to minimize number of inputs and fee impact.
 	var selected []btcjson.ListUnspentResult
 	var total btcutil.Amount
-
-	for _, utxo := range unspent {
-		amount, _ := btcutil.NewAmount(utxo.Amount)
-		selected = append(selected, utxo)
-		total += amount
-
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
+		selected = append(selected, e.utxo)
+		total += e.amount
 		if total >= targetAmount {
 			return selected, total, nil
 		}

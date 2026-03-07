@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -15,8 +16,15 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 )
 
+var identityExtensionOID = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 55555, 1, 1}
+
 func generateSelfSignedCert(privKey *btcec.PrivateKey) (tls.Certificate, error) {
 	pubKeyID := hex.EncodeToString(privKey.PubKey().SerializeCompressed())
+	tlsPrivKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to generate TLS keypair: %w", err)
+	}
+
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
@@ -28,24 +36,42 @@ func generateSelfSignedCert(privKey *btcec.PrivateKey) (tls.Certificate, error) 
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
+		ExtraExtensions: []pkix.Extension{
+			{
+				Id:    identityExtensionOID,
+				Value: privKey.PubKey().SerializeCompressed(),
+			},
+		},
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, privKey.PubKey().ToECDSA(), privKey.ToECDSA())
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &tlsPrivKey.PublicKey, tlsPrivKey)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("failed to create certificate: %w", err)
 	}
 
 	return tls.Certificate{
 		Certificate: [][]byte{derBytes},
-		PrivateKey:  (*ecdsa.PrivateKey)(privKey.ToECDSA()),
+		PrivateKey:  tlsPrivKey,
 	}, nil
 }
 
 func certToBTCECPubKey(cert *x509.Certificate) (*btcec.PublicKey, error) {
+	for _, ext := range cert.Extensions {
+		if ext.Id.Equal(identityExtensionOID) {
+			key, err := btcec.ParsePubKey(ext.Value)
+			if err != nil {
+				return nil, fmt.Errorf("invalid identity extension public key: %w", err)
+			}
+			return key, nil
+		}
+	}
+
 	ecdsaPubKey, ok := cert.PublicKey.(*ecdsa.PublicKey)
 	if !ok {
 		return nil, fmt.Errorf("peer certificate public key is not ECDSA")
 	}
+	// Backward compatibility path for legacy certificates where the TLS cert key
+	// was expected to be the same secp256k1 key.
 	compressed := elliptic.MarshalCompressed(ecdsaPubKey.Curve, ecdsaPubKey.X, ecdsaPubKey.Y)
 	return btcec.ParsePubKey(compressed)
 }

@@ -1,9 +1,13 @@
 package blockchain
 
 import (
+	"context"
 	"encoding/hex"
 	"log"
+	"time"
 
+	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 
 	"blockchain-vpn/internal/protocol"
@@ -23,19 +27,25 @@ func ScanForVPNs(client *rpcclient.Client, startBlock int64) ([]*ProviderAnnounc
 	priceUpdates := make(map[string]uint64) // Key: hex pubkey, Value: new price
 
 	// Get current block count
-	count, err := client.GetBlockCount()
+	count, err := withRetry(context.Background(), "GetBlockCount", 5, 500*time.Millisecond, func() (int64, error) {
+		return client.GetBlockCount()
+	})
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Iterate backwards from tip to startBlock
 	for i := count; i > startBlock && i > 0; i-- {
-		hash, err := client.GetBlockHash(i)
+		hash, err := withRetry(context.Background(), "GetBlockHash", 5, 500*time.Millisecond, func() (*chainhash.Hash, error) {
+			return client.GetBlockHash(i)
+		})
 		if err != nil {
 			log.Printf("Could not get block hash for height %d: %v", i, err)
 			continue
 		}
-		block, err := client.GetBlockVerboseTx(hash)
+		block, err := withRetry(context.Background(), "GetBlockVerboseTx", 5, 500*time.Millisecond, func() (*btcjson.GetBlockVerboseTxResult, error) {
+			return client.GetBlockVerboseTx(hash)
+		})
 		if err != nil {
 			log.Printf("Could not get verbose tx block for hash %s: %v", hash, err)
 			continue
