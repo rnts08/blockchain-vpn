@@ -9,7 +9,7 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 - [x] **5.4 Confirmation Dialogs**: Add confirmation dialogs for destructive actions like "Stop Provider" and "Disconnect All". (Fixed in v0.4.7)
 - [x] **5.5 Real-time Metrics**: Implement auto-refresh (e.g., 5s interval) or live charts for metrics. (Fixed in v0.4.8)
 - [x] **5.6 Wallet Balance**: Display the current wallet balance in the UI. (Fixed in v0.4.9)
-- [ ] **5.7 Country Dropdown**: Replace free-text country entry with a searchable dropdown of country codes.
+- [x] **5.7 Country Dropdown**: Replace free-text country entry with a searchable dropdown of country codes. (Fixed in v0.4.10)
 - [ ] **5.8 Validation Highlighting**: Highlight invalid fields (e.g., with a red border) on validation failure.
 
 ## Testing

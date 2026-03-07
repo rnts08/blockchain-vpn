@@ -7,6 +7,7 @@ import (
 
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 )
 
 func TestGUICreation(t *testing.T) {
@@ -24,6 +25,7 @@ func TestGUICreation(t *testing.T) {
 		metricsContent: binding.NewString(),
 		eventsContent:  binding.NewString(),
 		walletBalance:  binding.NewString(),
+		countryEntry:   widget.NewSelectEntry(nil),
 	}
 	_ = state.providerStatus.Set("Stopped")
 	_ = state.autoScroll.Set(true)
@@ -52,6 +54,7 @@ func TestSettingsTab(t *testing.T) {
 		metricsContent: binding.NewString(),
 		eventsContent:  binding.NewString(),
 		walletBalance:  binding.NewString(),
+		countryEntry:   widget.NewSelectEntry(nil),
 	}
 	_ = state.providerStatus.Set("Stopped")
 	_ = state.autoScroll.Set(true)
@@ -79,6 +82,7 @@ func TestWalletTab(t *testing.T) {
 		metricsContent: binding.NewString(),
 		eventsContent:  binding.NewString(),
 		walletBalance:  binding.NewString(),
+		countryEntry:   widget.NewSelectEntry(nil),
 	}
 	_ = state.providerStatus.Set("Stopped")
 	_ = state.autoScroll.Set(true)

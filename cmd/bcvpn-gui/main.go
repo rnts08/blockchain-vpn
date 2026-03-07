@@ -92,6 +92,7 @@ type guiState struct {
 	metricsContent binding.String
 	eventsContent  binding.String
 	walletBalance  binding.String
+	countryEntry   *widget.SelectEntry
 
 	providerRunning  bool
 	providerStarting bool
@@ -654,8 +655,8 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	title := widget.NewLabelWithStyle("Client Discovery & Connect", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	sortSelect := widget.NewSelect([]string{"latency", "price", "country", "bandwidth", "capacity", "score"}, nil)
 	sortSelect.SetSelected("latency")
-	countryEntry := widget.NewEntry()
-	countryEntry.SetPlaceHolder("Country filter e.g. US")
+	s.countryEntry = widget.NewSelectEntry([]string{"US", "DE", "UK", "FR", "NL", "SG", "JP", "CA", "AU"})
+	s.countryEntry.SetPlaceHolder("Country filter e.g. US")
 	maxPriceEntry := widget.NewEntry()
 	maxPriceEntry.SetPlaceHolder("Max price sats (optional)")
 	minBwEntry := widget.NewEntry()
@@ -739,7 +740,7 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 				dialog.ShowError(fmt.Errorf("invalid min slots: %w", err), w)
 				return
 			}
-			if err := s.scanProviders(sortSelect.Selected, strings.TrimSpace(countryEntry.Text), maxPrice, minBW, time.Duration(maxLatencyMS)*time.Millisecond, minSlots); err != nil {
+			if err := s.scanProviders(sortSelect.Selected, strings.TrimSpace(s.countryEntry.Text), maxPrice, minBW, time.Duration(maxLatencyMS)*time.Millisecond, minSlots); err != nil {
 				dialog.ShowError(err, w)
 				return
 			}
@@ -820,7 +821,7 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewLabel("Sort:"),
 		sortSelect,
 		widget.NewLabel("Country:"),
-		countryEntry,
+		s.countryEntry,
 		widget.NewLabel("Max Price:"),
 		maxPriceEntry,
 		widget.NewLabel("Min BW:"),
@@ -1709,6 +1710,30 @@ func (s *guiState) scanProviders(sortBy, country string, maxPrice uint64, minBan
 		return err
 	}
 	enriched := geoip.EnrichEndpoints(results)
+
+	// Update country dropdown options with discovered countries
+	if s.countryEntry != nil {
+		uniqueCountries := make(map[string]struct{})
+		// Since we can't easily read unexported options, we'll maintain them in a list or just use defaults + new
+		defaults := []string{"US", "DE", "UK", "FR", "NL", "SG", "JP", "CA", "AU"}
+		for _, opt := range defaults {
+			uniqueCountries[opt] = struct{}{}
+		}
+		for _, ep := range enriched {
+			c := effectiveCountryGUI(ep)
+			if c != "" && c != "N/A" {
+				uniqueCountries[c] = struct{}{}
+			}
+		}
+		var opts []string
+		for c := range uniqueCountries {
+			opts = append(opts, c)
+		}
+		sort.Strings(opts)
+		s.countryEntry.SetOptions(opts)
+		s.countryEntry.Refresh()
+	}
+
 	var filtered []*geoip.EnrichedVPNEndpoint
 	for _, ep := range enriched {
 		if country != "" && !strings.EqualFold(country, effectiveCountryGUI(ep)) {

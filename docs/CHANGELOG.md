@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
  
+## [0.4.10] - 2026-03-07
+
+### GUI/UX Improvements
+- **Item 5.7 Country Filter Dropdown**: Replaced the free-text country entry in the "Client Mode" tab with a searchable `SelectEntry` dropdown. The dropdown is pre-populated with common country codes and dynamically updated with unique codes discovered during provider scans.
+
 ## [0.4.9] - 2026-03-07
 
 ### GUI/UX Improvements
