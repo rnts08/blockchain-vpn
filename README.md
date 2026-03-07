@@ -95,18 +95,18 @@ Clients purchase access by sending a transaction to the provider's address (deri
 
 ### Prerequisites
 
-*   **Go 1.16+** installed.
+*   **Go 1.22+** installed.
 *   **OrdexCoin Core (`ordexcoind`)** running and fully synced.
     *   RPC must be enabled (`server=1`).
     *   Transaction indexing (`txindex=1`) is recommended for faster scanning but not strictly required for basic operation.
-*   Standard Linux networking tools (`ip`, `tc`).
+*   On Linux, root/admin access is required to create/configure TUN and route/DNS settings.
+*   On macOS/Windows, automatic route/DNS configuration is currently not implemented; manual setup is required after tunnel connection.
 *   **GeoIP Database**: Download `GeoLite2-Country.mmdb` from MaxMind and place it in the project root for country detection.
 
 ### Installation
 
 ```bash
-cd blockchain-vpn
-go build -o bcvpn .
+go build -o bcvpn ./cmd/bcvpn/
 ```
 
 ### Configuration
@@ -130,12 +130,11 @@ Edit `config.json` to match your environment:
 To start selling bandwidth:
 
 ```bash
-sudo ./bcvpn start-provider
+./bcvpn start-provider
 ```
 
 *   This command will:
-    1.  Set up the WireGuard interface (requires `sudo`).
-    1.  Set up the TUN interface (requires `sudo`).
+    1.  Set up the provider TUN interface (requires elevated privileges on most systems).
     2.  Announce your service on the blockchain (requires wallet funds).
     3.  Start a payment monitor to listen for incoming customers.
     4.  Start a UDP echo server for latency testing.
@@ -151,10 +150,9 @@ sudo ./bcvpn start-provider
 
 2.  **Connect**:
     Follow the interactive prompts in the `scan` command to select a provider. The tool will:
-    *   Generate a temporary WireGuard key pair.
     *   Generate a temporary key pair.
     *   Send the payment transaction.
-    *   Configure a local tunnel to the provider.
+    *   Configure a local TLS-over-TUN tunnel to the provider.
 
 3.  **Payment History**:
     View a log of past payments.
@@ -191,14 +189,14 @@ To adapt this for another chain:
     - [x] Payment transaction construction (with OP_RETURN).
     - [x] Payment retry mechanism.
     - [x] Payment history logging.
-- [x] **Cross-Platform**:
-    - [x] Linux support (full feature set).
-    - [x] Windows/macOS compilation support (stubs for interface management).
+- [x] **Cross-Platform Buildability**:
+    - [x] Linux support (full runtime feature set).
+    - [x] Windows/macOS compilation support (networking stubs for unsupported automatic setup).
 
 ### Todo List
 
 - [ ] **Core VPN Functionality**
-  - [x] **Provider NAT**: Implement firewall rules (iptables/nftables) to NAT traffic from the TUN interface to the internet, allowing clients to access external sites.
+  - [ ] **Provider Egress NAT**: Implement portable provider egress/NAT support (platform-specific backend per OS).
   - [x] **Client Routing**: Implement logic to modify the client's system routing table to direct all traffic through the TUN interface upon connection.
   - [x] **Client DNS**: Configure the client's DNS settings upon connection to prevent DNS leaks.
   - [x] **Dynamic IP Management**: Replace static TUN IPs with a dynamic IP address pool managed by the provider.
@@ -209,18 +207,56 @@ To adapt this for another chain:
   - [x] Graceful shutdown and cleanup of TUN interfaces and firewall rules.
 
 - [ ] **Cross-Platform Support**
-  - [x] Replace `exec.Command("ip", ...)` calls with a Go-native library (`netlink`) for Linux.
-  - [ ] Ensure file paths for config and keys are OS-agnostic.
+  - [x] Ensure file paths for config and keys are OS-agnostic.
+  - [ ] Add macOS route + DNS backend.
+  - [ ] Add Windows route + DNS backend.
 
 - [ ] **Security**
-  - [ ] Encrypt the `provider.key` file on disk.
-  - [ ] Validate input data from `OP_RETURN` strictly to prevent injection attacks.
+  - [x] Encrypt the `provider.key` file on disk.
+  - [x] Validate input data from `OP_RETURN` strictly to prevent injection attacks.
   - [ ] Run the TUN interface in a separate network namespace (optional, for better isolation).
 
 - [ ] **Advanced Features**
   - [ ] **NAT Traversal**: Implement UPnP or NAT-PMP for providers behind home routers.
-  - [ ] **Dynamic Pricing**: Allow providers to update price without re-announcing (or minimize re-announcement cost).
+  - [x] **Dynamic Pricing**: Allow providers to update price without re-announcing (or minimize re-announcement cost).
   - [x] **Session Management**: Implement logic to handle session expiration gracefully (auto-disconnect or auto-renew).
+
+- [ ] **Future Refactoring & Features**
+  - [ ] **GUI Implementation**: Build a graphical user interface based on `GUI.md`.
+  - [x] **Code Structure**: Refactor into logical sub-packages (`internal/protocol`, `internal/tunnel`, etc.).
+  - [ ] **Coin Selection**: Implement intelligent UTXO selection instead of using the first available.
+  - [ ] **Fee Estimation**: Replace hardcoded transaction fees with dynamic estimation using `estimatesmartfee`.
+  - [ ] **Configuration Management**: Move all configuration files (`config.json`, `provider.key`, `history.json`) to a dedicated application directory (e.g., `~/.config/BlockchainVPN`).
+
+
+## 7. Project File Layout
+
+The project is organized into the following directory structure. Please ensure your files are moved to the correct locations. 
+
+```
+.
+├── Makefile
+├── README.md
+├── docs/
+├── cmd/
+│   ├── bcvpn/
+│   │   └── main.go // Main CLI application entrypoint
+│   └── bcvpn-gui/
+│       └── main.go // GUI application entrypoint
+├── internal/
+│   ├── auth/ // Authorization management
+│   ├── blockchain/ // Blockchain interaction (payment, provider, scanner)
+│   ├── config/ // Configuration loading and management
+│   ├── crypto/ // Encryption/decryption logic
+│   ├── geoip/ // GeoIP and latency enrichment
+│   ├── history/ // Payment history management
+│   ├── nat/ // UPnP and NAT-PMP logic
+│   ├── protocol/ // On-chain data structures and encoding
+│   ├── tunnel/ // Core VPN logic (TUN, TLS, Networking)
+│   └── util/ // Miscellaneous utility functions
+└── go.mod
+```
+
 
 ## License
 
