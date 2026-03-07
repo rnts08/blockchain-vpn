@@ -269,6 +269,13 @@ func handleClient(ctx context.Context, conn net.Conn, cfg *config.ProviderConfig
 	var err error
 
 	if tlsConn, ok := conn.(*tls.Conn); ok {
+		if err := tlsConn.Handshake(); err != nil {
+			log.Printf("Connection from %s rejected: handshake failed: %v", conn.RemoteAddr(), err)
+			recordEvent("provider", "reject_handshake", conn.RemoteAddr().String())
+			conn.Close()
+			recordRuntimeError(fmt.Errorf("client handshake failed: %w", err))
+			return
+		}
 		state := tlsConn.ConnectionState()
 		if len(state.PeerCertificates) == 0 {
 			log.Printf("Connection from %s rejected: no client certificate provided", conn.RemoteAddr())
@@ -326,18 +333,6 @@ func handleClient(ctx context.Context, conn net.Conn, cfg *config.ProviderConfig
 		conn.Close()
 		recordRuntimeError(fmt.Errorf("unauthorized client: %s", hex.EncodeToString(clientPubKey.SerializeCompressed())))
 		return
-	}
-	if cfg.MaxConsumers > 0 {
-		clients.mu.RLock()
-		active := len(clients.m)
-		clients.mu.RUnlock()
-		if active >= cfg.MaxConsumers {
-			log.Printf("Connection from %s rejected: provider at max consumer capacity (%d)", conn.RemoteAddr(), cfg.MaxConsumers)
-			recordEvent("provider", "reject_capacity", conn.RemoteAddr().String())
-			conn.Close()
-			recordRuntimeError(fmt.Errorf("provider max consumer capacity reached"))
-			return
-		}
 	}
 
 	log.Printf("Accepted connection from authorized client %s (%s)", hex.EncodeToString(clientPubKey.SerializeCompressed()), conn.RemoteAddr())
@@ -408,7 +403,10 @@ func handleClient(ctx context.Context, conn net.Conn, cfg *config.ProviderConfig
 		case <-sessionTimer.C:
 			log.Printf("Session expired for client %s. Disconnecting.", hex.EncodeToString(pk.SerializeCompressed()))
 		case <-done:
-			sessionTimer.Stop() // Connection closed by client, clean up timer.
+			sessionTimer.Stop()
+		}
+		if !sessionTimer.Stop() {
+			<-sessionTimer.C
 		}
 		log.Printf(
 			"Session stats client=%s duration=%s upstream_bytes=%d downstream_bytes=%d",
@@ -431,9 +429,24 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 			return
 		}
 
-		// Parse Destination IP (IPv4)
-		// IPv4 Header: Version (byte 0 >> 4) should be 4. Dest IP is bytes 16-20.
-		if n >= 20 && (packet[0]>>4) == 4 {
+		// Check minimum packet size for IP header
+		if n < 1 {
+			continue
+		}
+
+		version := packet[0] >> 4
+		if version == 4 {
+			// IPv4 Header: Version (byte 0 >> 4) should be 4. Dest IP is bytes 12-16 (offset 12-15 in 0-indexed).
+			// IP header length is at lower 4 bits of byte 0, multiplied by 4 gives header length.
+			if n < 20 {
+				log.Printf("Info: readTunLoop dropping truncated IPv4 packet (len=%d)", n)
+				continue
+			}
+			headerLen := int(packet[0]&0x0F) * 4
+			if n < headerLen {
+				log.Printf("Info: readTunLoop dropping truncated IPv4 packet (len=%d, header=%d)", n, headerLen)
+				continue
+			}
 			destIP := net.IP(packet[16:20])
 			clients.mu.RLock()
 			session, ok := clients.m[destIP.String()]
@@ -447,9 +460,27 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 					log.Printf("Info: failed to write packet to client %s: %v", destIP.String(), err)
 				}
 			}
-		} else if n > 0 {
-			version := packet[0] >> 4
-			log.Printf("Info: readTunLoop dropping non-IPv4 packet (version=%d, len=%d)", version, n)
+		} else if version == 6 {
+			// IPv6 Header: Version (byte 0 >> 4) should be 6. Dest IP is bytes 24-40.
+			if n < 40 {
+				log.Printf("Info: readTunLoop dropping truncated IPv6 packet (len=%d)", n)
+				continue
+			}
+			destIP := net.IP(packet[24:40])
+			clients.mu.RLock()
+			session, ok := clients.m[destIP.String()]
+			clients.mu.RUnlock()
+			if ok {
+				if session.downLimiter != nil {
+					session.downLimiter.accountAndThrottle(n)
+				}
+				session.stats.addDownstream(n)
+				if _, err := session.conn.Write(packet[:n]); err != nil {
+					log.Printf("Info: failed to write IPv6 packet to client %s: %v", destIP.String(), err)
+				}
+			}
+		} else {
+			log.Printf("Info: readTunLoop dropping unknown IP version packet (version=%d, len=%d)", version, n)
 		}
 	}
 }

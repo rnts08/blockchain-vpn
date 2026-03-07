@@ -31,7 +31,7 @@ func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, f
 	if err != nil {
 		return fmt.Errorf("error encoding payload: %w", err)
 	}
-	log.Printf("Created payload: %x\n", payload)
+	log.Printf("Encoded service announcement payload (%d bytes)", len(payload))
 
 	// 5. Create the OP_RETURN script.
 	opReturnScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN).AddData(payload).Script()

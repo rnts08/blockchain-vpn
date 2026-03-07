@@ -203,8 +203,14 @@ func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amou
 	// Or we can just use the conservative estimate from before.
 	changeAmount := totalInput - btcutil.Amount(amountSatoshis) - requiredFee
 
-	changeAddr, _ := client.GetRawChangeAddress("")
-	changeScript, _ := txscript.PayToAddrScript(changeAddr)
+	changeAddr, err := client.GetRawChangeAddress("")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get change address: %w", err)
+	}
+	changeScript, err := txscript.PayToAddrScript(changeAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create change script: %w", err)
+	}
 	changeOutput := wire.NewTxOut(int64(changeAmount), changeScript)
 	tx.AddTxOut(changeOutput)
 

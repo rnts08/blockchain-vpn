@@ -44,7 +44,9 @@ func runClientPostConnectChecks(ctx context.Context, expected ClientSecurityExpe
 	if err := verifyEgressIP(preConnectIP, postConnectIP, expected); err != nil {
 		return err
 	}
-	checkDNSLeakHeuristic(ctx, postConnectIP, expected.StrictVerification)
+	if err := checkDNSLeakHeuristic(ctx, postConnectIP, expected.StrictVerification); err != nil {
+		return err
+	}
 	if err := checkCountryHeuristic(postConnectIP, expected.ExpectedCountry, expected.StrictVerification); err != nil {
 		return err
 	}
@@ -107,13 +109,17 @@ func verifyEgressIP(preConnectIP, postConnectIP net.IP, expected ClientSecurityE
 	return nil
 }
 
-func checkDNSLeakHeuristic(ctx context.Context, egressIP net.IP, strict bool) {
+func checkDNSLeakHeuristic(ctx context.Context, egressIP net.IP, strict bool) error {
 	resolveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	txt, err := net.DefaultResolver.LookupTXT(resolveCtx, "whoami.cloudflare")
 	if err != nil {
-		log.Printf("Security check warning: DNS leak heuristic unavailable (whoami lookup failed): %v", err)
-		return
+		msg := fmt.Sprintf("DNS leak heuristic unavailable (whoami lookup failed): %v", err)
+		if strict {
+			return fmt.Errorf("strict verification failed: %s", msg)
+		}
+		log.Printf("Security check warning: %s", msg)
+		return nil
 	}
 	var dnsObservedIP net.IP
 	for _, rec := range txt {
@@ -123,19 +129,23 @@ func checkDNSLeakHeuristic(ctx context.Context, egressIP net.IP, strict bool) {
 		}
 	}
 	if dnsObservedIP == nil {
-		log.Printf("Security check warning: DNS leak heuristic did not return an IP result")
-		return
+		msg := "DNS leak heuristic did not return an IP result"
+		if strict {
+			return fmt.Errorf("strict verification failed: %s", msg)
+		}
+		log.Printf("Security check warning: %s", msg)
+		return nil
 	}
 	if egressIP != nil && !dnsObservedIP.Equal(egressIP) {
 		msg := fmt.Sprintf("DNS resolver egress %s differs from tunnel egress %s (possible DNS leak)", dnsObservedIP.String(), egressIP.String())
 		if strict {
-			log.Printf("Security check warning: %s", msg)
-			return
+			return fmt.Errorf("strict verification failed: %s", msg)
 		}
 		log.Printf("Security check warning: %s", msg)
-		return
+		return nil
 	}
 	log.Printf("Security check: DNS leak heuristic passed (resolver egress matches tunnel egress)")
+	return nil
 }
 
 func checkCountryHeuristic(egressIP net.IP, expectedCountry string, strict bool) error {
