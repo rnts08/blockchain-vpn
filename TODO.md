@@ -46,32 +46,32 @@ This document outlines the prioritized implementation plan based on code analysi
 ### 6.1 Wallet Transaction Detection
 **Location:** `internal/blockchain/provider.go:310-313`  
 **Issue:** Doesn't verify tx is to wallet's own addresses.  
-**Fix:** Check against wallet addresses.
+- [x] **Fix:** Check against wallet addresses.
 
 ### 6.2 Concurrent Provider Start Race
 **Location:** `cmd/bcvpn-gui/main.go:1255-1355`  
 **Issue:** Potential race on provider start/stop.  
-**Fix:** Additional state locking.
+- [x] **Fix:** Additional state locking.
 
 ### 6.3 Throughput Port Hardcoded
 **Location:** `internal/tunnel/client_security_checks.go:185`  
 **Issue:** Port 51821 hardcoded.  
-**Fix:** Extract from provider endpoint data.
+- [x] **Fix:** Extract from provider endpoint data.
 
 ### 6.4 Heartbeat Interval
 **Location:** `cmd/bcvpn-gui/main.go:1338`  
 **Issue:** 5 minutes may be too long.  
-**Fix:** Make configurable, consider 1 minute default.
+- [x] **Fix:** Make configurable, consider 1 minute default.
 
 ### 6.5 Provider Scan Efficiency
 **Location:** `cmd/bcvpn-gui/main.go:1427-1450`  
 **Issue:** Loads all then filters in-memory.  
-**Fix:** Server-side filtering if supported.
+- [x] **Fix:** Server-side filtering if supported.
 
 ### 6.6 Payment Monitor Polling
 **Location:** `internal/blockchain/provider.go:274`  
 **Issue:** 1-minute interval slow.  
-**Fix:** Make configurable, use wallet notifications.
+- [x] **Fix:** Make configurable, use wallet notifications.
 
 ---
 
@@ -79,9 +79,8 @@ This document outlines the prioritized implementation plan based on code analysi
 
 ### 7.1 GUI Integration Tests
 **Issue:** No UI automation tests.  
-**Fix:** Add fyne-test or similar framework.
+**- [x] **Fix:** Add fyne-test or similar framework.
 
 ### 7.2 Fuzz Test Coverage
 **Issue:** Protocol fuzz tests may miss edge cases.  
 **Fix:** Expand coverage, add corpus.
-

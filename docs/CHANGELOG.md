@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
  
+## [0.4.3] - 2026-03-07
+
+### Infrastructure
+- Updated GitHub Actions permissions to allow automated releases
+- Version bump to 0.4.3
+ 
 ## [0.4.2] - 2026-03-07
 
 ### Features & Protocol
