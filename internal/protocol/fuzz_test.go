@@ -9,8 +9,10 @@ func FuzzProtocolDecoders(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		_, _ = DecodePayload(data)
+		_, _ = DecodePayloadV2(data)
 		_, _ = DecodePaymentPayload(data)
 		_, _ = DecodePriceUpdatePayload(data)
+		_, _ = DecodeHeartbeatPayload(data)
 		_, _ = ExtractScriptPayload(data)
 	})
 }

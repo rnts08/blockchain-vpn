@@ -26,8 +26,8 @@ import (
 // AnnounceService uses the provided RPC client to broadcast a transaction
 // with an OP_RETURN output containing the VPN service details.
 func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint) error {
-	// 4. Encode the endpoint data into the OP_RETURN payload.
-	payload, err := endpoint.EncodePayload()
+	// 4. Encode endpoint data into OP_RETURN payload (v2 metadata-first format).
+	payload, err := endpoint.EncodePayloadV2()
 	if err != nil {
 		return fmt.Errorf("error encoding payload: %w", err)
 	}
@@ -94,6 +94,56 @@ func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint) e
 	}
 
 	log.Printf("Successfully broadcasted announcement transaction: %s\n", txHash.String())
+	return nil
+}
+
+// AnnounceHeartbeat broadcasts provider availability flags for discovery freshness.
+func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags uint8) error {
+	payload, err := protocol.EncodeHeartbeatPayload(pubKey, flags)
+	if err != nil {
+		return fmt.Errorf("error encoding heartbeat payload: %w", err)
+	}
+	opReturnScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN).AddData(payload).Script()
+	if err != nil {
+		return fmt.Errorf("error creating OP_RETURN script: %w", err)
+	}
+
+	feePerKb, err := estimateDynamicFeePerKb(context.Background(), client, 6)
+	if err != nil {
+		return fmt.Errorf("failed to determine dynamic fee: %w", err)
+	}
+	requiredFee := btcutil.Amount(float64(feePerKb) * 250.0 / 1000.0)
+	utxos, totalInput, err := selectCoins(client, requiredFee)
+	if err != nil {
+		return err
+	}
+
+	tx := wire.NewMsgTx(wire.TxVersion)
+	for _, utxo := range utxos {
+		txHash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		tx.AddTxIn(wire.NewTxIn(wire.NewOutPoint(txHash, utxo.Vout), nil, nil))
+	}
+	changeAmount := totalInput - requiredFee
+	changeAddr, err := client.GetRawChangeAddress("")
+	if err != nil {
+		return fmt.Errorf("error getting change address: %w", err)
+	}
+	changeScript, err := txscript.PayToAddrScript(changeAddr)
+	if err != nil {
+		return fmt.Errorf("error creating change script: %w", err)
+	}
+	tx.AddTxOut(wire.NewTxOut(0, opReturnScript))
+	tx.AddTxOut(wire.NewTxOut(int64(changeAmount), changeScript))
+
+	signedTx, complete, err := client.SignRawTransactionWithWallet(tx)
+	if err != nil || !complete {
+		return fmt.Errorf("error signing transaction: %w", err)
+	}
+	txHash, err := client.SendRawTransaction(signedTx, true)
+	if err != nil {
+		return fmt.Errorf("error sending transaction: %w", err)
+	}
+	log.Printf("Successfully broadcasted provider heartbeat transaction: %s\n", txHash.String())
 	return nil
 }
 

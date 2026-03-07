@@ -141,7 +141,7 @@ func main() {
 			defer natCleanup()
 		}
 
-		endpoint := buildProviderEndpoint(cfg.Provider.Price, announceIP, announcePort, providerKey)
+		endpoint := buildProviderEndpoint(&cfg.Provider, announceIP, announcePort, providerKey)
 
 		go func() {
 			ticker := time.NewTicker(24 * time.Hour)
@@ -156,6 +156,24 @@ func main() {
 				case <-ticker.C:
 					if err := blockchain.AnnounceService(client, endpoint); err != nil {
 						log.Printf("Scheduled re-announcement failed: %v", err)
+					}
+				}
+			}
+		}()
+		go func() {
+			hbTicker := time.NewTicker(5 * time.Minute)
+			defer hbTicker.Stop()
+
+			if err := blockchain.AnnounceHeartbeat(client, providerKey.PubKey(), protocol.AvailabilityFlagAvailable); err != nil {
+				log.Printf("Initial heartbeat broadcast failed: %v", err)
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-hbTicker.C:
+					if err := blockchain.AnnounceHeartbeat(client, providerKey.PubKey(), protocol.AvailabilityFlagAvailable); err != nil {
+						log.Printf("Scheduled heartbeat broadcast failed: %v", err)
 					}
 				}
 			}
@@ -199,7 +217,7 @@ func main() {
 			defer natCleanup()
 		}
 
-		endpoint := buildProviderEndpoint(cfg.Provider.Price, announceIP, announcePort, providerKey)
+		endpoint := buildProviderEndpoint(&cfg.Provider, announceIP, announcePort, providerKey)
 
 		log.Println("Re-broadcasting service announcement...")
 		if err := blockchain.AnnounceService(client, endpoint); err != nil {
@@ -710,13 +728,49 @@ func determineAnnounceDetails(ctx context.Context, cfg *config.ProviderConfig) (
 	return ip, announcePort, nil, nil
 }
 
-func buildProviderEndpoint(price uint64, announceIP net.IP, announcePort int, providerKey *btcec.PrivateKey) *protocol.VPNEndpoint {
-	return &protocol.VPNEndpoint{
-		IP:        announceIP,
-		Port:      uint16(announcePort),
-		Price:     price,
-		PublicKey: providerKey.PubKey(),
+func buildProviderEndpoint(providerCfg *config.ProviderConfig, announceIP net.IP, announcePort int, providerKey *btcec.PrivateKey) *protocol.VPNEndpoint {
+	bandwidthKB := parseBandwidthLimitToKbps(providerCfg.BandwidthLimit)
+	maxConsumers := uint16(0)
+	if providerCfg.MaxConsumers > 0 && providerCfg.MaxConsumers <= 65535 {
+		maxConsumers = uint16(providerCfg.MaxConsumers)
 	}
+	return &protocol.VPNEndpoint{
+		IP:                    announceIP,
+		Port:                  uint16(announcePort),
+		Price:                 providerCfg.Price,
+		PublicKey:             providerKey.PubKey(),
+		AdvertisedBandwidthKB: bandwidthKB,
+		MaxConsumers:          maxConsumers,
+		CountryCode:           strings.ToUpper(strings.TrimSpace(providerCfg.Country)),
+		AvailabilityFlags:     protocol.AvailabilityFlagAvailable,
+	}
+}
+
+func parseBandwidthLimitToKbps(v string) uint32 {
+	s := strings.ToLower(strings.TrimSpace(v))
+	if s == "" || s == "0" || s == "0mbit" || s == "unlimited" {
+		return 0
+	}
+	mult := float64(1)
+	switch {
+	case strings.HasSuffix(s, "gbit"):
+		s = strings.TrimSuffix(s, "gbit")
+		mult = 1000 * 1000
+	case strings.HasSuffix(s, "mbit"):
+		s = strings.TrimSuffix(s, "mbit")
+		mult = 1000
+	case strings.HasSuffix(s, "kbit"):
+		s = strings.TrimSuffix(s, "kbit")
+		mult = 1
+	default:
+		return 0
+	}
+	n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	kbps := uint32(n * mult)
+	return kbps
 }
 
 func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainParams *chaincfg.Params, endpoints []*geoip.EnrichedVPNEndpoint, clientCfg *config.ClientConfig, secCfg *config.SecurityConfig, dryRun bool) {

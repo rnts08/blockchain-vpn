@@ -84,6 +84,66 @@ func TestDecodePayload_Errors(t *testing.T) {
 	}
 }
 
+func TestEncodeDecodePayloadV2(t *testing.T) {
+	endpoint := &VPNEndpoint{
+		IP:                    net.ParseIP("203.0.113.10"),
+		Port:                  51820,
+		Price:                 1200,
+		PublicKey:             mustTestPubKey(t),
+		AdvertisedBandwidthKB: 50000,
+		MaxConsumers:          42,
+		CountryCode:           "us",
+		AvailabilityFlags:     AvailabilityFlagAvailable,
+	}
+	encoded, err := endpoint.EncodePayloadV2()
+	if err != nil {
+		t.Fatalf("EncodePayloadV2() error = %v", err)
+	}
+	decoded, err := DecodePayloadV2(encoded)
+	if err != nil {
+		t.Fatalf("DecodePayloadV2() error = %v", err)
+	}
+	if !endpoint.IP.Equal(decoded.IP) {
+		t.Fatalf("IP mismatch: got %v want %v", decoded.IP, endpoint.IP)
+	}
+	if decoded.Port != endpoint.Port || decoded.Price != endpoint.Price {
+		t.Fatalf("port/price mismatch: got %d/%d want %d/%d", decoded.Port, decoded.Price, endpoint.Port, endpoint.Price)
+	}
+	if decoded.AdvertisedBandwidthKB != endpoint.AdvertisedBandwidthKB {
+		t.Fatalf("bandwidth mismatch: got %d want %d", decoded.AdvertisedBandwidthKB, endpoint.AdvertisedBandwidthKB)
+	}
+	if decoded.MaxConsumers != endpoint.MaxConsumers {
+		t.Fatalf("max consumers mismatch: got %d want %d", decoded.MaxConsumers, endpoint.MaxConsumers)
+	}
+	if decoded.CountryCode != "US" {
+		t.Fatalf("country normalization mismatch: got %q want %q", decoded.CountryCode, "US")
+	}
+	if decoded.AvailabilityFlags != AvailabilityFlagAvailable {
+		t.Fatalf("availability mismatch: got %d", decoded.AvailabilityFlags)
+	}
+	if !decoded.PublicKey.IsEqual(endpoint.PublicKey) {
+		t.Fatalf("pubkey mismatch")
+	}
+}
+
+func TestEncodeDecodeHeartbeatPayload(t *testing.T) {
+	pub := mustTestPubKey(t)
+	encoded, err := EncodeHeartbeatPayload(pub, AvailabilityFlagAvailable)
+	if err != nil {
+		t.Fatalf("EncodeHeartbeatPayload() error = %v", err)
+	}
+	decoded, err := DecodeHeartbeatPayload(encoded)
+	if err != nil {
+		t.Fatalf("DecodeHeartbeatPayload() error = %v", err)
+	}
+	if !decoded.PublicKey.IsEqual(pub) {
+		t.Fatalf("pubkey mismatch")
+	}
+	if decoded.Flags != AvailabilityFlagAvailable {
+		t.Fatalf("flags mismatch: got %d", decoded.Flags)
+	}
+}
+
 func mustTestPubKey(t *testing.T) *btcec.PublicKey {
 	t.Helper()
 	priv, err := btcec.NewPrivateKey()
