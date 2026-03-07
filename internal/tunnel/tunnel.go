@@ -9,12 +9,14 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"blockchain-vpn/internal/auth"
 	"blockchain-vpn/internal/config"
+	"blockchain-vpn/internal/transport"
 	"blockchain-vpn/internal/util"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -218,6 +220,18 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 	// This reads packets from the TUN interface and routes them to the correct client connection.
 	go readTunLoop(iface, clients)
 
+	if cfg.WebSocketFallbackPort > 0 {
+		wsAddr := fmt.Sprintf("0.0.0.0:%d", cfg.WebSocketFallbackPort)
+		go func() {
+			log.Printf("Provider WebSocket server listening on %s", wsAddr)
+			if err := transport.StartWSServer(ctx, wsAddr, tlsConfig, func(conn net.Conn, r *http.Request) {
+				handleClient(ctx, conn, cfg, sec, privKey, authManager, ipPool, clients, limitBytesPerSec, iface, policy, r)
+			}); err != nil {
+				log.Printf("WebSocket server error: %v", err)
+			}
+		}()
+	}
+
 	acceptBackoff := 100 * time.Millisecond
 	acceptRand := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for {
@@ -244,145 +258,167 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 		}
 		acceptBackoff = 100 * time.Millisecond
 
-		// The handshake is already complete from Accept().
-		// Now we verify the peer's certificate against our authorization list.
-		state := conn.(*tls.Conn).ConnectionState()
+		handleClient(ctx, conn, cfg, sec, privKey, authManager, ipPool, clients, limitBytesPerSec, iface, policy, nil)
+	}
+}
+
+func handleClient(ctx context.Context, conn net.Conn, cfg *config.ProviderConfig, sec *config.SecurityConfig, privKey *btcec.PrivateKey, authManager *auth.AuthManager, ipPool *IPPool, clients *ClientMap, limitBytesPerSec int64, iface *water.Interface, policy *accessPolicy, r *http.Request) {
+	// The handshake is already complete from Accept() or WSS upgrade.
+	// We verify the peer's certificate.
+	var clientPubKey *btcec.PublicKey
+	var err error
+
+	if tlsConn, ok := conn.(*tls.Conn); ok {
+		state := tlsConn.ConnectionState()
 		if len(state.PeerCertificates) == 0 {
 			log.Printf("Connection from %s rejected: no client certificate provided", conn.RemoteAddr())
 			recordEvent("provider", "reject_no_cert", conn.RemoteAddr().String())
 			conn.Close()
 			recordRuntimeError(fmt.Errorf("client connection rejected: no certificate"))
-			continue
+			return
 		}
-
-		clientPubKey, err := certToBTCECPubKey(state.PeerCertificates[0])
+		clientPubKey, err = certToBTCECPubKey(state.PeerCertificates[0])
 		if err != nil {
 			log.Printf("Connection from %s rejected: %v", conn.RemoteAddr(), err)
 			recordEvent("provider", "reject_bad_cert", conn.RemoteAddr().String())
 			conn.Close()
 			recordRuntimeError(err)
-			continue
+			return
 		}
-		if err := policy.check(clientPubKey); err != nil {
-			log.Printf("Connection from %s rejected by policy: %v", conn.RemoteAddr(), err)
-			recordEvent("provider", "reject_policy", conn.RemoteAddr().String())
-			conn.Close()
-			recordRuntimeError(err)
-			continue
-		}
-		if sec != nil && strings.TrimSpace(sec.RevocationCacheFile) != "" {
-			revoked, revErr := globalRevocationCache.IsRevoked(sec.RevocationCacheFile, clientPubKey)
-			if revErr != nil {
-				log.Printf("Warning: revocation cache check failed: %v", revErr)
-				recordRuntimeError(revErr)
-			} else if revoked {
-				log.Printf("Connection from %s rejected: client certificate is revoked", conn.RemoteAddr())
-				recordEvent("provider", "reject_revoked", conn.RemoteAddr().String())
-				conn.Close()
-				recordRuntimeError(fmt.Errorf("revoked client certificate: %s", hex.EncodeToString(clientPubKey.SerializeCompressed())))
-				continue
-			}
-		}
-		if !authManager.IsPeerAuthorized(clientPubKey) {
-			log.Printf("Connection from %s rejected: client %s is not authorized", conn.RemoteAddr(), hex.EncodeToString(clientPubKey.SerializeCompressed()))
-			recordEvent("provider", "reject_unauthorized", conn.RemoteAddr().String())
-			conn.Close()
-			recordRuntimeError(fmt.Errorf("unauthorized client: %s", hex.EncodeToString(clientPubKey.SerializeCompressed())))
-			continue
-		}
-		if cfg.MaxConsumers > 0 {
-			clients.mu.RLock()
-			active := len(clients.m)
-			clients.mu.RUnlock()
-			if active >= cfg.MaxConsumers {
-				log.Printf("Connection from %s rejected: provider at max consumer capacity (%d)", conn.RemoteAddr(), cfg.MaxConsumers)
-				recordEvent("provider", "reject_capacity", conn.RemoteAddr().String())
-				conn.Close()
-				recordRuntimeError(fmt.Errorf("provider max consumer capacity reached"))
-				continue
-			}
-		}
-
-		log.Printf("Accepted connection from authorized client %s (%s)", hex.EncodeToString(clientPubKey.SerializeCompressed()), conn.RemoteAddr())
-		recordEvent("provider", "client_connected", conn.RemoteAddr().String())
-
-		// Allocate Dynamic IP
-		assignedIP, err := ipPool.Allocate()
+	} else if r != nil && r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+		clientPubKey, err = certToBTCECPubKey(r.TLS.PeerCertificates[0])
 		if err != nil {
-			log.Printf("Failed to allocate IP for client: %v", err)
+			log.Printf("WebSocket connection from %s rejected: %v", conn.RemoteAddr(), err)
 			conn.Close()
-			recordRuntimeError(err)
-			continue
+			return
 		}
+	}
 
-		// Handshake: Send assigned IP to client
-		if _, err := conn.Write([]byte(assignedIP.String() + "\n")); err != nil {
-			log.Printf("Failed to send IP assignment: %v", err)
-			ipPool.Release(assignedIP)
+	if clientPubKey == nil {
+		log.Printf("Connection from %s rejected: could not determine client identity", conn.RemoteAddr())
+		conn.Close()
+		return
+	}
+
+	if err := policy.check(clientPubKey); err != nil {
+		log.Printf("Connection from %s rejected by policy: %v", conn.RemoteAddr(), err)
+		recordEvent("provider", "reject_policy", conn.RemoteAddr().String())
+		conn.Close()
+		recordRuntimeError(err)
+		return
+	}
+	if sec != nil && strings.TrimSpace(sec.RevocationCacheFile) != "" {
+		revoked, revErr := globalRevocationCache.IsRevoked(sec.RevocationCacheFile, clientPubKey)
+		if revErr != nil {
+			log.Printf("Warning: revocation cache check failed: %v", revErr)
+			recordRuntimeError(revErr)
+		} else if revoked {
+			log.Printf("Connection from %s rejected: client certificate is revoked", conn.RemoteAddr())
+			recordEvent("provider", "reject_revoked", conn.RemoteAddr().String())
 			conn.Close()
-			recordRuntimeError(err)
-			continue
+			recordRuntimeError(fmt.Errorf("revoked client certificate: %s", hex.EncodeToString(clientPubKey.SerializeCompressed())))
+			return
 		}
-
-		session := newClientSession(conn, limitBytesPerSec)
-		if !clients.AddSession(assignedIP, session, cfg.MaxConsumers) {
+	}
+	if !authManager.IsPeerAuthorized(clientPubKey) {
+		log.Printf("Connection from %s rejected: client %s is not authorized", conn.RemoteAddr(), hex.EncodeToString(clientPubKey.SerializeCompressed()))
+		recordEvent("provider", "reject_unauthorized", conn.RemoteAddr().String())
+		conn.Close()
+		recordRuntimeError(fmt.Errorf("unauthorized client: %s", hex.EncodeToString(clientPubKey.SerializeCompressed())))
+		return
+	}
+	if cfg.MaxConsumers > 0 {
+		clients.mu.RLock()
+		active := len(clients.m)
+		clients.mu.RUnlock()
+		if active >= cfg.MaxConsumers {
 			log.Printf("Connection from %s rejected: provider at max consumer capacity (%d)", conn.RemoteAddr(), cfg.MaxConsumers)
 			recordEvent("provider", "reject_capacity", conn.RemoteAddr().String())
-			recordRuntimeError(fmt.Errorf("provider max consumer capacity reached"))
-			ipPool.Release(assignedIP)
 			conn.Close()
-			continue
+			recordRuntimeError(fmt.Errorf("provider max consumer capacity reached"))
+			return
+		}
+	}
+
+	log.Printf("Accepted connection from authorized client %s (%s)", hex.EncodeToString(clientPubKey.SerializeCompressed()), conn.RemoteAddr())
+	recordEvent("provider", "client_connected", conn.RemoteAddr().String())
+
+	// Allocate Dynamic IP
+	assignedIP, err := ipPool.Allocate()
+	if err != nil {
+		log.Printf("Failed to allocate IP for client: %v", err)
+		conn.Close()
+		recordRuntimeError(err)
+		return
+	}
+
+	// Handshake: Send assigned IP to client
+	if _, err := conn.Write([]byte(assignedIP.String() + "\n")); err != nil {
+		log.Printf("Failed to send IP assignment: %v", err)
+		ipPool.Release(assignedIP)
+		conn.Close()
+		recordRuntimeError(err)
+		return
+	}
+
+	session := newClientSession(conn, limitBytesPerSec)
+	if !clients.AddSession(assignedIP, session, cfg.MaxConsumers) {
+		log.Printf("Connection from %s rejected: provider at max consumer capacity (%d)", conn.RemoteAddr(), cfg.MaxConsumers)
+		recordEvent("provider", "reject_capacity", conn.RemoteAddr().String())
+		recordRuntimeError(fmt.Errorf("provider max consumer capacity reached"))
+		ipPool.Release(assignedIP)
+		conn.Close()
+		return
+	}
+
+	// Handle client traffic and session
+	go func(c net.Conn, ip net.IP, pk *btcec.PublicKey) {
+		defer c.Close()
+		defer ipPool.Release(ip)
+		defer func() {
+			clients.RemoveSession(ip)
+			log.Printf("Client %s (%s) disconnected.", hex.EncodeToString(pk.SerializeCompressed()), c.RemoteAddr())
+			recordEvent("provider", "client_disconnected", c.RemoteAddr().String())
+		}()
+
+		expiration, ok := authManager.GetPeerExpiration(pk)
+		if !ok {
+			log.Printf("Logic error: authorized client %s has no expiration. Disconnecting.", hex.EncodeToString(pk.SerializeCompressed()))
+			return
 		}
 
-		// Handle client traffic and session
-		go func(c net.Conn, ip net.IP, pk *btcec.PublicKey) {
-			defer c.Close()
-			defer ipPool.Release(ip)
-			defer func() {
-				clients.RemoveSession(ip)
-				log.Printf("Client %s (%s) disconnected.", hex.EncodeToString(pk.SerializeCompressed()), c.RemoteAddr())
-				recordEvent("provider", "client_disconnected", c.RemoteAddr().String())
-			}()
-
-			expiration, ok := authManager.GetPeerExpiration(pk)
-			if !ok {
-				log.Printf("Logic error: authorized client %s has no expiration. Disconnecting.", hex.EncodeToString(pk.SerializeCompressed()))
-				return
+		// Cap session duration by provider limit if configured.
+		if cfg.MaxSessionDurationSecs > 0 {
+			maxExpiry := time.Now().Add(time.Duration(cfg.MaxSessionDurationSecs) * time.Second)
+			if maxExpiry.Before(expiration) {
+				expiration = maxExpiry
+				log.Printf("Session for client %s capped to %ds by provider policy", hex.EncodeToString(pk.SerializeCompressed()), cfg.MaxSessionDurationSecs)
 			}
+		}
 
-			// Cap session duration by provider limit if configured.
-			if cfg.MaxSessionDurationSecs > 0 {
-				maxExpiry := time.Now().Add(time.Duration(cfg.MaxSessionDurationSecs) * time.Second)
-				if maxExpiry.Before(expiration) {
-					expiration = maxExpiry
-					log.Printf("Session for client %s capped to %ds by provider policy", hex.EncodeToString(pk.SerializeCompressed()), cfg.MaxSessionDurationSecs)
-				}
-			}
+		sessionTimer := time.NewTimer(time.Until(expiration))
+		done := make(chan struct{})
 
-			sessionTimer := time.NewTimer(time.Until(expiration))
-			done := make(chan struct{})
+		go func(sess *clientSession) {
+			copyStreamWithControl(iface, c, sess.stats.addUpstream, sess.upstreamLimiter)
+			close(done)
+		}(session)
 
-			go func(sess *clientSession) {
-				copyStreamWithControl(iface, c, sess.stats.addUpstream, sess.upstreamLimiter)
-				close(done)
-			}(session)
-
-			select {
-			case <-sessionTimer.C:
-				log.Printf("Session expired for client %s. Disconnecting.", hex.EncodeToString(pk.SerializeCompressed()))
-			case <-done:
-				sessionTimer.Stop() // Connection closed by client, clean up timer.
-			}
-			log.Printf(
-				"Session stats client=%s duration=%s upstream_bytes=%d downstream_bytes=%d",
-				hex.EncodeToString(pk.SerializeCompressed()),
-				time.Since(session.stats.startedAt).Round(time.Second),
-				session.stats.upstreamBytes.Load(),
-				session.stats.downstreamBytes.Load(),
-			)
-			recordTraffic(session.stats.upstreamBytes.Load(), session.stats.downstreamBytes.Load())
-		}(conn, assignedIP, clientPubKey)
-	}
+		select {
+		case <-sessionTimer.C:
+			log.Printf("Session expired for client %s. Disconnecting.", hex.EncodeToString(pk.SerializeCompressed()))
+		case <-done:
+			sessionTimer.Stop() // Connection closed by client, clean up timer.
+		}
+		log.Printf(
+			"Session stats client=%s duration=%s upstream_bytes=%d downstream_bytes=%d",
+			hex.EncodeToString(pk.SerializeCompressed()),
+			time.Since(session.stats.startedAt).Round(time.Second),
+			session.stats.upstreamBytes.Load(),
+			session.stats.downstreamBytes.Load(),
+		)
+		recordTraffic(session.stats.upstreamBytes.Load(), session.stats.downstreamBytes.Load())
+	}(conn, assignedIP, clientPubKey)
 }
 
 func readTunLoop(iface *water.Interface, clients *ClientMap) {
@@ -473,11 +509,18 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *confi
 
 	log.Printf("Dialing %s...", endpoint)
 	recordEvent("client", "connect_attempt", endpoint)
-	conn, err := tls.Dial("tcp", endpoint, tlsConfig)
+
+	conn, err := transport.Dial(ctx, endpoint, tlsConfig, false)
 	if err != nil {
-		recordRuntimeError(err)
-		recordEvent("client", "connect_failed", endpoint)
-		return fmt.Errorf("failed to connect to provider: %w", err)
+		if cfg.EnableWebSocketFallback {
+			log.Printf("Direct connect failed, trying WebSocket fallback...")
+			conn, err = transport.Dial(ctx, endpoint, tlsConfig, true)
+		}
+		if err != nil {
+			recordRuntimeError(err)
+			recordEvent("client", "connect_failed", endpoint)
+			return fmt.Errorf("failed to connect to provider: %w", err)
+		}
 	}
 	defer conn.Close()
 

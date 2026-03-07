@@ -66,6 +66,7 @@ type ProviderConfig struct {
 	AnnouncementFeeTargetBlocks int    `json:"announcement_fee_target_blocks"`
 	AnnouncementFeeMode         string `json:"announcement_fee_mode"` // "conservative" or "economical"
 	ThroughputProbePort         int    `json:"throughput_probe_port"` // 0 = disable provider-assisted probes
+	WebSocketFallbackPort       int    `json:"websocket_fallback_port"`
 }
 
 type ClientConfig struct {
@@ -77,6 +78,7 @@ type ClientConfig struct {
 	StrictVerification         bool   `json:"strict_verification"`
 	VerifyThroughputAfterSetup bool   `json:"verify_throughput_after_connect"`
 	MaxParallelTunnels         int    `json:"max_parallel_tunnels"`
+	EnableWebSocketFallback    bool   `json:"enable_websocket_fallback"`
 }
 
 const AppConfigDirName = "BlockchainVPN"
@@ -207,6 +209,7 @@ func GenerateDefaultConfig(path string) error {
 			AnnouncementFeeTargetBlocks: 6,
 			AnnouncementFeeMode:         "conservative",
 			ThroughputProbePort:         51821,
+			WebSocketFallbackPort:       0, // Disabled by default
 		},
 		Client: ClientConfig{
 			InterfaceName:              "bcvpn1",
@@ -217,6 +220,7 @@ func GenerateDefaultConfig(path string) error {
 			StrictVerification:         false,
 			VerifyThroughputAfterSetup: true,
 			MaxParallelTunnels:         1,
+			EnableWebSocketFallback:    false,
 		},
 	}
 
