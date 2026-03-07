@@ -40,29 +40,31 @@ type SecurityConfig struct {
 }
 
 type ProviderConfig struct {
-	InterfaceName            string `json:"interface_name"`
-	ListenPort               int    `json:"listen_port"`
-	AnnounceIP               string `json:"announce_ip"`
-	Country                  string `json:"country"` // 2-letter country code (e.g., "US"). Leave empty to auto-detect.
-	Price                    uint64 `json:"price_sats_per_session"`
-	MaxConsumers             int    `json:"max_consumers"` // 0 means unlimited
-	PrivateKeyFile           string `json:"private_key_file"`
-	BandwidthLimit           string `json:"bandwidth_limit"` // e.g. "10mbit"
-	EnableNAT                bool   `json:"enable_nat"`
-	EnableEgressNAT          bool   `json:"enable_egress_nat"`
-	NATOutboundInterface     string `json:"nat_outbound_interface"`
-	IsolationMode            string `json:"isolation_mode"` // "none" or "sandbox"
-	AllowlistFile            string `json:"allowlist_file"`
-	DenylistFile             string `json:"denylist_file"`
-	CertLifetimeHours        int    `json:"cert_lifetime_hours"`
-	CertRotateBeforeHours    int    `json:"cert_rotate_before_hours"`
-	HealthCheckEnabled       bool   `json:"health_check_enabled"`
-	HealthCheckInterval      string `json:"health_check_interval"` // e.g. "30s"
-	BandwidthMonitorInterval string `json:"bandwidth_monitor_interval"`
-	TunIP                    string `json:"tun_ip"`
-	TunSubnet                string `json:"tun_subnet"`
-	MetricsListenAddr        string `json:"metrics_listen_addr"`       // e.g. "127.0.0.1:9090"
-	MaxSessionDurationSecs   int    `json:"max_session_duration_secs"` // 0 = no limit
+	InterfaceName               string `json:"interface_name"`
+	ListenPort                  int    `json:"listen_port"`
+	AnnounceIP                  string `json:"announce_ip"`
+	Country                     string `json:"country"` // 2-letter country code (e.g., "US"). Leave empty to auto-detect.
+	Price                       uint64 `json:"price_sats_per_session"`
+	MaxConsumers                int    `json:"max_consumers"` // 0 means unlimited
+	PrivateKeyFile              string `json:"private_key_file"`
+	BandwidthLimit              string `json:"bandwidth_limit"` // e.g. "10mbit"
+	EnableNAT                   bool   `json:"enable_nat"`
+	EnableEgressNAT             bool   `json:"enable_egress_nat"`
+	NATOutboundInterface        string `json:"nat_outbound_interface"`
+	IsolationMode               string `json:"isolation_mode"` // "none" or "sandbox"
+	AllowlistFile               string `json:"allowlist_file"`
+	DenylistFile                string `json:"denylist_file"`
+	CertLifetimeHours           int    `json:"cert_lifetime_hours"`
+	CertRotateBeforeHours       int    `json:"cert_rotate_before_hours"`
+	HealthCheckEnabled          bool   `json:"health_check_enabled"`
+	HealthCheckInterval         string `json:"health_check_interval"` // e.g. "30s"
+	BandwidthMonitorInterval    string `json:"bandwidth_monitor_interval"`
+	TunIP                       string `json:"tun_ip"`
+	TunSubnet                   string `json:"tun_subnet"`
+	MetricsListenAddr           string `json:"metrics_listen_addr"`       // e.g. "127.0.0.1:9090"
+	MaxSessionDurationSecs      int    `json:"max_session_duration_secs"` // 0 = no limit
+	AnnouncementFeeTargetBlocks int    `json:"announcement_fee_target_blocks"`
+	AnnouncementFeeMode         string `json:"announcement_fee_mode"` // "conservative" or "economical"
 }
 
 type ClientConfig struct {
@@ -178,29 +180,26 @@ func GenerateDefaultConfig(path string) error {
 			MetricsAuthToken:    "",
 		},
 		Provider: ProviderConfig{
-			InterfaceName:            "bcvpn0",
-			ListenPort:               51820,
-			AnnounceIP:               "", // Leave empty to auto-detect public IP
-			Country:                  "", // Leave empty to auto-detect country
-			Price:                    1000,
-			MaxConsumers:             0,
-			PrivateKeyFile:           keyPath,
-			BandwidthLimit:           "10mbit",
-			EnableNAT:                true,
-			EnableEgressNAT:          false,
-			NATOutboundInterface:     "",
-			IsolationMode:            "none",
-			AllowlistFile:            "",
-			DenylistFile:             "",
-			CertLifetimeHours:        720,
-			CertRotateBeforeHours:    24,
-			HealthCheckEnabled:       true,
-			HealthCheckInterval:      "30s",
-			BandwidthMonitorInterval: "30s",
-			TunIP:                    "10.10.0.1",
-			TunSubnet:                "24",
-			MetricsListenAddr:        "",
-			MaxSessionDurationSecs:   0,
+			InterfaceName:               "bcvpn0",
+			ListenPort:                  51820,
+			AnnounceIP:                  "", // Leave empty to auto-detect public IP
+			Country:                     "", // Leave empty to auto-detect country
+			Price:                       1000,
+			MaxConsumers:                0,
+			PrivateKeyFile:              keyPath,
+			BandwidthLimit:              "10mbit",
+			EnableNAT:                   true,
+			EnableEgressNAT:             false,
+			NATOutboundInterface:        "",
+			IsolationMode:               "none",
+			AllowlistFile:               "",
+			DenylistFile:                "",
+			CertLifetimeHours:           720,
+			CertRotateBeforeHours:       24,
+			HealthCheckEnabled:          true,
+			MaxSessionDurationSecs:      0,
+			AnnouncementFeeTargetBlocks: 6,
+			AnnouncementFeeMode:         "conservative",
 		},
 		Client: ClientConfig{
 			InterfaceName:              "bcvpn1",

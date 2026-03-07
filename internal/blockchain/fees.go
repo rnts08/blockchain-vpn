@@ -10,8 +10,9 @@ import (
 	"github.com/btcsuite/btcd/rpcclient"
 )
 
-func estimateDynamicFeePerKb(ctx context.Context, client *rpcclient.Client, targetBlocks int64) (btcutil.Amount, error) {
-	mode := btcjson.EstimateModeConservative
+// estimateDynamicFeePerKbWithMode fetches a feerate from the node using the
+// given confirmation target (in blocks) and estimation mode.
+func estimateDynamicFeePerKbWithMode(ctx context.Context, client *rpcclient.Client, targetBlocks int64, mode btcjson.EstimateSmartFeeMode) (btcutil.Amount, error) {
 	feeRate, err := withRetry(ctx, "EstimateSmartFee", 4, 500*time.Millisecond, func() (*btcjson.EstimateSmartFeeResult, error) {
 		return client.EstimateSmartFee(targetBlocks, &mode)
 	})
@@ -33,4 +34,19 @@ func estimateDynamicFeePerKb(ctx context.Context, client *rpcclient.Client, targ
 	}
 
 	return 0, fmt.Errorf("could not determine dynamic fee rate from node")
+}
+
+// estimateDynamicFeePerKb is the default-mode convenience wrapper (conservative, 6 blocks).
+func estimateDynamicFeePerKb(ctx context.Context, client *rpcclient.Client, targetBlocks int64) (btcutil.Amount, error) {
+	return estimateDynamicFeePerKbWithMode(ctx, client, targetBlocks, btcjson.EstimateModeConservative)
+}
+
+// FeeMode converts a config string to a btcjson EstimateSmartFeeMode.
+func FeeMode(mode string) btcjson.EstimateSmartFeeMode {
+	switch mode {
+	case "economical":
+		return btcjson.EstimateModeEconomical
+	default:
+		return btcjson.EstimateModeConservative
+	}
 }

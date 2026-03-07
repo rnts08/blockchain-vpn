@@ -39,8 +39,8 @@ type heartbeatState struct {
 }
 
 // ScanForVPNs scans the blockchain for VPN service announcements starting from
-// the current tip and going backwards until startBlock.
-func ScanForVPNs(client *rpcclient.Client, startBlock int64) ([]*ProviderAnnouncement, map[string]uint64, error) {
+// the current tip and going backwards until startBlock or the cached max height.
+func ScanForVPNs(client *rpcclient.Client, startBlock int64, cache *ScanCache) ([]*ProviderAnnouncement, map[string]uint64, error) {
 	announcementByPubKey := make(map[string]*ProviderAnnouncement)
 	priceUpdates := make(map[string]uint64) // Key: hex pubkey, Value: new price
 	heartbeats := make(map[string]heartbeatState)
@@ -53,8 +53,13 @@ func ScanForVPNs(client *rpcclient.Client, startBlock int64) ([]*ProviderAnnounc
 		return nil, nil, err
 	}
 
-	// Iterate backwards from tip to startBlock
-	for i := count; i > startBlock && i > 0; i-- {
+	effectiveStart := startBlock
+	if cache != nil && cache.LastScannedHeight > effectiveStart {
+		effectiveStart = cache.LastScannedHeight
+	}
+
+	// Iterate backwards from tip to effectiveStart
+	for i := count; i > effectiveStart && i > 0; i-- {
 		hash, err := withRetry(context.Background(), "GetBlockHash", 5, 500*time.Millisecond, func() (*chainhash.Hash, error) {
 			return client.GetBlockHash(i)
 		})
@@ -131,8 +136,51 @@ func ScanForVPNs(client *rpcclient.Client, startBlock int64) ([]*ProviderAnnounc
 		}
 	}
 
-	announcements := mergeProviderState(announcementByPubKey, priceUpdates, heartbeats)
-	return announcements, priceUpdates, nil
+	if cache != nil && count > effectiveStart {
+		cache.Update(count, announcementByPubKey, priceUpdates, heartbeats)
+		_ = cache.Save()
+	}
+
+	// Merge the delta we just scanned with whatever is in the cache (if provided).
+	// If no cache, we just merge the results of this scan run.
+	var finalAnns map[string]*ProviderAnnouncement
+	var finalPrices map[string]uint64
+	var finalHBs map[string]heartbeatState
+
+	if cache != nil {
+		cache.mu.RLock()
+		finalAnns = make(map[string]*ProviderAnnouncement, len(cache.Announcements))
+		for pk, ep := range cache.Announcements {
+			finalAnns[pk] = &ProviderAnnouncement{Endpoint: ep}
+		}
+		finalPrices = make(map[string]uint64, len(cache.PriceUpdates))
+		for pk, p := range cache.PriceUpdates {
+			finalPrices[pk] = p
+		}
+		finalHBs = make(map[string]heartbeatState, len(cache.Heartbeats))
+		for pk, f := range cache.Heartbeats {
+			finalHBs[pk] = heartbeatState{flags: f}
+		}
+		cache.mu.RUnlock()
+
+		// Overwrite with any new findings from this run
+		for pk, a := range announcementByPubKey {
+			finalAnns[pk] = a
+		}
+		for pk, p := range priceUpdates {
+			finalPrices[pk] = p
+		}
+		for pk, h := range heartbeats {
+			finalHBs[pk] = h
+		}
+	} else {
+		finalAnns = announcementByPubKey
+		finalPrices = priceUpdates
+		finalHBs = heartbeats
+	}
+
+	announcements := mergeProviderState(finalAnns, finalPrices, finalHBs)
+	return announcements, finalPrices, nil
 }
 
 func mergeProviderState(announcementByPubKey map[string]*ProviderAnnouncement, priceUpdates map[string]uint64, heartbeats map[string]heartbeatState) []*ProviderAnnouncement {

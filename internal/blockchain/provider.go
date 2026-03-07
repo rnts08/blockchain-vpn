@@ -25,7 +25,7 @@ import (
 
 // AnnounceService uses the provided RPC client to broadcast a transaction
 // with an OP_RETURN output containing the VPN service details.
-func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint) error {
+func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, feeTargetBlocks int, feeMode string) error {
 	// 4. Encode endpoint data into OP_RETURN payload (v2 metadata-first format).
 	payload, err := endpoint.EncodePayloadV2()
 	if err != nil {
@@ -40,7 +40,7 @@ func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint) e
 	}
 
 	// 6. Estimate Fee
-	feePerKb, err := estimateDynamicFeePerKb(context.Background(), client, 6)
+	feePerKb, err := estimateDynamicFeePerKbWithMode(context.Background(), client, int64(feeTargetBlocks), FeeMode(feeMode))
 	if err != nil {
 		return fmt.Errorf("failed to determine dynamic fee: %w", err)
 	}
@@ -148,7 +148,7 @@ func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags 
 }
 
 // AnnouncePriceUpdate broadcasts a lightweight transaction to update the provider's price.
-func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newPrice uint64) error {
+func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newPrice uint64, feeTargetBlocks int, feeMode string) error {
 	payload, err := protocol.EncodePriceUpdatePayload(pubKey, newPrice)
 	if err != nil {
 		return fmt.Errorf("error encoding price update payload: %w", err)
@@ -160,7 +160,7 @@ func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newP
 	}
 
 	// Estimate Fee
-	feePerKb, err := estimateDynamicFeePerKb(context.Background(), client, 6)
+	feePerKb, err := estimateDynamicFeePerKbWithMode(context.Background(), client, int64(feeTargetBlocks), FeeMode(feeMode))
 	if err != nil {
 		return fmt.Errorf("failed to determine dynamic fee: %w", err)
 	}

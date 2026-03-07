@@ -1294,7 +1294,7 @@ func (s *guiState) startProvider(password string) error {
 		go func() {
 			ticker := time.NewTicker(24 * time.Hour)
 			defer ticker.Stop()
-			if err := blockchain.AnnounceService(client, endpoint); err != nil {
+			if err := blockchain.AnnounceService(client, endpoint, s.cfg.Provider.AnnouncementFeeTargetBlocks, s.cfg.Provider.AnnouncementFeeMode); err != nil {
 				s.appendLog("Announcement failed: " + err.Error())
 			}
 			for {
@@ -1302,7 +1302,7 @@ func (s *guiState) startProvider(password string) error {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if err := blockchain.AnnounceService(client, endpoint); err != nil {
+					if err := blockchain.AnnounceService(client, endpoint, s.cfg.Provider.AnnouncementFeeTargetBlocks, s.cfg.Provider.AnnouncementFeeMode); err != nil {
 						s.appendLog("Re-announcement failed: " + err.Error())
 					}
 				}
@@ -1381,7 +1381,7 @@ func (s *guiState) rebroadcastService(password string) error {
 		defer natCleanup()
 	}
 	endpoint := buildProviderEndpoint(&cfg.Provider, announceIP, announcePort, key)
-	return blockchain.AnnounceService(client, endpoint)
+	return blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode)
 }
 
 func (s *guiState) broadcastPriceUpdate(password string) error {
@@ -1396,14 +1396,14 @@ func (s *guiState) broadcastPriceUpdate(password string) error {
 	if err != nil {
 		return err
 	}
-	return blockchain.AnnouncePriceUpdate(client, key.PubKey(), cfg.Provider.Price)
+	return blockchain.AnnouncePriceUpdate(client, key.PubKey(), cfg.Provider.Price, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode)
 }
 
 func (s *guiState) scanProviders(sortBy, country string, maxPrice uint64, minBandwidthKB uint32, maxLatency time.Duration, minSlots int) error {
 	client := connectRPC(s.cfg.RPC.Host, s.cfg.RPC.User, s.cfg.RPC.Pass)
 	defer client.Shutdown()
 
-	results, _, err := blockchain.ScanForVPNs(client, 0)
+	results, _, err := blockchain.ScanForVPNs(client, 0, nil)
 	if err != nil {
 		return err
 	}

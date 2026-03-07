@@ -160,7 +160,7 @@ func main() {
 			defer providerWG.Done()
 			ticker := time.NewTicker(24 * time.Hour)
 			defer ticker.Stop()
-			if err := blockchain.AnnounceService(client, endpoint); err != nil {
+			if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode); err != nil {
 				log.Printf("Initial service announcement failed: %v", err)
 			}
 			for {
@@ -168,7 +168,7 @@ func main() {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if err := blockchain.AnnounceService(client, endpoint); err != nil {
+					if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode); err != nil {
 						log.Printf("Scheduled re-announcement failed: %v", err)
 					}
 				}
@@ -249,7 +249,7 @@ func main() {
 		endpoint := buildProviderEndpoint(&cfg.Provider, announceIP, announcePort, providerKey)
 
 		log.Println("Re-broadcasting service announcement...")
-		if err := blockchain.AnnounceService(client, endpoint); err != nil {
+		if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode); err != nil {
 			log.Fatalf("Service announcement failed: %v", err)
 		}
 		log.Println("Service announcement re-broadcasted successfully.")
@@ -269,7 +269,7 @@ func main() {
 		}
 
 		log.Printf("Broadcasting price update to %d satoshis...", *updatePriceNewPrice)
-		if err := blockchain.AnnouncePriceUpdate(client, providerKey.PubKey(), *updatePriceNewPrice); err != nil {
+		if err := blockchain.AnnouncePriceUpdate(client, providerKey.PubKey(), *updatePriceNewPrice, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode); err != nil {
 			log.Fatalf("Price update announcement failed: %v", err)
 		}
 		log.Println("Price update broadcasted successfully.")
@@ -289,8 +289,20 @@ func main() {
 
 		chainParams := detectChain(genesisHash)
 
+		cachePath, err := blockchain.DefaultScanCachePath()
+		if err != nil {
+			log.Printf("Warning: failed to get default scan cache path: %v", err)
+		}
+		var cache *blockchain.ScanCache
+		if cachePath != "" {
+			cache = blockchain.NewScanCache(cachePath)
+			if err := cache.Load(); err != nil {
+				log.Printf("Warning: failed to load scan cache: %v", err)
+			}
+		}
+
 		fmt.Println("Scanning for VPN providers and price updates...")
-		endpoints, priceUpdates, err := blockchain.ScanForVPNs(client, *scanStartBlock)
+		endpoints, priceUpdates, err := blockchain.ScanForVPNs(client, *scanStartBlock, cache)
 		if err != nil {
 			log.Fatalf("Failed to scan for VPNs: %v", err)
 		}
