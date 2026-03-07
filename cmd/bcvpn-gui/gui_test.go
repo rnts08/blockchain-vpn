@@ -17,8 +17,12 @@ func TestGUICreation(t *testing.T) {
 		providerStatus: binding.NewString(),
 		isScanning:     binding.NewBool(),
 		isConnecting:   binding.NewBool(),
+		autoScroll:     binding.NewBool(),
+		logSearch:      binding.NewString(),
+		fullLogs:       binding.NewString(),
 	}
 	_ = state.providerStatus.Set("Stopped")
+	_ = state.autoScroll.Set(true)
 	applyDefaultConfigValues(state.cfg)
 
 	w := myApp.NewWindow("Test")
@@ -37,8 +41,12 @@ func TestSettingsTab(t *testing.T) {
 		providerStatus: binding.NewString(),
 		isScanning:     binding.NewBool(),
 		isConnecting:   binding.NewBool(),
+		autoScroll:     binding.NewBool(),
+		logSearch:      binding.NewString(),
+		fullLogs:       binding.NewString(),
 	}
 	_ = state.providerStatus.Set("Stopped")
+	_ = state.autoScroll.Set(true)
 	applyDefaultConfigValues(state.cfg)
 
 	w := myApp.NewWindow("Settings Test")
@@ -56,8 +64,12 @@ func TestWalletTab(t *testing.T) {
 		providerStatus: binding.NewString(),
 		isScanning:     binding.NewBool(),
 		isConnecting:   binding.NewBool(),
+		autoScroll:     binding.NewBool(),
+		logSearch:      binding.NewString(),
+		fullLogs:       binding.NewString(),
 	}
 	_ = state.providerStatus.Set("Stopped")
+	_ = state.autoScroll.Set(true)
 	wallet := buildWalletTab(state)
 	if wallet == nil {
 		t.Fatal("wallet tab is nil")

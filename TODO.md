@@ -5,7 +5,7 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 ## GUI/UX Improvements
 - [x] **5.1 Status Label Accuracy**: Subscribe to provider state events to update the status label accurately (instead of showing "running" immediately). (Fixed in v0.4.4)
 - [x] **5.2 Progress Indicators**: Add loading spinners or progress bars for long operations like scanning and connecting. (Fixed in v0.4.5)
-- [ ] **5.3 Log Panel Enhancements**: Add auto-scroll toggle, search functionality, and an export button to the log panel.
+- [x] **5.3 Log Panel Enhancements**: Add auto-scroll toggle, search functionality, and an export button to the log panel. (Fixed in v0.4.6)
 - [ ] **5.4 Confirmation Dialogs**: Add confirmation dialogs for destructive actions like "Stop Provider" and "Disconnect All".
 - [ ] **5.5 Real-time Metrics**: Implement auto-refresh (e.g., 5s interval) or live charts for metrics.
 - [ ] **5.6 Wallet Balance**: Display the current wallet balance in the UI.

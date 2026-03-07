@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
  
+## [0.4.6] - 2026-03-07
+
+### GUI/UX Improvements
+- **Item 5.3 Log Panel Enhancements**: Added toolbar to log panel with auto-scroll toggle, search/filter entry, and an export button. Switched to high-performance log storage with background filtering to support large log volumes.
+
 ## [0.4.5] - 2026-03-07
 
 ### GUI/UX Improvements

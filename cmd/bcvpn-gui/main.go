@@ -84,6 +84,9 @@ type guiState struct {
 	providerStatus binding.String
 	isScanning     binding.Bool
 	isConnecting   binding.Bool
+	autoScroll     binding.Bool
+	logSearch      binding.String
+	fullLogs       binding.String
 
 	providerRunning  bool
 	providerStarting bool
@@ -174,10 +177,14 @@ func initState() (*guiState, error) {
 		providerStatus: binding.NewString(),
 		isScanning:     binding.NewBool(),
 		isConnecting:   binding.NewBool(),
+		autoScroll:     binding.NewBool(),
+		logSearch:      binding.NewString(),
+		fullLogs:       binding.NewString(),
 		selectedIdx:    -1,
 		clientMgr:      tunnel.NewMultiTunnelManager(),
 	}
 	_ = s.providerStatus.Set("Stopped")
+	_ = s.autoScroll.Set(true)
 	return s, nil
 }
 
@@ -1374,13 +1381,86 @@ func buildLogPanel(s *guiState) fyne.CanvasObject {
 	logEntry.Bind(s.logs)
 	logEntry.Disable()
 	logEntry.SetMinRowsVisible(8)
-	return widget.NewCard("Activity Log", "Runtime events, errors, and actions", logEntry)
+
+	s.logs.AddListener(binding.NewDataListener(func() {
+		as, _ := s.autoScroll.Get()
+		if as {
+			logEntry.CursorColumn = 0
+			logEntry.CursorRow = len(strings.Split(logEntry.Text, "\n"))
+			logEntry.Refresh()
+		}
+	}))
+
+	s.logSearch.AddListener(binding.NewDataListener(func() {
+		s.refreshLogs()
+	}))
+
+	autoScrollCheck := widget.NewCheckWithData("Auto-scroll", s.autoScroll)
+	searchEntry := widget.NewEntryWithData(s.logSearch)
+	searchEntry.SetPlaceHolder("Search logs...")
+
+	exportBtn := widget.NewButtonWithIcon("Export", theme.DocumentSaveIcon(), func() {
+		s.exportLogs()
+	})
+
+	toolbar := container.NewBorder(nil, nil, autoScrollCheck, exportBtn, searchEntry)
+
+	return widget.NewCard("Activity Log", "Runtime events, errors, and actions", container.NewVBox(toolbar, logEntry))
+}
+
+func (s *guiState) exportLogs() {
+	full, _ := s.fullLogs.Get()
+	if full == "" {
+		return
+	}
+
+	w := fyne.CurrentApp().Driver().AllWindows()[0]
+	save := dialog.NewFileSave(func(closer fyne.URIWriteCloser, err error) {
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		if closer == nil {
+			return
+		}
+		defer closer.Close()
+		_, err = closer.Write([]byte(full))
+		if err != nil {
+			dialog.ShowError(err, w)
+		}
+	}, w)
+	save.SetFileName("bcvpn-activity.log")
+	save.Show()
 }
 
 func (s *guiState) appendLog(line string) {
-	current, _ := s.logs.Get()
 	ts := time.Now().Format("15:04:05")
-	_ = s.logs.Set(current + fmt.Sprintf("[%s] %s\n", ts, line))
+	newLine := fmt.Sprintf("[%s] %s\n", ts, line)
+
+	full, _ := s.fullLogs.Get()
+	_ = s.fullLogs.Set(full + newLine)
+
+	s.refreshLogs()
+}
+
+func (s *guiState) refreshLogs() {
+	full, _ := s.fullLogs.Get()
+	search, _ := s.logSearch.Get()
+	search = strings.ToLower(strings.TrimSpace(search))
+
+	if search == "" {
+		_ = s.logs.Set(full)
+		return
+	}
+
+	lines := strings.Split(full, "\n")
+	var filtered []string
+	for _, l := range lines {
+		if strings.Contains(strings.ToLower(l), search) {
+			filtered = append(filtered, l)
+		}
+	}
+	_ = s.logs.Set(strings.Join(filtered, "\n"))
 }
 
 func (s *guiState) startProvider(password string) error {
