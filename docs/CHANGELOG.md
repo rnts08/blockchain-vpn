@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
  
+## [0.4.5] - 2026-03-07
+
+### GUI/UX Improvements
+- **Item 5.2 Progress Indicators**: Added infinite progress bars for scanning and connecting operations in the Client Tab. Scanning and connecting buttons now correctly disable while operations are active.
+
 ## [0.4.4] - 2026-03-07
 
 ### GUI/UX Improvements

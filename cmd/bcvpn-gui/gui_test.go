@@ -15,6 +15,8 @@ func TestGUICreation(t *testing.T) {
 		cfg:            &config.Config{},
 		logs:           binding.NewString(),
 		providerStatus: binding.NewString(),
+		isScanning:     binding.NewBool(),
+		isConnecting:   binding.NewBool(),
 	}
 	_ = state.providerStatus.Set("Stopped")
 	applyDefaultConfigValues(state.cfg)
@@ -33,6 +35,8 @@ func TestSettingsTab(t *testing.T) {
 		cfg:            &config.Config{},
 		logs:           binding.NewString(),
 		providerStatus: binding.NewString(),
+		isScanning:     binding.NewBool(),
+		isConnecting:   binding.NewBool(),
 	}
 	_ = state.providerStatus.Set("Stopped")
 	applyDefaultConfigValues(state.cfg)
@@ -50,6 +54,8 @@ func TestWalletTab(t *testing.T) {
 		cfg:            &config.Config{},
 		logs:           binding.NewString(),
 		providerStatus: binding.NewString(),
+		isScanning:     binding.NewBool(),
+		isConnecting:   binding.NewBool(),
 	}
 	_ = state.providerStatus.Set("Stopped")
 	wallet := buildWalletTab(state)

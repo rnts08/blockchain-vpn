@@ -82,6 +82,8 @@ type guiState struct {
 
 	logs           binding.String
 	providerStatus binding.String
+	isScanning     binding.Bool
+	isConnecting   binding.Bool
 
 	providerRunning  bool
 	providerStarting bool
@@ -170,6 +172,8 @@ func initState() (*guiState, error) {
 		firstRun:       firstRun,
 		logs:           logs,
 		providerStatus: binding.NewString(),
+		isScanning:     binding.NewBool(),
+		isConnecting:   binding.NewBool(),
 		selectedIdx:    -1,
 		clientMgr:      tunnel.NewMultiTunnelManager(),
 	}
@@ -764,6 +768,32 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.appendLog("Saved client settings.")
 	})
 
+	scanProgress := widget.NewProgressBarInfinite()
+	scanProgress.Hide()
+	s.isScanning.AddListener(binding.NewDataListener(func() {
+		scanning, _ := s.isScanning.Get()
+		if scanning {
+			scanProgress.Show()
+			scanBtn.Disable()
+		} else {
+			scanProgress.Hide()
+			scanBtn.Enable()
+		}
+	}))
+
+	connectProgress := widget.NewProgressBarInfinite()
+	connectProgress.Hide()
+	s.isConnecting.AddListener(binding.NewDataListener(func() {
+		connecting, _ := s.isConnecting.Get()
+		if connecting {
+			connectProgress.Show()
+			connectBtn.Disable()
+		} else {
+			connectProgress.Hide()
+			connectBtn.Enable()
+		}
+	}))
+
 	filterRow := container.NewGridWithColumns(12,
 		widget.NewLabel("Sort:"),
 		sortSelect,
@@ -794,7 +824,7 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 
 	return container.NewPadded(container.NewVBox(
 		title,
-		widget.NewCard("Filters", "Scan and choose the best provider", container.NewVBox(filterRow, settingsRow, actionRow, securityRow)),
+		widget.NewCard("Filters", "Scan and choose the best provider", container.NewVBox(filterRow, settingsRow, actionRow, securityRow, scanProgress, connectProgress)),
 		widget.NewCard("Provider List", "Latency, price, and country-enriched endpoint table", results),
 		buildLogPanel(s),
 	))
@@ -1537,6 +1567,8 @@ func (s *guiState) broadcastPriceUpdate(password string) error {
 }
 
 func (s *guiState) scanProviders(sortBy, country string, maxPrice uint64, minBandwidthKB uint32, maxLatency time.Duration, minSlots int) error {
+	_ = s.isScanning.Set(true)
+	defer s.isScanning.Set(false)
 	client := connectRPCWithConfig(s.cfg)
 	defer client.Shutdown()
 
@@ -1680,6 +1712,8 @@ func computeProviderScoreGUI(ep *geoip.EnrichedVPNEndpoint) float64 {
 }
 
 func (s *guiState) connectSelectedProvider(dryRun bool) error {
+	_ = s.isConnecting.Set(true)
+	defer s.isConnecting.Set(false)
 	s.mu.Lock()
 	idx := s.selectedIdx
 	if idx < 0 || idx >= len(s.scanResults) {
