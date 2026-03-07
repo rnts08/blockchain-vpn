@@ -54,29 +54,41 @@ func NewIPPool(gatewayIP string) *IPPool {
 	}
 }
 
-// Allocate finds the next available IP in the /24 subnet.
+// Allocate finds the next available IP in the /24 subnet (IPv4) or /120 (IPv6).
 func (p *IPPool) Allocate() (net.IP, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	ip := make(net.IP, len(p.baseIP))
-	copy(ip, p.baseIP)
-	ip = ip.To4()
-	if ip == nil {
-		return nil, fmt.Errorf("only IPv4 supported for simple pool")
-	}
-
-	// Simple allocation strategy: iterate 2 to 254 (assuming .1 is gateway)
-	// This assumes a /24 subnet.
-	for i := 2; i < 255; i++ {
-		ip[3] = byte(i)
-		ipStr := ip.String()
-		if ipStr == p.baseIP.String() {
-			continue
+	ip4 := p.baseIP.To4()
+	if ip4 != nil {
+		// IPv4 allocation strategy: iterate 2 to 254 in a /24 subnet
+		res := make(net.IP, len(ip4))
+		copy(res, ip4)
+		for i := 2; i < 255; i++ {
+			res[3] = byte(i)
+			ipStr := res.String()
+			if ipStr == p.baseIP.String() {
+				continue
+			}
+			if !p.used[ipStr] {
+				p.used[ipStr] = true
+				return res, nil
+			}
 		}
-		if !p.used[ipStr] {
-			p.used[ipStr] = true
-			return ip, nil
+	} else {
+		// IPv6 allocation strategy: iterate last byte 2 to 254 in a /120 range
+		res := make(net.IP, len(p.baseIP))
+		copy(res, p.baseIP)
+		for i := 2; i < 255; i++ {
+			res[15] = byte(i)
+			ipStr := res.String()
+			if ipStr == p.baseIP.String() {
+				continue
+			}
+			if !p.used[ipStr] {
+				p.used[ipStr] = true
+				return res, nil
+			}
 		}
 	}
 	return nil, fmt.Errorf("ip pool exhausted")

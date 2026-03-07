@@ -96,17 +96,30 @@ func setupRouting(ifaceName, providerHost, defaultGW string) error {
 		log.Printf("Warning: failed to add route for provider endpoint: %v", err)
 	}
 
+	// IPv4 default routes (two /1 routes to avoid overwriting existing default)
 	_, dst1, _ := net.ParseCIDR("0.0.0.0/1")
 	route1 := &netlink.Route{LinkIndex: link.Attrs().Index, Dst: dst1}
 	if err := netlink.RouteAdd(route1); err != nil {
-		return fmt.Errorf("failed to set default route part 1: %w", err)
+		log.Printf("Warning: failed to set IPv4 default route part 1: %v", err)
 	}
 
 	_, dst2, _ := net.ParseCIDR("128.0.0.0/1")
 	route2 := &netlink.Route{LinkIndex: link.Attrs().Index, Dst: dst2}
 	if err := netlink.RouteAdd(route2); err != nil {
-		_ = netlink.RouteDel(route1)
-		return fmt.Errorf("failed to set default route part 2: %w", err)
+		log.Printf("Warning: failed to set IPv4 default route part 2: %v", err)
+	}
+
+	// IPv6 default routes
+	_, dst6_1, _ := net.ParseCIDR("::/1")
+	route6_1 := &netlink.Route{LinkIndex: link.Attrs().Index, Dst: dst6_1}
+	if err := netlink.RouteAdd(route6_1); err != nil {
+		log.Printf("Warning: failed to set IPv6 default route part 1: %v", err)
+	}
+
+	_, dst6_2, _ := net.ParseCIDR("8000::/1")
+	route6_2 := &netlink.Route{LinkIndex: link.Attrs().Index, Dst: dst6_2}
+	if err := netlink.RouteAdd(route6_2); err != nil {
+		log.Printf("Warning: failed to set IPv6 default route part 2: %v", err)
 	}
 
 	return nil
@@ -117,10 +130,14 @@ func restoreRouting(ifaceName, providerHost string) {
 	_ = netlink.RouteDel(&netlink.Route{Dst: &net.IPNet{IP: providerIP, Mask: net.CIDRMask(32, 32)}})
 	_, dst1, _ := net.ParseCIDR("0.0.0.0/1")
 	_, dst2, _ := net.ParseCIDR("128.0.0.0/1")
+	_, dst6_1, _ := net.ParseCIDR("::/1")
+	_, dst6_2, _ := net.ParseCIDR("8000::/1")
 	link, err := netlink.LinkByName(ifaceName)
 	if err == nil {
 		_ = netlink.RouteDel(&netlink.Route{LinkIndex: link.Attrs().Index, Dst: dst1})
 		_ = netlink.RouteDel(&netlink.Route{LinkIndex: link.Attrs().Index, Dst: dst2})
+		_ = netlink.RouteDel(&netlink.Route{LinkIndex: link.Attrs().Index, Dst: dst6_1})
+		_ = netlink.RouteDel(&netlink.Route{LinkIndex: link.Attrs().Index, Dst: dst6_2})
 	}
 }
 

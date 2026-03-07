@@ -10,6 +10,7 @@ import (
 	"net"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -78,11 +79,18 @@ func setupRouting(ifaceName, providerHost, defaultGW string) error {
 
 	_ = routeCmd("-n", "add", "-host", providerHost, defaultGW)
 	if err := routeCmd("-n", "add", "-net", "0.0.0.0/1", "-interface", ifaceName); err != nil {
-		return fmt.Errorf("failed to add route 0.0.0.0/1 via %s: %w", ifaceName, err)
+		log.Printf("Warning: failed to add IPv4 route 0.0.0.0/1 via %s: %v", ifaceName, err)
 	}
 	if err := routeCmd("-n", "add", "-net", "128.0.0.0/1", "-interface", ifaceName); err != nil {
-		_ = routeCmd("-n", "delete", "-net", "0.0.0.0/1", "-interface", ifaceName)
-		return fmt.Errorf("failed to add route 128.0.0.0/1 via %s: %w", ifaceName, err)
+		log.Printf("Warning: failed to add IPv4 route 128.0.0.0/1 via %s: %v", ifaceName, err)
+	}
+
+	// IPv6 default routes
+	if err := routeCmd("-n", "add", "-net", "::/1", "-interface", ifaceName); err != nil {
+		log.Printf("Warning: failed to add IPv6 route ::/1 via %s: %v", ifaceName, err)
+	}
+	if err := routeCmd("-n", "add", "-net", "8000::/1", "-interface", ifaceName); err != nil {
+		log.Printf("Warning: failed to add IPv6 route 8000::/1 via %s: %v", ifaceName, err)
 	}
 	return nil
 }
@@ -95,6 +103,8 @@ func restoreRouting(ifaceName, providerHost, defaultGW string) {
 	}
 	_ = routeCmd("-n", "delete", "-net", "0.0.0.0/1", "-interface", ifaceName)
 	_ = routeCmd("-n", "delete", "-net", "128.0.0.0/1", "-interface", ifaceName)
+	_ = routeCmd("-n", "delete", "-net", "::/1", "-interface", ifaceName)
+	_ = routeCmd("-n", "delete", "-net", "8000::/1", "-interface", ifaceName)
 }
 
 func setupDNS(defaultIface string) (func(), error) {
@@ -217,17 +227,23 @@ func getDefaultRouteInfo() (gateway string, iface string, err error) {
 }
 
 func cidrMaskFromPrefix(prefix string) (string, error) {
-	var bits int
-	if _, err := fmt.Sscanf(prefix, "%d", &bits); err != nil {
+	bits, err := strconv.Atoi(strings.TrimSpace(prefix))
+	if err != nil {
 		return "", fmt.Errorf("invalid subnet prefix %q: %w", prefix, err)
 	}
-	if bits < 0 || bits > 32 {
-		return "", fmt.Errorf("invalid IPv4 prefix length: %d", bits)
+	if bits < 0 || bits > 128 {
+		return "", fmt.Errorf("invalid prefix length: %d", bits)
 	}
-	mask := net.CIDRMask(bits, 32)
-	if len(mask) != 4 {
-		return "", fmt.Errorf("invalid IPv4 CIDR mask for prefix %d", bits)
+
+	if bits <= 32 {
+		mask := net.CIDRMask(bits, 32)
+		return net.IP(mask).String(), nil
 	}
+
+	// For IPv6, we return it as-is if it's > 32 bits, but ifconfig on macOS
+	// often expects the hex representation or just the prefix length.
+	// net.CIDRMask(bits, 128) works for the byte slice.
+	mask := net.CIDRMask(bits, 128)
 	return net.IP(mask).String(), nil
 }
 

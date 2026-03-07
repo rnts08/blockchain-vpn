@@ -24,13 +24,27 @@ var (
 )
 
 func configureTunInterface(ifaceName, ip, subnetMask string) error {
-	mask, err := cidrMaskFromPrefix(subnetMask)
-	if err != nil {
-		return err
+	ipObj := net.ParseIP(ip)
+	if ipObj == nil {
+		return fmt.Errorf("invalid IP address: %s", ip)
 	}
-	_, err = windowsRunCommand("netsh", "interface", "ipv4", "set", "address", fmt.Sprintf("name=%s", ifaceName), "static", ip, mask)
-	if err != nil {
-		return fmt.Errorf("failed to configure TUN interface %s: %w", ifaceName, err)
+
+	if ipObj.To4() != nil {
+		mask, err := cidrMaskFromPrefix(subnetMask)
+		if err != nil {
+			return err
+		}
+		_, err = windowsRunCommand("netsh", "interface", "ipv4", "set", "address", fmt.Sprintf("name=%s", ifaceName), "static", ip, mask)
+		if err != nil {
+			return fmt.Errorf("failed to configure IPv4 TUN interface %s: %w", ifaceName, err)
+		}
+	} else {
+		// IPv6: use CIDR notation
+		addrCIDR := fmt.Sprintf("%s/%s", ip, subnetMask)
+		_, err := windowsRunCommand("netsh", "interface", "ipv6", "add", "address", ifaceName, addrCIDR)
+		if err != nil {
+			return fmt.Errorf("failed to configure IPv6 TUN interface %s: %w", ifaceName, err)
+		}
 	}
 	return nil
 }
@@ -79,14 +93,14 @@ func setupWindowsRouting(tunIfIndex int, providerHost, defaultGW string, default
 	// Keep provider control channel outside tunnel.
 	_, _ = windowsRunCommand("route", "ADD", providerHost, "MASK", "255.255.255.255", defaultGW, "METRIC", "1", "IF", strconv.Itoa(defaultIfIndex))
 
-	// Full tunnel split default route.
-	if _, err := windowsRunCommand("route", "ADD", "0.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex)); err != nil {
-		return fmt.Errorf("failed to add route 0.0.0.0/1 via interface index %d: %w", tunIfIndex, err)
-	}
-	if _, err := windowsRunCommand("route", "ADD", "128.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex)); err != nil {
-		_, _ = windowsRunCommand("route", "DELETE", "0.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex))
-		return fmt.Errorf("failed to add route 128.0.0.0/1 via interface index %d: %w", tunIfIndex, err)
-	}
+	// IPv4 full tunnel split default route.
+	_, _ = windowsRunCommand("route", "ADD", "0.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex))
+	_, _ = windowsRunCommand("route", "ADD", "128.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex))
+
+	// IPv6 full tunnel split default route.
+	_, _ = windowsRunCommand("netsh", "interface", "ipv6", "add", "route", "::/1", strconv.Itoa(tunIfIndex))
+	_, _ = windowsRunCommand("netsh", "interface", "ipv6", "add", "route", "8000::/1", strconv.Itoa(tunIfIndex))
+
 	return nil
 }
 
@@ -94,6 +108,8 @@ func restoreWindowsRouting(tunIfIndex int, providerHost string) {
 	_, _ = windowsRunCommand("route", "DELETE", providerHost)
 	_, _ = windowsRunCommand("route", "DELETE", "0.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex))
 	_, _ = windowsRunCommand("route", "DELETE", "128.0.0.0", "MASK", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex))
+	_, _ = windowsRunCommand("netsh", "interface", "ipv6", "delete", "route", "::/1", strconv.Itoa(tunIfIndex))
+	_, _ = windowsRunCommand("netsh", "interface", "ipv6", "delete", "route", "8000::/1", strconv.Itoa(tunIfIndex))
 }
 
 func setupWindowsDNS(ifaceAlias string) (func(), error) {
@@ -181,10 +197,16 @@ func cidrMaskFromPrefix(prefix string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid subnet prefix %q: %w", prefix, err)
 	}
-	if bits < 0 || bits > 32 {
-		return "", fmt.Errorf("invalid IPv4 prefix length: %d", bits)
+	if bits < 0 || bits > 128 {
+		return "", fmt.Errorf("invalid prefix length: %d", bits)
 	}
-	mask := net.CIDRMask(bits, 32)
+
+	if bits <= 32 {
+		mask := net.CIDRMask(bits, 32)
+		return net.IP(mask).String(), nil
+	}
+
+	mask := net.CIDRMask(bits, 128)
 	return net.IP(mask).String(), nil
 }
 
