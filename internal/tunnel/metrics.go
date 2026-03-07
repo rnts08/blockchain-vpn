@@ -29,18 +29,28 @@ type runtimeMetricsState struct {
 var runtimeMetrics = &runtimeMetricsState{}
 var metricsServers sync.Map // key=addr
 
-func startMetricsServer(addr string) {
+func startMetricsServer(addr, token string) {
 	addr = strings.TrimSpace(addr)
 	if addr == "" {
 		return
 	}
-	if _, loaded := metricsServers.LoadOrStore(addr, struct{}{}); loaded {
+	key := addr + "|" + token
+	if _, loaded := metricsServers.LoadOrStore(key, struct{}{}); loaded {
 		return
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/metrics.json", func(w http.ResponseWriter, r *http.Request) {
-		_ = r
+		if token != "" {
+			candidate := strings.TrimSpace(r.Header.Get("X-BCVPN-Metrics-Token"))
+			if candidate == "" {
+				candidate = strings.TrimSpace(r.URL.Query().Get("token"))
+			}
+			if candidate != token {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
 		runtimeMetrics.healthMu.RLock()
 		payload := map[string]any{
 			"provider_running": runtimeMetrics.providerRunning.Load(),

@@ -705,6 +705,9 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	keyStorageService.SetText(s.cfg.Security.KeyStorageService)
 	revocationFile := widget.NewEntry()
 	revocationFile.SetText(s.cfg.Security.RevocationCacheFile)
+	metricsAuthToken := widget.NewPasswordEntry()
+	metricsAuthToken.SetText(s.cfg.Security.MetricsAuthToken)
+	metricsAuthToken.SetPlaceHolder("Optional token required for /metrics.json")
 	tlsMinVersion := widget.NewSelect([]string{"1.3", "1.2"}, nil)
 	if strings.TrimSpace(s.cfg.Security.TLSMinVersion) == "" {
 		tlsMinVersion.SetSelected("1.3")
@@ -737,6 +740,7 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.Security.RevocationCacheFile = strings.TrimSpace(revocationFile.Text)
 		s.cfg.Security.TLSMinVersion = strings.TrimSpace(tlsMinVersion.Selected)
 		s.cfg.Security.TLSProfile = strings.TrimSpace(tlsProfile.Selected)
+		s.cfg.Security.MetricsAuthToken = strings.TrimSpace(metricsAuthToken.Text)
 		s.cfg.Logging.Format = strings.TrimSpace(logFormat.Selected)
 		if err := config.Validate(s.cfg); err != nil {
 			s.mu.Unlock()
@@ -783,6 +787,7 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewFormItem("Revocation Cache File", revocationFile),
 		widget.NewFormItem("TLS Min Version", tlsMinVersion),
 		widget.NewFormItem("TLS Profile", tlsProfile),
+		widget.NewFormItem("Metrics Auth Token", metricsAuthToken),
 		widget.NewFormItem("Log Format", logFormat),
 	)
 	buttons := container.NewGridWithColumns(3, saveBtn, validateBtn, defaultsBtn)
@@ -815,6 +820,9 @@ func applyDefaultConfigValues(cfg *config.Config) {
 	}
 	if strings.TrimSpace(cfg.Security.TLSProfile) == "" {
 		cfg.Security.TLSProfile = "modern"
+	}
+	if strings.TrimSpace(cfg.Security.MetricsAuthToken) == "" {
+		cfg.Security.MetricsAuthToken = ""
 	}
 	if strings.TrimSpace(cfg.Provider.InterfaceName) == "" {
 		cfg.Provider.InterfaceName = "bcvpn0"
@@ -969,8 +977,14 @@ func (s *guiState) startProvider(password string) error {
 		}()
 
 		go blockchain.MonitorPayments(ctx, client, authManager, s.cfg.Provider.Price)
-		go blockchain.StartEchoServer(ctx, s.cfg.Provider.ListenPort)
-		tunnel.StartProviderServer(ctx, &s.cfg.Provider, &s.cfg.Security, providerKey, authManager)
+		go func() {
+			if err := blockchain.StartEchoServer(ctx, s.cfg.Provider.ListenPort); err != nil {
+				s.appendLog("Echo server error: " + err.Error())
+			}
+		}()
+		if err := tunnel.StartProviderServer(ctx, &s.cfg.Provider, &s.cfg.Security, providerKey, authManager); err != nil {
+			s.appendLog("Provider server error: " + err.Error())
+		}
 	}()
 	return nil
 }

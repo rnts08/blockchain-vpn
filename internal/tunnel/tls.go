@@ -29,9 +29,16 @@ func generateSelfSignedCert(privKey *btcec.PrivateKey, lifetime time.Duration) (
 	if lifetime <= 0 {
 		lifetime = defaultCertLifetime
 	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to generate certificate serial: %w", err)
+	}
+	if serial.Sign() == 0 {
+		serial = big.NewInt(1)
+	}
 
 	template := x509.Certificate{
-		SerialNumber: big.NewInt(1),
+		SerialNumber: serial,
 		Subject: pkix.Name{
 			Organization: []string{"BlockchainVPN"},
 			CommonName:   "p2p-node-" + pubKeyID,

@@ -32,6 +32,7 @@ type SecurityConfig struct {
 	RevocationCacheFile string `json:"revocation_cache_file"` // optional file containing revoked pubkeys (hex, one per line)
 	TLSMinVersion       string `json:"tls_min_version"`       // "1.2" or "1.3"
 	TLSProfile          string `json:"tls_profile"`           // "modern" or "compat"
+	MetricsAuthToken    string `json:"metrics_auth_token"`    // optional token required by /metrics.json
 }
 
 type ProviderConfig struct {
@@ -165,6 +166,7 @@ func GenerateDefaultConfig(path string) error {
 			RevocationCacheFile: "",
 			TLSMinVersion:       "1.3",
 			TLSProfile:          "modern",
+			MetricsAuthToken:    "",
 		},
 		Provider: ProviderConfig{
 			InterfaceName:            "bcvpn0",

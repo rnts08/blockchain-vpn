@@ -69,3 +69,4 @@ If metrics addresses are configured, runtime health/session counters are also ex
 Recommended practice:
 
 - Bind metrics to loopback (`127.0.0.1:<port>`) unless protected by host firewall/reverse proxy.
+- Set `security.metrics_auth_token` to require `X-BCVPN-Metrics-Token` (or `?token=`) on metrics requests.

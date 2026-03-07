@@ -162,14 +162,14 @@ func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newP
 
 // StartEchoServer starts a simple UDP echo server on the given port.
 // This is used by clients to measure latency. It's a blocking function.
-func StartEchoServer(ctx context.Context, port int) {
+func StartEchoServer(ctx context.Context, port int) error {
 	addr := net.UDPAddr{
 		Port: port,
 		IP:   net.ParseIP("0.0.0.0"),
 	}
 	conn, err := net.ListenUDP("udp", &addr)
 	if err != nil {
-		log.Fatalf("Failed to start echo server on port %d: %v", port, err)
+		return fmt.Errorf("failed to start echo server on port %d: %w", port, err)
 	}
 	defer conn.Close()
 	log.Printf("UDP Echo server listening for latency checks on port %d", port)
@@ -186,7 +186,7 @@ func StartEchoServer(ctx context.Context, port int) {
 			select {
 			case <-ctx.Done():
 				log.Println("Echo server shutting down.")
-				return
+				return nil
 			default:
 				log.Printf("Error reading from UDP: %v", err)
 				continue

@@ -3,11 +3,11 @@
 This list is a new post-MVP backlog based on a full code and docs review.
 
 ## 1. Security and Correctness (Highest Priority)
-- [ ] Use cryptographically random X.509 serial numbers for generated TLS certificates (replace fixed serial `1`).
-- [ ] Remove `log.Fatalf` from internal runtime packages (`internal/tunnel`, `internal/blockchain`) and return errors to callers for controlled shutdown.
-- [ ] Add optional authentication for `/metrics.json` endpoint (token/header) and document safe bind defaults.
-- [ ] Add explicit key-storage backend health checks and fallback behavior when secure-store commands/tools are missing at runtime.
-- [ ] Add validation and normalization for revocation cache entries (reject duplicates, report invalid line numbers).
+- [x] Use cryptographically random X.509 serial numbers for generated TLS certificates (replace fixed serial `1`).
+- [x] Remove `log.Fatalf` from internal runtime packages (`internal/tunnel`, `internal/blockchain`) and return errors to callers for controlled shutdown.
+- [x] Add optional authentication for `/metrics.json` endpoint (token/header) and document safe bind defaults.
+- [x] Add explicit key-storage backend health checks and fallback behavior when secure-store commands/tools are missing at runtime.
+- [x] Add validation and normalization for revocation cache entries (reject duplicates, report invalid line numbers).
 
 ## 2. Runtime Resilience
 - [ ] Add graceful stop/wait lifecycle for provider goroutines (echo server, payment monitor, health checks, listener workers).
@@ -44,3 +44,6 @@ This list is a new post-MVP backlog based on a full code and docs review.
 - [ ] Add explicit secure-store backend prerequisites by OS (Keychain/libsecret/DPAPI) with troubleshooting.
 - [ ] Add operations runbook for providers (rotation, revocation, incident response, upgrade strategy).
 - [ ] Add examples for `status --json` and `/metrics.json` fields for automation tooling.
+
+## Future Iteration Candidates
+- [ ] Add secure auto-fallback path for `key_storage_mode=auto` when backend fails after startup and no password is pre-supplied.

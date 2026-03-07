@@ -60,6 +60,8 @@ If `security.key_storage_mode` is not `file`, ensure backend tooling exists:
 
 If backend prerequisites are missing, use `security.key_storage_mode=file` or `auto` (falls back to file mode).
 
+For metrics endpoint protection, set `security.metrics_auth_token` and call `/metrics.json` with `X-BCVPN-Metrics-Token`.
+
 ## 3. Required Privileges by OS
 
 ### Linux
@@ -127,7 +129,7 @@ Run in an elevated terminal ("Run as Administrator"):
 - Configure runtime settings in:
   - GUI provider/client panels (save settings to `config.json`)
   - CLI config subcommands (`bcvpn config get/set/validate`) plus `bcvpn status` / `bcvpn status --json` for verification
-  - Security settings (`security.key_storage_mode`, `security.revocation_cache_file`, `security.tls_min_version`, `security.tls_profile`)
+  - Security settings (`security.key_storage_mode`, `security.revocation_cache_file`, `security.tls_min_version`, `security.tls_profile`, `security.metrics_auth_token`)
 
 ## 6. Verify Runtime Status
 

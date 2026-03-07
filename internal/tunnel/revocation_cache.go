@@ -75,7 +75,9 @@ func (c *revocationCache) refresh(path string) error {
 
 	next := map[string]struct{}{}
 	scanner := bufio.NewScanner(f)
+	lineNo := 0
 	for scanner.Scan() {
+		lineNo++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -83,7 +85,11 @@ func (c *revocationCache) refresh(path string) error {
 		line = strings.ToLower(line)
 		raw, decErr := hex.DecodeString(line)
 		if decErr != nil || len(raw) != 33 {
-			c.lastErr = fmt.Errorf("invalid revoked key entry %q", line)
+			c.lastErr = fmt.Errorf("invalid revoked key entry at line %d: %q", lineNo, line)
+			return c.lastErr
+		}
+		if _, exists := next[line]; exists {
+			c.lastErr = fmt.Errorf("duplicate revoked key entry at line %d: %q", lineNo, line)
 			return c.lastErr
 		}
 		next[line] = struct{}{}

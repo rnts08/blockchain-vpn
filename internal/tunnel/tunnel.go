@@ -93,12 +93,16 @@ type ClientMap struct {
 }
 
 // StartProviderServer sets up the TUN interface and listens for TLS connections.
-func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *config.SecurityConfig, privKey *btcec.PrivateKey, authManager *auth.AuthManager) {
+func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *config.SecurityConfig, privKey *btcec.PrivateKey, authManager *auth.AuthManager) error {
 	if err := EnsureElevatedPrivileges(); err != nil {
 		recordRuntimeError(err)
-		log.Fatalf("Provider requires automatic networking privileges: %v", err)
+		return fmt.Errorf("provider requires automatic networking privileges: %w", err)
 	}
-	startMetricsServer(cfg.MetricsListenAddr)
+	metricsToken := ""
+	if sec != nil {
+		metricsToken = strings.TrimSpace(sec.MetricsAuthToken)
+	}
+	startMetricsServer(cfg.MetricsListenAddr, metricsToken)
 	setProviderRunning(true)
 	defer setProviderRunning(false)
 
@@ -116,7 +120,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 		tlsPolicy, err = ResolveTLSPolicy(sec.TLSMinVersion, sec.TLSProfile)
 		if err != nil {
 			recordRuntimeError(err)
-			log.Fatalf("Failed to resolve TLS policy: %v", err)
+			return fmt.Errorf("failed to resolve TLS policy: %w", err)
 		}
 	} else {
 		tlsPolicy, _ = ResolveTLSPolicy("", "")
@@ -124,19 +128,19 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 	tlsConfig, err := buildRotatingServerTLSConfig(ctx, privKey, certLifetime, certRotateBefore, tlsPolicy)
 	if err != nil {
 		recordRuntimeError(err)
-		log.Fatalf("Failed to generate server TLS config: %v", err)
+		return fmt.Errorf("failed to generate server TLS config: %w", err)
 	}
 
 	policy, err := loadAccessPolicy(cfg.AllowlistFile, cfg.DenylistFile)
 	if err != nil {
-		log.Fatalf("Failed to load provider access policy: %v", err)
+		return fmt.Errorf("failed to load provider access policy: %w", err)
 	}
 
 	listenAddr := fmt.Sprintf("0.0.0.0:%d", cfg.ListenPort)
 	listener, err := tls.Listen("tcp", listenAddr, tlsConfig)
 	if err != nil {
 		recordRuntimeError(err)
-		log.Fatalf("Failed to start TLS listener: %v", err)
+		return fmt.Errorf("failed to start TLS listener: %w", err)
 	}
 	defer listener.Close()
 	log.Printf("Provider server listening on %s", listenAddr)
@@ -149,7 +153,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 	iface, err := createTunInterface(cfg.InterfaceName, cfg.TunIP, cfg.TunSubnet)
 	if err != nil {
 		recordRuntimeError(err)
-		log.Fatalf("Failed to create provider TUN interface: %v", err)
+		return fmt.Errorf("failed to create provider TUN interface: %w", err)
 	}
 	defer iface.Close()
 
@@ -185,7 +189,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 			select {
 			case <-ctx.Done():
 				log.Println("Provider server shutting down.")
-				return
+				return nil
 			default:
 				recordRuntimeError(err)
 				log.Printf("Failed to accept connection: %v", err)
@@ -341,7 +345,11 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *confi
 		recordRuntimeError(err)
 		return fmt.Errorf("client requires automatic networking privileges: %w", err)
 	}
-	startMetricsServer(cfg.MetricsListenAddr)
+	metricsToken := ""
+	if sec != nil {
+		metricsToken = strings.TrimSpace(sec.MetricsAuthToken)
+	}
+	startMetricsServer(cfg.MetricsListenAddr, metricsToken)
 	setClientConnected(true)
 	defer setClientConnected(false)
 

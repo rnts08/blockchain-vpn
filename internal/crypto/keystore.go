@@ -67,10 +67,32 @@ func SupportsKeyStorageMode(mode string) bool {
 	}
 }
 
+func KeyStorageStatus(mode string) (resolved string, supported bool, detail string) {
+	resolved, err := ResolveKeyStorageMode(mode)
+	if err != nil {
+		return "", false, err.Error()
+	}
+	if resolved == "file" {
+		return resolved, true, "file mode available"
+	}
+	if SupportsKeyStorageMode(resolved) {
+		return resolved, true, resolved + " backend available"
+	}
+	return resolved, false, resolved + " backend unavailable on this host"
+}
+
 func LoadOrCreateProviderKey(path string, password []byte, mode, service string) (*btcec.PrivateKey, error) {
+	requestedMode := strings.ToLower(strings.TrimSpace(mode))
 	resolved, err := ResolveKeyStorageMode(mode)
 	if err != nil {
 		return nil, err
+	}
+	if resolved != "file" && !SupportsKeyStorageMode(resolved) {
+		if requestedMode == "auto" {
+			resolved = "file"
+		} else {
+			return nil, fmt.Errorf("key storage backend %q is unavailable; use mode=auto or file", resolved)
+		}
 	}
 	if resolved == "file" {
 		if len(password) == 0 {
@@ -92,6 +114,9 @@ func LoadOrCreateProviderKey(path string, password []byte, mode, service string)
 	if err == nil {
 		return key, nil
 	}
+	if requestedMode == "auto" && len(password) > 0 {
+		return LoadOrCreateProviderKey(path, password, "file", service)
+	}
 	if !errors.Is(err, errKeyNotFound) {
 		return nil, err
 	}
@@ -100,15 +125,26 @@ func LoadOrCreateProviderKey(path string, password []byte, mode, service string)
 		return nil, fmt.Errorf("failed to generate provider key: %w", err)
 	}
 	if err := saveProviderKeyToSecureStore(resolved, service, account, dpapiPath, key); err != nil {
+		if requestedMode == "auto" && len(password) > 0 {
+			return LoadOrCreateProviderKey(path, password, "file", service)
+		}
 		return nil, err
 	}
 	return key, nil
 }
 
 func RotateProviderKey(path string, oldPassword, newPassword []byte, mode, service string) error {
+	requestedMode := strings.ToLower(strings.TrimSpace(mode))
 	resolved, err := ResolveKeyStorageMode(mode)
 	if err != nil {
 		return err
+	}
+	if resolved != "file" && !SupportsKeyStorageMode(resolved) {
+		if requestedMode == "auto" {
+			resolved = "file"
+		} else {
+			return fmt.Errorf("key storage backend %q is unavailable; use mode=auto or file", resolved)
+		}
 	}
 	if resolved == "file" {
 		if len(oldPassword) == 0 || len(newPassword) == 0 {
@@ -143,6 +179,12 @@ func RotateProviderKey(path string, oldPassword, newPassword []byte, mode, servi
 	key, err := btcec.NewPrivateKey()
 	if err != nil {
 		return fmt.Errorf("failed to generate rotated provider key: %w", err)
+	}
+	if requestedMode == "auto" && len(newPassword) > 0 {
+		if err := saveProviderKeyToSecureStore(resolved, service, account, dpapiPath, key); err != nil {
+			return RotateProviderKey(path, oldPassword, newPassword, "file", service)
+		}
+		return nil
 	}
 	return saveProviderKeyToSecureStore(resolved, service, account, dpapiPath, key)
 }

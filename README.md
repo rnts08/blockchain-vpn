@@ -145,7 +145,7 @@ Edit `config.json` to match your environment:
 
 *   **rpc**: Connection details for your local `ordexcoind` node.
 *   **logging**: Runtime log output format (`text` or `json`).
-*   **security**: Key storage backend, revocation cache, and TLS policy (`key_storage_mode`, `revocation_cache_file`, `tls_min_version`, `tls_profile`).
+*   **security**: Key storage backend, revocation cache, TLS policy, and metrics auth (`key_storage_mode`, `revocation_cache_file`, `tls_min_version`, `tls_profile`, `metrics_auth_token`).
 *   **provider**: Settings if you intend to sell VPN service (IP, Port, Price, `enable_egress_nat`, `nat_outbound_interface`, `isolation_mode`, `allowlist_file`, `denylist_file`, `cert_lifetime_hours`, `cert_rotate_before_hours`, `health_check_enabled`, `health_check_interval`).
 *   **client**: Settings for connecting to others (Interface Name).
 *   By default, the app stores `config.json`, `provider.key`, and `history.json` in your OS user config directory under `BlockchainVPN` (for example `~/.config/BlockchainVPN` on Linux).
@@ -167,7 +167,8 @@ Sample `config.json`:
     "key_storage_service": "BlockchainVPN",
     "revocation_cache_file": "",
     "tls_min_version": "1.3",
-    "tls_profile": "modern"
+    "tls_profile": "modern",
+    "metrics_auth_token": ""
   },
   "provider": {
     "interface_name": "bcvpn0",
@@ -271,6 +272,10 @@ To start selling bandwidth:
     Set `provider.metrics_listen_addr` or `client.metrics_listen_addr` to expose:
     ```bash
     curl http://127.0.0.1:9090/metrics.json
+    ```
+    To require auth, set `security.metrics_auth_token` and send:
+    ```bash
+    curl -H "X-BCVPN-Metrics-Token: <token>" http://127.0.0.1:9090/metrics.json
     ```
 
 8.  **Structured Logs (Optional)**:

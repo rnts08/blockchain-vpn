@@ -88,6 +88,9 @@ func Validate(cfg *Config) error {
 	default:
 		errs = append(errs, fmt.Errorf("security.tls_profile must be one of: modern, compat"))
 	}
+	if tok := strings.TrimSpace(cfg.Security.MetricsAuthToken); tok != "" && len(tok) < 12 {
+		errs = append(errs, fmt.Errorf("security.metrics_auth_token must be at least 12 characters when set"))
+	}
 
 	return errors.Join(errs...)
 }

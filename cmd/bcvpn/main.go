@@ -147,8 +147,18 @@ func main() {
 		}()
 
 		go blockchain.MonitorPayments(ctx, client, authManager, cfg.Provider.Price)
-		go tunnel.StartProviderServer(ctx, &cfg.Provider, &cfg.Security, providerKey, authManager)
-		go blockchain.StartEchoServer(ctx, cfg.Provider.ListenPort)
+		go func() {
+			if err := tunnel.StartProviderServer(ctx, &cfg.Provider, &cfg.Security, providerKey, authManager); err != nil {
+				log.Printf("Provider server exited with error: %v", err)
+				stop()
+			}
+		}()
+		go func() {
+			if err := blockchain.StartEchoServer(ctx, cfg.Provider.ListenPort); err != nil {
+				log.Printf("Echo server exited with error: %v", err)
+				stop()
+			}
+		}()
 
 		<-ctx.Done()
 		log.Println("Shutting down provider...")
@@ -827,6 +837,8 @@ func getConfigField(cfg *config.Config, key string) (any, error) {
 		return cfg.Security.TLSMinVersion, nil
 	case "security.tls_profile":
 		return cfg.Security.TLSProfile, nil
+	case "security.metrics_auth_token":
+		return cfg.Security.MetricsAuthToken, nil
 	default:
 		return nil, fmt.Errorf("unknown key %q", key)
 	}
@@ -936,6 +948,8 @@ func setConfigField(cfg *config.Config, key string, value string) error {
 		cfg.Security.TLSMinVersion = value
 	case "security.tls_profile":
 		cfg.Security.TLSProfile = value
+	case "security.metrics_auth_token":
+		cfg.Security.MetricsAuthToken = value
 	default:
 		return fmt.Errorf("unknown key %q", key)
 	}
@@ -975,6 +989,9 @@ func applyConfigDefaults(cfg *config.Config) {
 	if strings.TrimSpace(cfg.Security.TLSProfile) == "" {
 		cfg.Security.TLSProfile = "modern"
 	}
+	if strings.TrimSpace(cfg.Security.MetricsAuthToken) == "" {
+		cfg.Security.MetricsAuthToken = ""
+	}
 }
 
 type fileStatus struct {
@@ -1005,12 +1022,15 @@ type statusOutput struct {
 	} `json:"logging"`
 	Security struct {
 		KeyStorageMode      string   `json:"key_storage_mode"`
+		KeyStorageResolved  string   `json:"key_storage_resolved"`
 		KeyStorageSupported bool     `json:"key_storage_supported"`
+		KeyStorageDetail    string   `json:"key_storage_detail"`
 		KeyStorageService   string   `json:"key_storage_service"`
 		RevocationCacheFile string   `json:"revocation_cache_file"`
 		TLSMinVersion       string   `json:"tls_min_version"`
 		TLSProfile          string   `json:"tls_profile"`
 		TLSCipherProfile    []string `json:"tls_cipher_profile"`
+		MetricsAuthEnabled  bool     `json:"metrics_auth_enabled"`
 	} `json:"security"`
 	Provider struct {
 		InterfaceName        string `json:"interface_name"`
@@ -1073,11 +1093,15 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	status.RPC.PassConfigured = strings.TrimSpace(cfg.RPC.Pass) != ""
 	status.Logging.Format = cfg.Logging.Format
 	status.Security.KeyStorageMode = cfg.Security.KeyStorageMode
-	status.Security.KeyStorageSupported = crypto.SupportsKeyStorageMode(cfg.Security.KeyStorageMode)
+	resolvedStoreMode, storeOK, storeDetail := crypto.KeyStorageStatus(cfg.Security.KeyStorageMode)
+	status.Security.KeyStorageResolved = resolvedStoreMode
+	status.Security.KeyStorageSupported = storeOK
+	status.Security.KeyStorageDetail = storeDetail
 	status.Security.KeyStorageService = cfg.Security.KeyStorageService
 	status.Security.RevocationCacheFile = cfg.Security.RevocationCacheFile
 	status.Security.TLSMinVersion = cfg.Security.TLSMinVersion
 	status.Security.TLSProfile = cfg.Security.TLSProfile
+	status.Security.MetricsAuthEnabled = strings.TrimSpace(cfg.Security.MetricsAuthToken) != ""
 	if tlsPolicy, err := tunnel.ResolveTLSPolicy(cfg.Security.TLSMinVersion, cfg.Security.TLSProfile); err == nil {
 		status.Security.TLSMinVersion = tlsPolicy.MinVersionLabel
 		status.Security.TLSProfile = tlsPolicy.Profile
@@ -1133,6 +1157,9 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	if cfg.Provider.EnableEgressNAT && strings.TrimSpace(cfg.Provider.NATOutboundInterface) == "" {
 		status.Warnings = append(status.Warnings, "provider egress NAT is enabled but nat_outbound_interface is empty")
 	}
+	if !status.Security.MetricsAuthEnabled && (strings.TrimSpace(cfg.Provider.MetricsListenAddr) != "" || strings.TrimSpace(cfg.Client.MetricsListenAddr) != "") {
+		status.Warnings = append(status.Warnings, "metrics endpoint is enabled without auth token; bind to loopback or set security.metrics_auth_token")
+	}
 	if err := tunnel.EnsureElevatedPrivileges(); err != nil {
 		status.Networking.PrivilegesError = err.Error()
 		status.Warnings = append(status.Warnings, "automatic networking changes require elevated privileges")
@@ -1176,12 +1203,14 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	fmt.Println()
 	fmt.Println("Security")
 	fmt.Println(strings.Repeat("-", 20))
-	fmt.Printf("Key Storage Mode: %s (supported=%t)\n", status.Security.KeyStorageMode, status.Security.KeyStorageSupported)
+	fmt.Printf("Key Storage Mode: %s (resolved=%s, supported=%t)\n", status.Security.KeyStorageMode, status.Security.KeyStorageResolved, status.Security.KeyStorageSupported)
+	fmt.Printf("Key Storage Detail: %s\n", status.Security.KeyStorageDetail)
 	fmt.Printf("Key Storage Service: %s\n", status.Security.KeyStorageService)
 	fmt.Printf("Revocation Cache File: %s\n", status.Security.RevocationCacheFile)
 	fmt.Printf("TLS Min Version: %s\n", status.Security.TLSMinVersion)
 	fmt.Printf("TLS Profile: %s\n", status.Security.TLSProfile)
 	fmt.Printf("TLS Cipher Profile: %s\n", strings.Join(status.Security.TLSCipherProfile, ", "))
+	fmt.Printf("Metrics Auth Enabled: %t\n", status.Security.MetricsAuthEnabled)
 	fmt.Println()
 
 	fmt.Println("Provider")

@@ -53,9 +53,10 @@ func TestValidateInvalidConfig(t *testing.T) {
 			TunSubnet:     "33",
 		},
 		Security: SecurityConfig{
-			KeyStorageMode: "bad-mode",
-			TLSMinVersion:  "1.0",
-			TLSProfile:     "legacy",
+			KeyStorageMode:   "bad-mode",
+			TLSMinVersion:    "1.0",
+			TLSProfile:       "legacy",
+			MetricsAuthToken: "short",
 		},
 	}
 

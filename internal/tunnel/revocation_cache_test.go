@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,5 +60,28 @@ func TestRevocationCache_IsRevoked(t *testing.T) {
 	}
 	if !revoked {
 		t.Fatal("expected key2 to be revoked after file update")
+	}
+}
+
+func TestRevocationCache_DuplicateEntryRejected(t *testing.T) {
+	key, err := btcec.NewPrivateKey()
+	if err != nil {
+		t.Fatalf("new key: %v", err)
+	}
+	hexKey := hex.EncodeToString(key.PubKey().SerializeCompressed())
+
+	path := filepath.Join(t.TempDir(), "revoked.txt")
+	content := hexKey + "\n" + hexKey + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write revocation file: %v", err)
+	}
+
+	cache := &revocationCache{revokedSet: map[string]struct{}{}}
+	_, err = cache.IsRevoked(path, key.PubKey())
+	if err == nil {
+		t.Fatal("expected duplicate entry validation error")
+	}
+	if !strings.Contains(err.Error(), "duplicate revoked key entry") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
