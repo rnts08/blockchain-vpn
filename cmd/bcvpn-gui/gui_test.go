@@ -20,6 +20,9 @@ func TestGUICreation(t *testing.T) {
 		autoScroll:     binding.NewBool(),
 		logSearch:      binding.NewString(),
 		fullLogs:       binding.NewString(),
+		clientStatus:   binding.NewString(),
+		metricsContent: binding.NewString(),
+		eventsContent:  binding.NewString(),
 	}
 	_ = state.providerStatus.Set("Stopped")
 	_ = state.autoScroll.Set(true)
@@ -44,6 +47,9 @@ func TestSettingsTab(t *testing.T) {
 		autoScroll:     binding.NewBool(),
 		logSearch:      binding.NewString(),
 		fullLogs:       binding.NewString(),
+		clientStatus:   binding.NewString(),
+		metricsContent: binding.NewString(),
+		eventsContent:  binding.NewString(),
 	}
 	_ = state.providerStatus.Set("Stopped")
 	_ = state.autoScroll.Set(true)
@@ -67,6 +73,9 @@ func TestWalletTab(t *testing.T) {
 		autoScroll:     binding.NewBool(),
 		logSearch:      binding.NewString(),
 		fullLogs:       binding.NewString(),
+		clientStatus:   binding.NewString(),
+		metricsContent: binding.NewString(),
+		eventsContent:  binding.NewString(),
 	}
 	_ = state.providerStatus.Set("Stopped")
 	_ = state.autoScroll.Set(true)

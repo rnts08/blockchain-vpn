@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
  
+## [0.4.8] - 2026-03-07
+
+### GUI/UX Improvements
+- **Item 5.5 Real-time Metrics**: Overhauled the "Network Status" tab with reactive data bindings. Added a robust auto-refresh mechanism (5s interval) for connection stats, provider/client metrics, and detailed runtime events.
+
 ## [0.4.7] - 2026-03-07
 
 ### GUI/UX Improvements

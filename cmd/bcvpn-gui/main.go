@@ -87,6 +87,9 @@ type guiState struct {
 	autoScroll     binding.Bool
 	logSearch      binding.String
 	fullLogs       binding.String
+	clientStatus   binding.String
+	metricsContent binding.String
+	eventsContent  binding.String
 
 	providerRunning  bool
 	providerStarting bool
@@ -180,11 +183,15 @@ func initState() (*guiState, error) {
 		autoScroll:     binding.NewBool(),
 		logSearch:      binding.NewString(),
 		fullLogs:       binding.NewString(),
+		clientStatus:   binding.NewString(),
+		metricsContent: binding.NewString(),
+		eventsContent:  binding.NewString(),
 		selectedIdx:    -1,
 		clientMgr:      tunnel.NewMultiTunnelManager(),
 	}
 	_ = s.providerStatus.Set("Stopped")
 	_ = s.autoScroll.Set(true)
+	_ = s.clientStatus.Set("Client: Disconnected")
 	return s, nil
 }
 
@@ -856,65 +863,54 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 
 	providerStatusLabel := widget.NewLabelWithData(s.providerStatus)
 
-	clientStatusLabel := widget.NewLabel("Client: Disconnected")
+	clientStatusLabel := widget.NewLabelWithData(s.clientStatus)
 
 	metricsBox := widget.NewMultiLineEntry()
+	metricsBox.Bind(s.metricsContent)
 	metricsBox.Disable()
 	metricsBox.SetMinRowsVisible(8)
+
+	eventsBox := widget.NewMultiLineEntry()
+	eventsBox.Bind(s.eventsContent)
+	eventsBox.Disable()
+	eventsBox.SetMinRowsVisible(8)
+
 	metricsAutoRefresh := widget.NewCheck("Auto-refresh (5s)", nil)
 	metricsAutoRefresh.SetChecked(false)
-	var metricsTicker *time.Ticker
-	var metricsStop chan struct{}
-	refreshMetrics := func() {
-		s.mu.Lock()
-		cfg := *s.cfg
-		s.mu.Unlock()
-		var out strings.Builder
-		fmt.Fprintf(&out, "Provider Metrics Addr: %s\n", cfg.Provider.MetricsListenAddr)
-		fmt.Fprintf(&out, "Client Metrics Addr: %s\n", cfg.Client.MetricsListenAddr)
-		fmt.Fprintf(&out, "Metrics Auth: %t\n\n", strings.TrimSpace(cfg.Security.MetricsAuthToken) != "")
-		fmt.Fprintf(&out, "Provider Metrics:\n%s\n\n", fetchMetricsSummary(cfg.Provider.MetricsListenAddr, cfg.Security.MetricsAuthToken))
-		fmt.Fprintf(&out, "Client Metrics:\n%s", fetchMetricsSummary(cfg.Client.MetricsListenAddr, cfg.Security.MetricsAuthToken))
-		metricsBox.SetText(out.String())
 
-		s.mu.Lock()
-		providerStatusLabel.Text = "Provider: " + func() string {
-			if s.providerRunning {
-				return "Running"
-			}
-			return "Stopped"
-		}()
-		s.mu.Unlock()
+	var stopRefresh chan struct{}
 
-		if s.clientMgr != nil {
-			active := s.clientMgr.ActiveCount()
-			if active > 0 {
-				clientStatusLabel.Text = fmt.Sprintf("Client: Connected (%d active)", active)
-			} else {
-				clientStatusLabel.Text = "Client: Disconnected"
-			}
-		}
+	updateAll := func() {
+		s.updateMetrics()
+		s.updateEvents()
 	}
-	metricsTicker = time.NewTicker(5 * time.Second)
-	metricsStop = make(chan struct{})
+
 	metricsAutoRefresh.OnChanged = func(checked bool) {
 		if checked {
+			stopRefresh = make(chan struct{})
 			go func() {
+				ticker := time.NewTicker(5 * time.Second)
+				defer ticker.Stop()
 				for {
 					select {
-					case <-metricsStop:
+					case <-stopRefresh:
 						return
-					case <-metricsTicker.C:
-						refreshMetrics()
+					case <-ticker.C:
+						updateAll()
 					}
 				}
 			}()
 		} else {
-			metricsStop <- struct{}{}
+			if stopRefresh != nil {
+				close(stopRefresh)
+				stopRefresh = nil
+			}
 		}
 	}
-	refreshBtn := widget.NewButton("Refresh Metrics", refreshMetrics)
-	refreshMetrics()
+
+	refreshBtn := widget.NewButton("Refresh Now", updateAll)
+	updateAll()
+
 	doctorBox := widget.NewMultiLineEntry()
 	doctorBox.Disable()
 	doctorBox.SetMinRowsVisible(8)
@@ -926,23 +922,8 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 	}
 	doctorBtn := widget.NewButton("Run Doctor Checks", runDoctor)
 	runDoctor()
-	eventsBox := widget.NewMultiLineEntry()
-	eventsBox.Disable()
-	eventsBox.SetMinRowsVisible(8)
-	refreshEvents := func() {
-		events := tunnel.GetRecentEvents(200)
-		if len(events) == 0 {
-			eventsBox.SetText("No runtime events yet.")
-			return
-		}
-		var out strings.Builder
-		for _, ev := range events {
-			fmt.Fprintf(&out, "%s [%s] %s: %s\n", ev.Time, ev.Role, ev.Type, ev.Detail)
-		}
-		eventsBox.SetText(out.String())
-	}
-	eventsBtn := widget.NewButton("Refresh Events", refreshEvents)
-	refreshEvents()
+
+	eventsBtn := widget.NewButton("Refresh Events", s.updateEvents)
 	exportDiagBtn := widget.NewButton("Export Diagnostics Bundle", func() {
 		s.mu.Lock()
 		cfgCopy := *s.cfg
@@ -1435,6 +1416,44 @@ func (s *guiState) exportLogs() {
 	}, w)
 	save.SetFileName("bcvpn-activity.log")
 	save.Show()
+}
+
+func (s *guiState) updateMetrics() {
+	s.mu.Lock()
+	cfg := *s.cfg
+	s.mu.Unlock()
+
+	var out strings.Builder
+	fmt.Fprintf(&out, "Provider Metrics Addr: %s\n", cfg.Provider.MetricsListenAddr)
+	fmt.Fprintf(&out, "Client Metrics Addr: %s\n", cfg.Client.MetricsListenAddr)
+	fmt.Fprintf(&out, "Metrics Auth: %t\n\n", strings.TrimSpace(cfg.Security.MetricsAuthToken) != "")
+
+	fmt.Fprintf(&out, "Provider Metrics:\n%s\n\n", fetchMetricsSummary(cfg.Provider.MetricsListenAddr, cfg.Security.MetricsAuthToken))
+	fmt.Fprintf(&out, "Client Metrics:\n%s", fetchMetricsSummary(cfg.Client.MetricsListenAddr, cfg.Security.MetricsAuthToken))
+
+	_ = s.metricsContent.Set(out.String())
+
+	if s.clientMgr != nil {
+		active := s.clientMgr.ActiveCount()
+		if active > 0 {
+			_ = s.clientStatus.Set(fmt.Sprintf("Client: Connected (%d active)", active))
+		} else {
+			_ = s.clientStatus.Set("Client: Disconnected")
+		}
+	}
+}
+
+func (s *guiState) updateEvents() {
+	events := tunnel.GetRecentEvents(200)
+	if len(events) == 0 {
+		_ = s.eventsContent.Set("No runtime events yet.")
+		return
+	}
+	var out strings.Builder
+	for _, ev := range events {
+		fmt.Fprintf(&out, "%s [%s] %s: %s\n", ev.Time, ev.Role, ev.Type, ev.Detail)
+	}
+	_ = s.eventsContent.Set(out.String())
 }
 
 func (s *guiState) appendLog(line string) {
