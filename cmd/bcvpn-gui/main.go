@@ -1621,9 +1621,16 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 			return fmt.Errorf("invalid provider: price is zero")
 		}
 
+		verifiedAmount, err := blockchain.GetPaymentVerification(selected.Endpoint.Price, selected.Endpoint.Price)
+		if err != nil {
+			return fmt.Errorf("payment verification failed: %w", err)
+		}
+		s.appendLog(fmt.Sprintf("Verified payment amount: %d sats (advertised: %d sats)", verifiedAmount, selected.Endpoint.Price))
+
 		if err := tunnel.EnsureElevatedPrivileges(); err != nil {
 			return fmt.Errorf("cannot proceed with payment until networking privileges are available: %w", err)
 		}
+		s.appendLog(fmt.Sprintf("Sending payment of %d sats to provider...", selected.Endpoint.Price))
 		if _, err := blockchain.SendPayment(client, providerAddr, selected.Endpoint.Price, localKey.PubKey()); err != nil {
 			return err
 		}

@@ -19,6 +19,27 @@ import (
 	"blockchain-vpn/internal/protocol"
 )
 
+type PaymentDetails struct {
+	ProviderAddress string
+	AmountSats      uint64
+	ClientPubKey    []byte
+	TxHash          string
+}
+
+func VerifyPaymentInput(advertisedPrice uint64, amountSatoshis uint64) error {
+	if amountSatoshis < advertisedPrice {
+		return fmt.Errorf("payment amount %d sats is less than advertised price %d sats", amountSatoshis, advertisedPrice)
+	}
+	return nil
+}
+
+func GetPaymentVerification(advertisedPrice uint64, amountSatoshis uint64) (uint64, error) {
+	if err := VerifyPaymentInput(advertisedPrice, amountSatoshis); err != nil {
+		return 0, err
+	}
+	return amountSatoshis, nil
+}
+
 // GetProviderPaymentAddress inspects the announcement transaction to find the
 // address that funded it. This is considered the provider's payment address.
 func GetProviderPaymentAddress(client *rpcclient.Client, announcementTxID string, params *chaincfg.Params) (btcutil.Address, error) {

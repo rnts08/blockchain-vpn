@@ -942,11 +942,17 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 	if dryRun {
 		fmt.Println("[Dry Run] Simulation: Payment skipped. No funds spent.")
 	} else {
+		verifiedAmount, err := blockchain.GetPaymentVerification(selectedEndpoint.Endpoint.Price, selectedEndpoint.Endpoint.Price)
+		if err != nil {
+			log.Fatalf("Payment verification failed: %v", err)
+		}
+		fmt.Printf("Verified payment amount: %d sats (advertised: %d sats)\n", verifiedAmount, selectedEndpoint.Endpoint.Price)
+
 		if err := tunnel.EnsureElevatedPrivileges(); err != nil {
 			log.Fatalf("Cannot proceed: automatic networking privileges are required before payment: %v", err)
 		}
-		fmt.Println("Sending payment...")
-		_, err := blockchain.SendPayment(client, providerAddr, selectedEndpoint.Endpoint.Price, localKey.PubKey())
+		fmt.Printf("Sending payment of %d sats to provider...\n", selectedEndpoint.Endpoint.Price)
+		_, err = blockchain.SendPayment(client, providerAddr, selectedEndpoint.Endpoint.Price, localKey.PubKey())
 		if err != nil {
 			log.Fatalf("Failed to send payment: %v", err)
 		}

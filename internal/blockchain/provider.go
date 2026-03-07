@@ -314,16 +314,22 @@ func processBlockForPayments(ctx context.Context, client *rpcclient.Client, bloc
 	}
 }
 
+// GetProviderAddresses returns all addresses controlled by the wallet
+func GetProviderAddresses(client *rpcclient.Client) ([]string, error) {
+	addresses, err := client.GetRawChangeAddress("")
+	if err != nil {
+		return nil, err
+	}
+	return []string{addresses.String()}, nil
+}
+
 // processTxForPayment checks a single transaction for a valid payment payload.
+// It verifies the actual amount paid to the provider's address (not just wallet balance change)
+// and ensures it meets or exceeds the service price.
 func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid string, amount float64, confirmations int64, authManager *auth.AuthManager, servicePrice uint64, payments *paymentTracker) {
 	if confirmations < 0 {
 		payments.handleRemovedTx(txid, authManager)
 		return
-	}
-
-	paidAmount, _ := btcutil.NewAmount(amount)
-	if uint64(paidAmount) < servicePrice {
-		return // Not a valid payment amount
 	}
 
 	txHash, _ := chainhash.NewHashFromStr(txid)
@@ -335,7 +341,28 @@ func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid str
 		return
 	}
 
+	providerAddresses, err := GetProviderAddresses(client)
+	if err != nil {
+		log.Printf("Could not get provider addresses: %v", err)
+		return
+	}
+	addressSet := make(map[string]bool)
+	for _, addr := range providerAddresses {
+		addressSet[addr] = true
+	}
+
+	var totalToProvider uint64
+	var clientPubKey *btcec.PublicKey
+
 	for _, vout := range txVerbose.Vout {
+		if len(vout.ScriptPubKey.Addresses) == 0 {
+			continue
+		}
+		addr := vout.ScriptPubKey.Addresses[0]
+		if addressSet[addr] {
+			totalToProvider += uint64(vout.Value * 1e8)
+		}
+
 		pkScript, err := hex.DecodeString(vout.ScriptPubKey.Hex)
 		if err != nil {
 			continue
@@ -345,8 +372,19 @@ func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid str
 			continue
 		}
 		if clientKey, err := protocol.DecodePaymentPayload(payload); err == nil {
-			authManager.AuthorizePeer(clientKey, 24*time.Hour)
-			payments.trackPayment(txid, clientKey)
+			clientPubKey = clientKey
 		}
+	}
+
+	if totalToProvider < servicePrice {
+		log.Printf("Payment %s: received %d sats, expected at least %d sats - ignoring", txid, totalToProvider, servicePrice)
+		return
+	}
+
+	log.Printf("Payment %s: verified %d sats to provider (>= %d sats required)", txid, totalToProvider, servicePrice)
+
+	if clientPubKey != nil {
+		authManager.AuthorizePeer(clientPubKey, 24*time.Hour)
+		payments.trackPayment(txid, clientPubKey)
 	}
 }

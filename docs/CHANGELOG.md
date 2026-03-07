@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.6] - 2026-03-07
+
+### Security
+- Add payment amount verification on client side before sending payment
+- Provider now verifies actual transaction outputs instead of wallet balance change
+- Client and provider both verify payment meets or exceeds advertised price
+
+### Bug Fixes
+- Fix payment verification to check actual amounts paid to provider address
+- Provider now properly validates incoming payment amounts from transaction vouts
+
+### Infrastructure
+- Version bump to 0.3.6
+
 ## [0.3.5] - 2026-03-07
 
 ### Security
