@@ -11,7 +11,7 @@ The current GUI implementation in `cmd/bcvpn-gui` provides:
 - Client panel includes an `Enable Kill Switch` toggle for session-level traffic blocking outside tunnel.
 - Dedicated Settings tab with RPC config, logging format/level, key-storage backend mode/service, revocation cache file, metrics auth token, and TLS policy fields.
 - Preflight privilege checks before provider start and before non-dry-run client payment/connection.
-- Status tab with config path, interface settings, and privilege readiness summary.
+- Status tab with config path, interface settings, privilege readiness summary, and provider/client metrics snapshot refresh.
 - Wallet tab showing payment history from `history.json`.
 - First-run setup wizard with steps for config readiness, RPC connectivity, provider key creation, and privilege checks.
 - Auto-elevation relaunch action from the wizard (Linux/macOS/Windows backends).

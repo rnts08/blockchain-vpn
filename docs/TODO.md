@@ -23,7 +23,7 @@ This list is a new post-MVP backlog based on a full code and docs review.
 
 ## 4. Observability and Operator UX
 - [x] Add log levels (`debug`, `info`, `warn`, `error`) and include them in JSON log output.
-- [ ] Expose provider/client runtime health and metrics in GUI Status tab (not only via endpoint).
+- [x] Expose provider/client runtime health and metrics in GUI Status tab (not only via endpoint).
 - [ ] Add per-session timeline/events (connect/auth/revoke/disconnect) to CLI/GUI for troubleshooting.
 - [ ] Add alerting hooks/webhook support for provider failures (listener down, TUN down, auth failures burst).
 

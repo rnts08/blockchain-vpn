@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -682,12 +683,69 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 		privilegeStatus = "Privileges: " + err.Error()
 	}
 	privLabel := widget.NewLabel(privilegeStatus)
+	metricsBox := widget.NewMultiLineEntry()
+	metricsBox.Disable()
+	metricsBox.SetMinRowsVisible(8)
+	refreshMetrics := func() {
+		s.mu.Lock()
+		cfg := *s.cfg
+		s.mu.Unlock()
+		var out strings.Builder
+		fmt.Fprintf(&out, "Provider Metrics Addr: %s\n", cfg.Provider.MetricsListenAddr)
+		fmt.Fprintf(&out, "Client Metrics Addr: %s\n", cfg.Client.MetricsListenAddr)
+		fmt.Fprintf(&out, "Metrics Auth: %t\n\n", strings.TrimSpace(cfg.Security.MetricsAuthToken) != "")
+		fmt.Fprintf(&out, "Provider Metrics:\n%s\n\n", fetchMetricsSummary(cfg.Provider.MetricsListenAddr, cfg.Security.MetricsAuthToken))
+		fmt.Fprintf(&out, "Client Metrics:\n%s", fetchMetricsSummary(cfg.Client.MetricsListenAddr, cfg.Security.MetricsAuthToken))
+		metricsBox.SetText(out.String())
+	}
+	refreshBtn := widget.NewButton("Refresh Metrics", refreshMetrics)
+	refreshMetrics()
 
 	return container.NewPadded(container.NewVBox(
 		title,
 		widget.NewCard("Interfaces", "Current tunnel interface settings", container.NewVBox(configPath, providerIface, clientIface, clientKill, privLabel)),
+		widget.NewCard("Runtime Metrics", "Provider/client runtime metrics endpoint snapshots", container.NewVBox(refreshBtn, metricsBox)),
 		buildLogPanel(s),
 	))
+}
+
+func fetchMetricsSummary(addr, token string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return "(metrics disabled)"
+	}
+	req, err := http.NewRequest(http.MethodGet, "http://"+addr+"/metrics.json", nil)
+	if err != nil {
+		return "request error: " + err.Error()
+	}
+	if tok := strings.TrimSpace(token); tok != "" {
+		req.Header.Set("X-BCVPN-Metrics-Token", tok)
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "request failed: " + err.Error()
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Sprintf("metrics endpoint returned %s", resp.Status)
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "decode failed: " + err.Error()
+	}
+	providerRunning := payload["provider_running"]
+	clientConnected := payload["client_connected"]
+	sessions := payload["active_sessions"]
+	up := payload["total_up_bytes"]
+	down := payload["total_down_bytes"]
+	errors := payload["error_count"]
+	lastErr := payload["last_error"]
+	return fmt.Sprintf(
+		"provider_running=%v\nclient_connected=%v\nactive_sessions=%v\ntotal_up_bytes=%v\ntotal_down_bytes=%v\nerror_count=%v\nlast_error=%v",
+		providerRunning, clientConnected, sessions, up, down, errors, lastErr,
+	)
 }
 
 func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
