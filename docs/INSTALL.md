@@ -50,7 +50,89 @@ Generate initial config:
 ./bcvpn generate-config
 ```
 
-## 2.1 Secure Key Storage Backend Prerequisites
+## 2.1 RPC Connection Security
+
+BlockchainVPN connects to `ordexcoind` via RPC. There are two recommended configurations:
+
+### Option A: Localhost Only (Recommended for Desktop)
+
+Run your `ordexcoind` with RPC bound to localhost only. No password required:
+
+```bash
+# ordexcoind configuration (bitcoin.conf or ordexcoind.conf)
+server=1
+txindex=1
+rpcbind=127.0.0.1
+rpcallowip=127.0.0.1
+# No rpcpassword needed when bound to localhost
+```
+
+BlockchainVPN config for localhost:
+
+```json
+{
+  "rpc": {
+    "host": "127.0.0.1:25173",
+    "user": "youruser",
+    "pass": "",
+    "enable_tls": false
+  }
+}
+```
+
+**Security Note:** When RPC is only accessible on localhost, the password is not strictly required since only local processes can access the RPC interface.
+
+### Option B: Remote Node (Requires Password)
+
+If connecting to a remote `ordexcoind` node, you must use authentication:
+
+```bash
+# ordexcoind configuration (bitcoin.conf or ordexcoind.conf)
+server=1
+txindex=1
+rpcbind=0.0.0.0
+rpcallowip=your-vpn-server-ip/32
+rpcpassword=your-secure-random-password
+```
+
+BlockchainVPN config for remote node:
+
+```json
+{
+  "rpc": {
+    "host": "your-ordexcoind-host:25173",
+    "user": "rpcuser",
+    "pass": "your-secure-random-password",
+    "enable_tls": true
+  }
+}
+```
+
+**Security Warning:** Storing RPC passwords in `config.json` is a security risk. Consider:
+
+1. Using localhost-only connections when possible
+2. Using OS-specific secure credential storage (set `key_storage_mode` to `keychain` (macOS), `libsecret` (Linux), or `dpapi` (Windows))
+3. Restricting RPC access with `rpcallowip` to specific IPs only
+4. Enabling TLS (`enable_tls: true`) when using remote connections
+
+### Setting Up Secure Remote Connections
+
+For remote connections, enable TLS in BlockchainVPN:
+
+```json
+{
+  "rpc": {
+    "host": "your-remote-host:25173",
+    "user": "rpcuser",
+    "pass": "your-password",
+    "enable_tls": true
+  }
+}
+```
+
+TLS ensures RPC credentials are encrypted in transit.
+
+## 2.2 Secure Key Storage Backend Prerequisites
 
 If `security.key_storage_mode` is not `file`, ensure backend tooling exists:
 

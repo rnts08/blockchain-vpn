@@ -966,7 +966,7 @@ func requiredNetworkingToolsGUI(goos string) []string {
 
 func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	title := widget.NewLabelWithStyle("Global Settings", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	hint := widget.NewLabel("Validation hints: host required, ports 1-65535, valid IP/prefix, valid health_check_interval duration (e.g. 30s).")
+	hint := widget.NewLabel("Validation hints: host required, ports 1-65535, valid IP/prefix, valid health_check_interval duration (e.g. 30s).\nRPC Security: Use localhost without password for desktop, or enable TLS+password for remote nodes.")
 
 	rpcHost := widget.NewEntry()
 	rpcHost.SetText(s.cfg.RPC.Host)
@@ -1153,7 +1153,10 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 
 func applyDefaultConfigValues(cfg *config.Config) {
 	if strings.TrimSpace(cfg.RPC.Host) == "" {
-		cfg.RPC.Host = "localhost:18443"
+		cfg.RPC.Host = "localhost:25173"
+	}
+	if strings.TrimSpace(cfg.RPC.Pass) == "" && (strings.HasPrefix(cfg.RPC.Host, "localhost") || strings.HasPrefix(cfg.RPC.Host, "127.0.0.1")) {
+		cfg.RPC.EnableTLS = false
 	}
 	if strings.TrimSpace(cfg.Logging.Format) == "" {
 		cfg.Logging.Format = "text"

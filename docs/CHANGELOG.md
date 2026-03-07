@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.7] - 2026-03-07
+
+### Security
+- Add RPC security documentation in INSTALL.md
+- Document localhost-only RPC setup (no password required)
+- Document remote RPC with TLS and password
+- Document security risks of plaintext password storage
+- Update default config to localhost:25173 (ordexcoind default)
+- Auto-disable TLS when connecting to localhost
+
+### Infrastructure
+- Version bump to 0.3.7
+
 ## [0.3.6] - 2026-03-07
 
 ### Security

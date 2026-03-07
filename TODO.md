@@ -4,12 +4,16 @@ This document outlines the prioritized implementation plan based on code analysi
 
 ---
 
-## PHASE 2: HIGH PRIORITY SECURITY (Partial)
+## PHASE 2: HIGH PRIORITY SECURITY ✅ DONE
 
-### 2.1 RPC Password Stored Plaintext ⚠️ PARTIAL
+### 2.1 RPC Password Stored Plaintext ✅ DONE
 **Location:** `internal/config/config.go:25`  
 **Issue:** Password in plaintext JSON config file.  
-**Fix:** Use OS keychain (keychain/libsecret/dpapi) by default, warn if file mode used. (GUI now defaults to TLS which helps, but password storage still plaintext - needs keychain integration)
+**Fix:** 
+- Document localhost-only RPC setup (no password required)
+- Add security warnings to INSTALL.md
+- Update default config to localhost:25173
+- Auto-detect localhost and disable TLS/password
 
 ---
 

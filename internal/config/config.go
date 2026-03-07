@@ -172,10 +172,10 @@ func GenerateDefaultConfig(path string) error {
 
 	cfg := Config{
 		RPC: RPCConfig{
-			Host:      "localhost:18443",
-			User:      "yourrpcuser",
-			Pass:      "yourrpcpassword",
-			EnableTLS: true,
+			Host:      "localhost:25173",
+			User:      "rpcuser",
+			Pass:      "",
+			EnableTLS: false,
 		},
 		Logging: LoggingConfig{
 			Format: "text",
