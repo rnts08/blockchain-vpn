@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.5] - 2026-03-07
+
+### Security
+- Add provider liveness check (UDP echo) before payment to prevent fund loss
+- Add self-connection detection to prevent routing loops
+- Add RPC TLS option (enabled by default) for secure RPC communication
+- Enforce metrics auth token when endpoints are enabled
+- Remove sensitive payload data from logs
+
+### Bug Fixes
+- Add IPv6 packet handling in TUN read loop
+- Add bounds checking to prevent panic on short/truncated packets
+- Fix DNS leak check to actually block in strict mode
+- Fix race condition in provider capacity check
+- Add TLS handshake verification before reading cert state
+- Add proper timer cleanup to prevent resource leak
+- Add proper error handling for change address in payments
+
+### Infrastructure
+- Version bump to 0.3.5
+
 ## [0.3.4] - 2026-03-07
 
 ### Networking & Transport
