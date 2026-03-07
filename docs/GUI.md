@@ -7,11 +7,13 @@ This document outlines the user interface for the desktop application version of
 The current GUI implementation in `cmd/bcvpn-gui` provides:
 
 - Provider control panel with editable provider networking/security settings (interface, listen port, NAT options, access policy files, cert/health settings, pricing).
+- Provider panel includes explicit `Rebroadcast Service` and `Broadcast Price Update` actions matching CLI provider announcement commands.
 - Client panel with provider discovery, connect flow, and editable client tunnel settings (interface, TUN IP/subnet).
 - Client panel includes an `Enable Kill Switch` toggle for session-level traffic blocking outside tunnel.
 - Dedicated Settings tab with RPC config, logging format/level, key-storage backend mode/service, revocation cache file, metrics auth token, and TLS policy fields.
 - Preflight privilege checks before provider start and before non-dry-run client payment/connection.
 - Status tab with config path, interface settings, privilege readiness summary, and provider/client metrics snapshot refresh.
+- Status tab includes local doctor checks (config/privilege/tool/key-storage readiness) and version display.
 - Wallet tab showing payment history from `history.json`.
 - First-run setup wizard with steps for config readiness, RPC connectivity, provider key creation, and privilege checks.
 - Auto-elevation relaunch action from the wizard (Linux/macOS/Windows backends).

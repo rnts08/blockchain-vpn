@@ -2,7 +2,7 @@
 
 BlockchainVPN uses semantic-style versioning with current baseline:
 
-- `0.1.0`
+- `0.2.0`
 
 ## Rules for this project phase
 

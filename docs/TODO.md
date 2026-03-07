@@ -48,3 +48,4 @@ This list is a new post-MVP backlog based on a full code and docs review.
 
 ## Future Iteration Candidates
 - [ ] Add secure auto-fallback path for `key_storage_mode=auto` when backend fails after startup and no password is pre-supplied.
+- [ ] Unify duplicated doctor-check logic between CLI and GUI into shared package.

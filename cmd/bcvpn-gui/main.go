@@ -9,7 +9,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -509,6 +511,34 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.stopProvider()
 		statusLabel.SetText("Status: stopped")
 	})
+	rebroadcastBtn := widget.NewButton("Rebroadcast Service", func() {
+		pass := strings.TrimSpace(passwordEntry.Text)
+		if requiresPasswordForKeyStorage(s.cfg.Security.KeyStorageMode) && pass == "" {
+			dialog.ShowInformation("Password required", "Enter provider key password to rebroadcast.", w)
+			return
+		}
+		go func() {
+			if err := s.rebroadcastService(pass); err != nil {
+				dialog.ShowError(err, w)
+				return
+			}
+			s.appendLog("Service announcement rebroadcasted.")
+		}()
+	})
+	updatePriceBtn := widget.NewButton("Broadcast Price Update", func() {
+		pass := strings.TrimSpace(passwordEntry.Text)
+		if requiresPasswordForKeyStorage(s.cfg.Security.KeyStorageMode) && pass == "" {
+			dialog.ShowInformation("Password required", "Enter provider key password to broadcast price update.", w)
+			return
+		}
+		go func() {
+			if err := s.broadcastPriceUpdate(pass); err != nil {
+				dialog.ShowError(err, w)
+				return
+			}
+			s.appendLog(fmt.Sprintf("Price update broadcasted: %d sats/session", s.cfg.Provider.Price))
+		}()
+	})
 
 	rotateKeyBtn := widget.NewButton("Rotate Provider Key", func() {
 		pass := strings.TrimSpace(passwordEntry.Text)
@@ -547,7 +577,7 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewFormItem("Key Password", passwordEntry),
 	)
 
-	controlRow := container.NewGridWithColumns(4, saveBtn, autoLocateBtn, startBtn, stopBtn)
+	controlRow := container.NewGridWithColumns(6, saveBtn, autoLocateBtn, startBtn, stopBtn, rebroadcastBtn, updatePriceBtn)
 	secRow := container.NewGridWithColumns(2, rotateKeyBtn, statusLabel)
 
 	return container.NewPadded(container.NewVBox(
@@ -674,6 +704,7 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 
 func buildStatusTab(s *guiState) fyne.CanvasObject {
 	title := widget.NewLabelWithStyle("Network Status", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	versionLabel := widget.NewLabel("Version: " + version.String())
 	configPath := widget.NewLabel("Config Path: " + s.cfgPath)
 	providerIface := widget.NewLabel("Provider Interface: " + s.cfg.Provider.InterfaceName + " (" + s.cfg.Provider.TunIP + "/" + s.cfg.Provider.TunSubnet + ")")
 	clientIface := widget.NewLabel("Client Interface: " + s.cfg.Client.InterfaceName + " (" + s.cfg.Client.TunIP + "/" + s.cfg.Client.TunSubnet + ")")
@@ -700,11 +731,24 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 	}
 	refreshBtn := widget.NewButton("Refresh Metrics", refreshMetrics)
 	refreshMetrics()
+	doctorBox := widget.NewMultiLineEntry()
+	doctorBox.Disable()
+	doctorBox.SetMinRowsVisible(8)
+	runDoctor := func() {
+		s.mu.Lock()
+		cfg := *s.cfg
+		s.mu.Unlock()
+		doctorBox.SetText(runDoctorChecksGUI(&cfg))
+	}
+	doctorBtn := widget.NewButton("Run Doctor Checks", runDoctor)
+	runDoctor()
 
 	return container.NewPadded(container.NewVBox(
 		title,
+		versionLabel,
 		widget.NewCard("Interfaces", "Current tunnel interface settings", container.NewVBox(configPath, providerIface, clientIface, clientKill, privLabel)),
 		widget.NewCard("Runtime Metrics", "Provider/client runtime metrics endpoint snapshots", container.NewVBox(refreshBtn, metricsBox)),
+		widget.NewCard("Doctor", "Config/privilege/tool readiness checks", container.NewVBox(doctorBtn, doctorBox)),
 		buildLogPanel(s),
 	))
 }
@@ -746,6 +790,53 @@ func fetchMetricsSummary(addr, token string) string {
 		"provider_running=%v\nclient_connected=%v\nactive_sessions=%v\ntotal_up_bytes=%v\ntotal_down_bytes=%v\nerror_count=%v\nlast_error=%v",
 		providerRunning, clientConnected, sessions, up, down, errors, lastErr,
 	)
+}
+
+func runDoctorChecksGUI(cfg *config.Config) string {
+	var out strings.Builder
+	fmt.Fprintf(&out, "BlockchainVPN Doctor\n")
+	if err := config.Validate(cfg); err != nil {
+		fmt.Fprintf(&out, "- [FAIL] config.validate: %v\n", err)
+	} else {
+		fmt.Fprintf(&out, "- [OK] config.validate\n")
+	}
+	resolved, ok, detail := crypto.KeyStorageStatus(cfg.Security.KeyStorageMode)
+	if ok {
+		fmt.Fprintf(&out, "- [OK] security.keystore: requested=%s resolved=%s (%s)\n", cfg.Security.KeyStorageMode, resolved, detail)
+	} else {
+		fmt.Fprintf(&out, "- [FAIL] security.keystore: requested=%s resolved=%s (%s)\n", cfg.Security.KeyStorageMode, resolved, detail)
+	}
+	if err := tunnel.EnsureElevatedPrivileges(); err != nil {
+		fmt.Fprintf(&out, "- [FAIL] networking.privileges: %v\n", err)
+	} else {
+		fmt.Fprintf(&out, "- [OK] networking.privileges\n")
+	}
+	for _, tool := range requiredNetworkingToolsGUI(runtime.GOOS) {
+		if _, err := exec.LookPath(tool); err != nil {
+			fmt.Fprintf(&out, "- [FAIL] tool.%s: not found\n", tool)
+		} else {
+			fmt.Fprintf(&out, "- [OK] tool.%s\n", tool)
+		}
+	}
+	if strings.TrimSpace(cfg.Security.MetricsAuthToken) == "" && (strings.TrimSpace(cfg.Provider.MetricsListenAddr) != "" || strings.TrimSpace(cfg.Client.MetricsListenAddr) != "") {
+		fmt.Fprintf(&out, "- [WARN] security.metrics_auth: metrics enabled without auth token\n")
+	} else {
+		fmt.Fprintf(&out, "- [OK] security.metrics_auth\n")
+	}
+	return out.String()
+}
+
+func requiredNetworkingToolsGUI(goos string) []string {
+	switch goos {
+	case "linux":
+		return []string{"ip", "iptables"}
+	case "darwin":
+		return []string{"ifconfig", "route", "networksetup"}
+	case "windows":
+		return []string{"netsh", "route", "powershell"}
+	default:
+		return nil
+	}
 }
 
 func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
@@ -1072,6 +1163,47 @@ func (s *guiState) stopProvider() {
 	}
 	s.providerRunning = false
 	s.appendLog("Provider stop requested.")
+}
+
+func (s *guiState) rebroadcastService(password string) error {
+	s.mu.Lock()
+	cfg := *s.cfg
+	s.mu.Unlock()
+
+	client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
+	defer client.Shutdown()
+
+	key, err := getOrCreateProviderKey(&cfg, cfg.Provider.PrivateKeyFile, password)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	announceIP, announcePort, natCleanup, err := determineAnnounceDetails(ctx, &cfg.Provider)
+	if err != nil {
+		return err
+	}
+	if natCleanup != nil {
+		defer natCleanup()
+	}
+	endpoint := buildProviderEndpoint(cfg.Provider.Price, announceIP, announcePort, key)
+	return blockchain.AnnounceService(client, endpoint)
+}
+
+func (s *guiState) broadcastPriceUpdate(password string) error {
+	s.mu.Lock()
+	cfg := *s.cfg
+	s.mu.Unlock()
+
+	client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
+	defer client.Shutdown()
+
+	key, err := getOrCreateProviderKey(&cfg, cfg.Provider.PrivateKeyFile, password)
+	if err != nil {
+		return err
+	}
+	return blockchain.AnnouncePriceUpdate(client, key.PubKey(), cfg.Provider.Price)
 }
 
 func (s *guiState) scanProviders(sortBy, country string) error {

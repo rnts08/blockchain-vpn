@@ -2,7 +2,7 @@
 
 BlockchainVPN is a peer-to-peer VPN marketplace built on top of the OrdexCoin blockchain. It allows anyone to become a VPN provider by announcing their service on-chain, and allows clients to discover, pay for, and connect to these services in a decentralized, permissionless manner.
 
-Current version: `0.1.0`
+Current version: `0.2.0`
 
 ## 1. Architecture Overview
 
@@ -352,6 +352,7 @@ To adapt this for another chain:
 - [x] Cross-platform GUI application (`cmd/bcvpn-gui`) using Fyne.
 - [x] GUI first-run setup wizard (config, RPC, key, privilege checks).
 - [x] GUI auto-elevation relaunch flow (Linux/macOS/Windows backends).
+- [x] GUI parity for provider controls and diagnostics (rebroadcast, price update, metrics snapshots, doctor checks, version visibility).
 - [x] OS-agnostic application config directory for `config.json`, `provider.key`, and `history.json`.
 
 ### How It Works
