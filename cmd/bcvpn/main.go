@@ -90,8 +90,12 @@ func main() {
 
 	// Scan specific flags
 	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
-	scanSortBy := scanCmd.String("sort", "latency", "Sort providers by 'price', 'country', or 'latency'")
+	scanSortBy := scanCmd.String("sort", "latency", "Sort providers by 'price', 'country', 'latency', 'bandwidth', 'capacity', or 'score'")
 	scanCountry := scanCmd.String("country", "", "Filter providers by country code (e.g., US, DE)")
+	scanMaxPrice := scanCmd.Uint64("max-price", 0, "Filter providers with price <= this value in sats/session (0 disables)")
+	scanMinBandwidthKB := scanCmd.Uint("min-bandwidth-kbps", 0, "Filter providers with advertised bandwidth >= this value in Kbps")
+	scanMaxLatencyMS := scanCmd.Int("max-latency-ms", 0, "Filter providers with latency <= this value in ms (0 disables)")
+	scanMinSlots := scanCmd.Int("min-available-slots", 0, "Filter providers with available slot capacity >= this value (0 disables)")
 	scanDryRun := scanCmd.Bool("dry-run", false, "Simulate connection without spending funds or modifying interfaces")
 	historySinceLast := historyCmd.Bool("since-last-payment", false, "Show wallet transactions since the last recorded payment")
 	startProviderKeyPassEnv := startProviderCmd.String("key-password-env", "", "Env var name containing provider key password (file mode)")
@@ -274,16 +278,14 @@ func main() {
 		fmt.Println("Enriching providers with GeoIP and latency tests...")
 		enrichedEndpoints := geoip.EnrichEndpoints(endpoints)
 
-		var filteredEndpoints []*geoip.EnrichedVPNEndpoint
-		if *scanCountry != "" {
-			for _, ep := range enrichedEndpoints {
-				if strings.EqualFold(ep.Country, *scanCountry) {
-					filteredEndpoints = append(filteredEndpoints, ep)
-				}
-			}
-		} else {
-			filteredEndpoints = enrichedEndpoints
-		}
+		filteredEndpoints := filterEndpoints(
+			enrichedEndpoints,
+			strings.TrimSpace(*scanCountry),
+			*scanMaxPrice,
+			uint32(*scanMinBandwidthKB),
+			time.Duration(*scanMaxLatencyMS)*time.Millisecond,
+			*scanMinSlots,
+		)
 
 		if len(filteredEndpoints) == 0 {
 			fmt.Println("No VPN endpoints found matching your criteria.")
@@ -303,7 +305,18 @@ func main() {
 
 		fmt.Printf("\nAvailable VPN endpoints:\n")
 		for i, ep := range filteredEndpoints {
-			fmt.Printf("  [%d] Country: %s, Latency: %v, IP: %s, Port: %d, Price: %d sats/session\n", i, ep.Country, ep.Latency.Round(time.Millisecond), ep.Endpoint.IP, ep.Endpoint.Port, ep.Endpoint.Price)
+			fmt.Printf(
+				"  [%d] Country: %s, Latency: %v, IP: %s, Port: %d, Price: %d sats/session, Bandwidth: %d Kbps, Capacity: %s, Score: %.2f\n",
+				i,
+				effectiveCountry(ep),
+				ep.Latency.Round(time.Millisecond),
+				ep.Endpoint.IP,
+				ep.Endpoint.Port,
+				ep.Endpoint.Price,
+				ep.AdvertisedBandwidthKB,
+				displayCapacity(ep),
+				computeProviderScore(ep),
+			)
 		}
 		fmt.Println()
 
@@ -870,12 +883,102 @@ func sortEndpoints(endpoints []*geoip.EnrichedVPNEndpoint, sortBy string) {
 		sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].Endpoint.Price < endpoints[j].Endpoint.Price })
 		fmt.Println("Sorted by price (lowest first).")
 	case "country":
-		sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].Country < endpoints[j].Country })
+		sort.Slice(endpoints, func(i, j int) bool { return effectiveCountry(endpoints[i]) < effectiveCountry(endpoints[j]) })
 		fmt.Println("Sorted by country.")
+	case "bandwidth":
+		sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].AdvertisedBandwidthKB > endpoints[j].AdvertisedBandwidthKB })
+		fmt.Println("Sorted by bandwidth (highest first).")
+	case "capacity":
+		sort.Slice(endpoints, func(i, j int) bool {
+			return effectiveCapacitySlots(endpoints[i]) > effectiveCapacitySlots(endpoints[j])
+		})
+		fmt.Println("Sorted by capacity (highest first).")
+	case "score":
+		sort.Slice(endpoints, func(i, j int) bool { return computeProviderScore(endpoints[i]) > computeProviderScore(endpoints[j]) })
+		fmt.Println("Sorted by score (highest first).")
 	case "latency":
+		fallthrough
+	default:
 		sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].Latency < endpoints[j].Latency })
 		fmt.Println("Sorted by latency (lowest first).")
 	}
+}
+
+func filterEndpoints(endpoints []*geoip.EnrichedVPNEndpoint, country string, maxPrice uint64, minBandwidthKB uint32, maxLatency time.Duration, minSlots int) []*geoip.EnrichedVPNEndpoint {
+	var filtered []*geoip.EnrichedVPNEndpoint
+	for _, ep := range endpoints {
+		if country != "" && !strings.EqualFold(country, effectiveCountry(ep)) {
+			continue
+		}
+		if maxPrice > 0 && ep.Endpoint.Price > maxPrice {
+			continue
+		}
+		if minBandwidthKB > 0 && ep.AdvertisedBandwidthKB < minBandwidthKB {
+			continue
+		}
+		if maxLatency > 0 && ep.Latency > maxLatency {
+			continue
+		}
+		if minSlots > 0 && effectiveCapacitySlots(ep) < minSlots {
+			continue
+		}
+		filtered = append(filtered, ep)
+	}
+	return filtered
+}
+
+func effectiveCountry(ep *geoip.EnrichedVPNEndpoint) string {
+	if ep == nil {
+		return "N/A"
+	}
+	if v := strings.ToUpper(strings.TrimSpace(ep.DeclaredCountry)); v != "" {
+		return v
+	}
+	if v := strings.ToUpper(strings.TrimSpace(ep.Country)); v != "" {
+		return v
+	}
+	return "N/A"
+}
+
+func effectiveCapacitySlots(ep *geoip.EnrichedVPNEndpoint) int {
+	if ep == nil {
+		return 0
+	}
+	if ep.MaxConsumers == 0 {
+		return 1 << 30 // Treat 0 as unlimited for filtering/sorting semantics.
+	}
+	return int(ep.MaxConsumers)
+}
+
+func displayCapacity(ep *geoip.EnrichedVPNEndpoint) string {
+	if ep == nil || ep.MaxConsumers == 0 {
+		return "unlimited"
+	}
+	return fmt.Sprintf("%d", ep.MaxConsumers)
+}
+
+func computeProviderScore(ep *geoip.EnrichedVPNEndpoint) float64 {
+	if ep == nil || ep.Endpoint == nil {
+		return 0
+	}
+	latencyMS := ep.Latency.Milliseconds()
+	if latencyMS <= 0 {
+		latencyMS = 1
+	}
+	price := float64(ep.Endpoint.Price)
+	if price <= 0 {
+		price = 1
+	}
+	bandwidth := float64(ep.AdvertisedBandwidthKB)
+	capacity := float64(effectiveCapacitySlots(ep))
+	if capacity > 1e6 {
+		capacity = 1000 // clamp unlimited sentinel for scoring
+	}
+	countryBoost := 1.0
+	if strings.TrimSpace(ep.DeclaredCountry) != "" {
+		countryBoost = 1.05
+	}
+	return countryBoost * ((bandwidth / 1000.0) + capacity) / (price * float64(latencyMS))
 }
 
 func handleFullHistory() {

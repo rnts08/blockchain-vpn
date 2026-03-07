@@ -600,10 +600,18 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 
 func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	title := widget.NewLabelWithStyle("Client Discovery & Connect", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	sortSelect := widget.NewSelect([]string{"latency", "price", "country"}, nil)
+	sortSelect := widget.NewSelect([]string{"latency", "price", "country", "bandwidth", "capacity", "score"}, nil)
 	sortSelect.SetSelected("latency")
 	countryEntry := widget.NewEntry()
 	countryEntry.SetPlaceHolder("Country filter e.g. US")
+	maxPriceEntry := widget.NewEntry()
+	maxPriceEntry.SetPlaceHolder("Max price sats (optional)")
+	minBwEntry := widget.NewEntry()
+	minBwEntry.SetPlaceHolder("Min bandwidth Kbps")
+	maxLatencyEntry := widget.NewEntry()
+	maxLatencyEntry.SetPlaceHolder("Max latency ms")
+	minSlotsEntry := widget.NewEntry()
+	minSlotsEntry.SetPlaceHolder("Min available slots")
 	clientIfaceEntry := widget.NewEntry()
 	clientIfaceEntry.SetText(s.cfg.Client.InterfaceName)
 	clientTunIPEntry := widget.NewEntry()
@@ -632,7 +640,18 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 			}
 			ep := s.scanResults[i]
 			o.(*widget.Label).SetText(
-				fmt.Sprintf("[%d] %s | %s:%d | %d sats | %s", i, ep.Country, ep.Endpoint.IP, ep.Endpoint.Port, ep.Endpoint.Price, ep.Latency.Round(time.Millisecond)),
+				fmt.Sprintf(
+					"[%d] %s | %s:%d | %d sats | %s | %d Kbps | cap=%s | score=%.2f",
+					i,
+					effectiveCountryGUI(ep),
+					ep.Endpoint.IP,
+					ep.Endpoint.Port,
+					ep.Endpoint.Price,
+					ep.Latency.Round(time.Millisecond),
+					ep.AdvertisedBandwidthKB,
+					displayCapacityGUI(ep),
+					computeProviderScoreGUI(ep),
+				),
 			)
 		},
 	)
@@ -644,7 +663,27 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 
 	scanBtn := widget.NewButton("Scan Providers", func() {
 		go func() {
-			if err := s.scanProviders(sortSelect.Selected, strings.TrimSpace(countryEntry.Text)); err != nil {
+			maxPrice, err := parseUint64Optional(maxPriceEntry.Text)
+			if err != nil {
+				dialog.ShowError(fmt.Errorf("invalid max price: %w", err), w)
+				return
+			}
+			minBW, err := parseUint32Optional(minBwEntry.Text)
+			if err != nil {
+				dialog.ShowError(fmt.Errorf("invalid min bandwidth: %w", err), w)
+				return
+			}
+			maxLatencyMS, err := parseIntOptional(maxLatencyEntry.Text)
+			if err != nil {
+				dialog.ShowError(fmt.Errorf("invalid max latency: %w", err), w)
+				return
+			}
+			minSlots, err := parseIntOptional(minSlotsEntry.Text)
+			if err != nil {
+				dialog.ShowError(fmt.Errorf("invalid min slots: %w", err), w)
+				return
+			}
+			if err := s.scanProviders(sortSelect.Selected, strings.TrimSpace(countryEntry.Text), maxPrice, minBW, time.Duration(maxLatencyMS)*time.Millisecond, minSlots); err != nil {
 				dialog.ShowError(err, w)
 				return
 			}
@@ -684,11 +723,19 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.appendLog("Saved client settings.")
 	})
 
-	filterRow := container.NewGridWithColumns(4,
+	filterRow := container.NewGridWithColumns(12,
 		widget.NewLabel("Sort:"),
 		sortSelect,
 		widget.NewLabel("Country:"),
 		countryEntry,
+		widget.NewLabel("Max Price:"),
+		maxPriceEntry,
+		widget.NewLabel("Min BW:"),
+		minBwEntry,
+		widget.NewLabel("Max Latency:"),
+		maxLatencyEntry,
+		widget.NewLabel("Min Slots:"),
+		minSlotsEntry,
 	)
 	settingsRow := container.NewGridWithColumns(
 		8,
@@ -1232,7 +1279,7 @@ func (s *guiState) broadcastPriceUpdate(password string) error {
 	return blockchain.AnnouncePriceUpdate(client, key.PubKey(), cfg.Provider.Price)
 }
 
-func (s *guiState) scanProviders(sortBy, country string) error {
+func (s *guiState) scanProviders(sortBy, country string, maxPrice uint64, minBandwidthKB uint32, maxLatency time.Duration, minSlots int) error {
 	client := connectRPC(s.cfg.RPC.Host, s.cfg.RPC.User, s.cfg.RPC.Pass)
 	defer client.Shutdown()
 
@@ -1243,15 +1290,38 @@ func (s *guiState) scanProviders(sortBy, country string) error {
 	enriched := geoip.EnrichEndpoints(results)
 	var filtered []*geoip.EnrichedVPNEndpoint
 	for _, ep := range enriched {
-		if country == "" || strings.EqualFold(country, ep.Country) {
-			filtered = append(filtered, ep)
+		if country != "" && !strings.EqualFold(country, effectiveCountryGUI(ep)) {
+			continue
 		}
+		if maxPrice > 0 && ep.Endpoint.Price > maxPrice {
+			continue
+		}
+		if minBandwidthKB > 0 && ep.AdvertisedBandwidthKB < minBandwidthKB {
+			continue
+		}
+		if maxLatency > 0 && ep.Latency > maxLatency {
+			continue
+		}
+		if minSlots > 0 && effectiveCapacitySlotsGUI(ep) < minSlots {
+			continue
+		}
+		filtered = append(filtered, ep)
 	}
 	switch sortBy {
 	case "price":
 		sort.Slice(filtered, func(i, j int) bool { return filtered[i].Endpoint.Price < filtered[j].Endpoint.Price })
 	case "country":
-		sort.Slice(filtered, func(i, j int) bool { return filtered[i].Country < filtered[j].Country })
+		sort.Slice(filtered, func(i, j int) bool { return effectiveCountryGUI(filtered[i]) < effectiveCountryGUI(filtered[j]) })
+	case "bandwidth":
+		sort.Slice(filtered, func(i, j int) bool { return filtered[i].AdvertisedBandwidthKB > filtered[j].AdvertisedBandwidthKB })
+	case "capacity":
+		sort.Slice(filtered, func(i, j int) bool {
+			return effectiveCapacitySlotsGUI(filtered[i]) > effectiveCapacitySlotsGUI(filtered[j])
+		})
+	case "score":
+		sort.Slice(filtered, func(i, j int) bool {
+			return computeProviderScoreGUI(filtered[i]) > computeProviderScoreGUI(filtered[j])
+		})
 	default:
 		sort.Slice(filtered, func(i, j int) bool { return filtered[i].Latency < filtered[j].Latency })
 	}
@@ -1262,6 +1332,81 @@ func (s *guiState) scanProviders(sortBy, country string) error {
 	s.mu.Unlock()
 	s.appendLog(fmt.Sprintf("Scan complete: %d provider(s) found.", len(filtered)))
 	return nil
+}
+
+func parseUint64Optional(v string) (uint64, error) {
+	if strings.TrimSpace(v) == "" {
+		return 0, nil
+	}
+	return strconv.ParseUint(strings.TrimSpace(v), 10, 64)
+}
+
+func parseUint32Optional(v string) (uint32, error) {
+	if strings.TrimSpace(v) == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseUint(strings.TrimSpace(v), 10, 32)
+	return uint32(n), err
+}
+
+func parseIntOptional(v string) (int, error) {
+	if strings.TrimSpace(v) == "" {
+		return 0, nil
+	}
+	return strconv.Atoi(strings.TrimSpace(v))
+}
+
+func effectiveCountryGUI(ep *geoip.EnrichedVPNEndpoint) string {
+	if ep == nil {
+		return "N/A"
+	}
+	if v := strings.ToUpper(strings.TrimSpace(ep.DeclaredCountry)); v != "" {
+		return v
+	}
+	if v := strings.ToUpper(strings.TrimSpace(ep.Country)); v != "" {
+		return v
+	}
+	return "N/A"
+}
+
+func effectiveCapacitySlotsGUI(ep *geoip.EnrichedVPNEndpoint) int {
+	if ep == nil {
+		return 0
+	}
+	if ep.MaxConsumers == 0 {
+		return 1 << 30
+	}
+	return int(ep.MaxConsumers)
+}
+
+func displayCapacityGUI(ep *geoip.EnrichedVPNEndpoint) string {
+	if ep == nil || ep.MaxConsumers == 0 {
+		return "unlimited"
+	}
+	return fmt.Sprintf("%d", ep.MaxConsumers)
+}
+
+func computeProviderScoreGUI(ep *geoip.EnrichedVPNEndpoint) float64 {
+	if ep == nil || ep.Endpoint == nil {
+		return 0
+	}
+	latencyMS := ep.Latency.Milliseconds()
+	if latencyMS <= 0 {
+		latencyMS = 1
+	}
+	price := float64(ep.Endpoint.Price)
+	if price <= 0 {
+		price = 1
+	}
+	capacity := float64(effectiveCapacitySlotsGUI(ep))
+	if capacity > 1e6 {
+		capacity = 1000
+	}
+	countryBoost := 1.0
+	if strings.TrimSpace(ep.DeclaredCountry) != "" {
+		countryBoost = 1.05
+	}
+	return countryBoost * ((float64(ep.AdvertisedBandwidthKB) / 1000.0) + capacity) / (price * float64(latencyMS))
 }
 
 func (s *guiState) connectSelectedProvider(dryRun bool) error {
