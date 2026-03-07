@@ -23,6 +23,225 @@ The current GUI implementation in `cmd/bcvpn-gui` provides:
 
 Items in this document not yet implemented are tracked in `docs/TODO.md`.
 
+## Actual Implementation Notes
+
+The GUI is built with **Fyne** (fyne.io/fyne/v2) and has the following actual structure:
+
+### Tab Structure (5 tabs)
+
+1. **Provider Mode** - Provider configuration and control
+2. **Client Mode** - Provider discovery and connection
+3. **Network Status** - Runtime metrics, doctor checks, event timeline
+4. **Settings** - RPC, security, logging configuration
+5. **Wallet** - Payment history display
+
+### First-Run Setup Wizard
+
+When first launched (no setup-complete marker), the GUI shows a wizard with:
+- Title: "First-Run Setup Wizard"
+- Description: "Complete these checks to enable click-and-run provider/client operation."
+- Elevation hint showing platform-specific privilege requirements
+- 4 step buttons: "Ensure Config", "Check RPC Connectivity", "Create/Unlock Provider Key", "Check Networking Privileges"
+- Password input field for provider key (step 3)
+- "Relaunch Elevated" button (disabled on platforms without elevation support)
+- "Finish Setup" button
+- Status card showing setup progress
+
+### Provider Mode Tab (Actual)
+
+**Header:** "Provider Control" (bold, left-aligned)
+
+**Form Fields (widget.NewForm):**
+- Interface Name (text entry, default: "bcvpn0")
+- Listen Port (entry, default: 51820)
+- Announce IP (optional, entry)
+- Country (entry, e.g., "US")
+- Price (sats/session, entry)
+- Max Consumers (entry, 0=unlimited)
+- Bandwidth Limit (entry, e.g., "10mbit")
+- Provider TUN IP (entry, e.g., "10.10.0.1")
+- Provider TUN Subnet (entry, e.g., "24")
+- NAT Traversal checkbox ("Enable NAT Traversal (UPnP/NAT-PMP)")
+- Provider Egress NAT checkbox
+- NAT Outbound Interface (entry)
+- Isolation Mode dropdown ("none", "sandbox")
+- Allowlist File (entry)
+- Denylist File (entry)
+- Cert Lifetime Hours (entry, default: 720)
+- Rotate Before Hours (entry, default: 24)
+- Health Checks checkbox
+- Health Check Interval (entry, e.g., "30s")
+- Metrics Listen Addr (entry, e.g., "127.0.0.1:9090")
+- Key Password (password entry, "file mode only")
+
+**Action Buttons (grid, 6 columns):**
+- Save Provider Config
+- Auto-Locate Country
+- Start Provider
+- Stop Provider
+- Rebroadcast Service
+- Broadcast Price Update
+
+**Secondary Row (2 columns):**
+- Rotate Provider Key
+- Status Label ("Status: stopped" / "Status: running")
+
+**Log Panel:**
+- Card titled "Activity Log" with "Runtime events, errors, and actions"
+- Multi-line entry showing timestamped log messages
+- 8 visible rows, scrollable
+
+### Client Mode Tab (Actual)
+
+**Header:** "Client Discovery & Connect" (bold)
+
+**Sort/Filter Row (12 columns):**
+- Label "Sort:" + dropdown ("latency", "price", "country", "bandwidth", "capacity", "score")
+- Label "Country:" + entry (placeholder: "Country filter e.g. US")
+- Label "Max Price:" + entry (placeholder: "Max price sats (optional)")
+- Label "Min BW:" + entry (placeholder: "Min bandwidth Kbps")
+- Label "Max Latency:" + entry (placeholder: "Max latency ms")
+- Label "Min Slots:" + entry (placeholder: "Min available slots")
+
+**Settings Row (8 columns):**
+- Label "Interface" + entry (default: "bcvpn1")
+- Label "TUN IP" + entry (e.g., "10.10.0.2")
+- Label "Subnet" + entry (e.g., "24")
+- Label "Metrics" + entry
+
+**Action Row (6 columns):**
+- Scan Providers button
+- Connect Selected button
+- Disconnect All button
+- Save Client Settings button
+- Enable Kill Switch checkbox
+- Dry run checkbox ("Dry run (no payment, no interface changes)")
+
+**Security Options Row (2 columns):**
+- Strict Verification checkbox
+- Verify Throughput After Connect checkbox
+
+**Provider List Card:**
+- Title: "Provider List"
+- Subtitle: "Latency, price, and country-enriched endpoint table"
+- widget.NewList showing results in format: `[index] IP:port | price sats | latency | bandwidth Kbps | cap=X | score=X.X`
+
+**Log Panel:**
+- Same as Provider tab
+
+### Network Status Tab (Actual)
+
+**Header:** "Network Status" (bold)
+
+**Version/Config Info:**
+- Version label (e.g., "Version: X.Y.Z")
+- Config Path label
+- Provider Interface label (name + TUN IP/subnet)
+- Client Interface label
+- Client Kill Switch status label
+- Privileges status label ("Privileges: OK" or error message)
+
+**Runtime Metrics Card:**
+- Title: "Runtime Metrics"
+- Subtitle: "Provider/client runtime metrics endpoint snapshots"
+- Refresh Metrics button
+- Multi-line entry (8 rows) showing:
+  - Provider Metrics Addr
+  - Client Metrics Addr  
+  - Metrics Auth configured status
+  - Metrics endpoint JSON data
+
+**Doctor Card:**
+- Title: "Doctor"
+- Subtitle: "Config/privilege/tool readiness checks"
+- Run Doctor Checks button
+- Multi-line entry (8 rows) showing check results:
+  - config.validate status
+  - security.keystore status
+  - networking.privileges status
+  - tool.* status (ip, iptables, ifconfig, etc.)
+  - security.metrics_auth status
+
+**Event Timeline Card:**
+- Title: "Event Timeline"
+- Subtitle: "Recent runtime session and auth events"
+- Refresh Events button
+- Multi-line entry (8 rows) showing events: timestamp [role] type: detail
+
+**Export Button:**
+- "Export Diagnostics Bundle" - exports JSON to app config dir
+
+**Log Panel:**
+- Same as Provider tab
+
+### Settings Tab (Actual)
+
+**Header:** "Global Settings" (bold)
+
+**Hint:** "Validation hints: host required, ports 1-65535, valid IP/prefix, valid health_check_interval duration (e.g. 30s)."
+
+**RPC Card:**
+- Title: "RPC"
+- Subtitle: "Global daemon connection settings"
+- Form fields:
+  - RPC Host (entry, default: "localhost:18443")
+  - RPC User (entry)
+  - RPC Pass (password entry)
+  - Key Storage Mode dropdown ("file", "auto", "keychain", "libsecret", "dpapi")
+  - Key Storage Service (entry)
+  - Revocation Cache File (entry)
+  - TLS Min Version dropdown ("1.3", "1.2")
+  - TLS Profile dropdown ("modern", "compat")
+  - Metrics Auth Token (password entry)
+  - Log Format dropdown ("text", "json")
+  - Log Level dropdown ("debug", "info", "warn", "error")
+
+**Profile Path Row (3 columns):**
+- Label "Profile Path" + entry (placeholder) + Export Profile button + Import Profile button
+
+**Action Buttons (3 columns):**
+- Save + Validate
+- Validate Current Config
+- Apply Defaults For Empty Fields
+
+**Validation Output Card:**
+- Multi-line entry (6 rows) showing validation results
+
+**Log Panel:**
+- Same as Provider tab
+
+### Wallet Tab (Actual)
+
+**Header:** "Wallet & History" (bold)
+
+**Reload Button:** "Reload History"
+
+**Payment History Card:**
+- Title: "Payment History"
+- Subtitle: "Most recent transactions"
+- Multi-line entry (word wrapping, disabled) showing:
+  - Format: `RFC3339 timestamp | amount sats | provider address | txid`
+
+### Visual Theme
+
+- Primary color: Green (#0C5C40)
+- Background: Off-white (#F6F5EF)
+- Button color: Teal (#1C8062)
+- Font: Default Fyne theme
+
+### Missing from Design Doc
+
+The GUI does NOT implement:
+- Speed test functionality (mentioned in design)
+- Real-time traffic graphs (Status tab only shows static metrics on refresh)
+- Bandwidth speed/duration inputs for client connection
+- Auto-disconnect latency threshold input
+- Payout address field in Provider (uses internal wallet)
+- Visual provider session table with peer details
+- Traffic counters (Total Sent/Received)
+- Financial overview (Balance, Session Cost, Total Earned/Spent)
+- Network conflict detection modal
+
 ## Layout Overview
 
 The application uses a **Tabbed Layout** to separate distinct functions.
