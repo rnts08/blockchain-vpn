@@ -313,6 +313,9 @@ See [docs/TODO.md](docs/TODO.md) for prioritized next steps.
 - Detailed install and privilege setup: [docs/INSTALL.md](docs/INSTALL.md)
 - UI design and behavior: [docs/GUI.md](docs/GUI.md)
 - Networking notes: [docs/NETWORKING.md](docs/NETWORKING.md)
+- End-to-end user guide: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
+- Troubleshooting by OS: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+- Packaging and installer guidance: [docs/PACKAGING.md](docs/PACKAGING.md)
 - Engineering roadmap and remaining tasks: [docs/TODO.md](docs/TODO.md)
 
 ## 7. Project File Layout

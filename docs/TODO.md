@@ -23,6 +23,6 @@
 - [ ] Add configurable minimum TLS policy and cipher/profile reporting in `status --json`.
 
 ## 5. Product and Documentation
-- [ ] Add complete user guide with end-to-end flows for provider and client modes.
-- [ ] Add troubleshooting guide by OS (permission denied, TUN creation failure, route/DNS conflicts, firewall issues).
-- [ ] Add packaging and installer docs for Linux/macOS/Windows releases.
+- [x] Add complete user guide with end-to-end flows for provider and client modes.
+- [x] Add troubleshooting guide by OS (permission denied, TUN creation failure, route/DNS conflicts, firewall issues).
+- [x] Add packaging and installer docs for Linux/macOS/Windows releases.
