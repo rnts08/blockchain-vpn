@@ -107,7 +107,70 @@ func Validate(cfg *Config) error {
 		errs = append(errs, fmt.Errorf("security.metrics_auth_token must be at least 12 characters when set"))
 	}
 
+	// Cross-field: detect subnet overlap between provider and client TUN.
+	if overlapErr := checkSubnetOverlap(
+		cfg.Provider.TunIP, cfg.Provider.TunSubnet,
+		cfg.Client.TunIP, cfg.Client.TunSubnet,
+		"provider", "client",
+	); overlapErr != nil {
+		errs = append(errs, overlapErr)
+	}
+
+	// Cross-field: detect port collision between provider listen port and metrics endpoints.
+	providerPort := cfg.Provider.ListenPort
+	if p := parsePort(cfg.Provider.MetricsListenAddr); p > 0 && p == providerPort {
+		errs = append(errs, fmt.Errorf("provider.listen_port and provider.metrics_listen_addr share the same port (%d)", p))
+	}
+	if p := parsePort(cfg.Client.MetricsListenAddr); p > 0 && p == providerPort {
+		errs = append(errs, fmt.Errorf("provider.listen_port and client.metrics_listen_addr share the same port (%d)", p))
+	}
+
 	return errors.Join(errs...)
+}
+
+// checkSubnetOverlap returns an error if the two IP+prefix strings describe overlapping
+// but distinct networks. Provider and client intentionally share the same TUN subnet
+// (provider is gateway, client gets a host IP), so we skip when they resolve to the
+// same network prefix.
+func checkSubnetOverlap(ip1, prefix1, ip2, prefix2, label1, label2 string) error {
+	ip1 = strings.TrimSpace(ip1)
+	ip2 = strings.TrimSpace(ip2)
+	if ip1 == "" || ip2 == "" {
+		return nil
+	}
+	_, net1, err1 := net.ParseCIDR(ip1 + "/" + strings.TrimSpace(prefix1))
+	_, net2, err2 := net.ParseCIDR(ip2 + "/" + strings.TrimSpace(prefix2))
+	if err1 != nil || err2 != nil {
+		return nil // already caught by individual field validators
+	}
+	// If both IPs resolve to the same network prefix it is the intentional shared
+	// TUN subnet (provider = gateway, clients = hosts). Not an error.
+	if net1.String() == net2.String() {
+		return nil
+	}
+	// Different network prefixes that still contain each other's IPs → real overlap.
+	if net1.Contains(net.ParseIP(ip2)) || net2.Contains(net.ParseIP(ip1)) {
+		return fmt.Errorf("%s and %s TUN subnets overlap (%s/%s and %s/%s)",
+			label1, label2, ip1, prefix1, ip2, prefix2)
+	}
+	return nil
+}
+
+// parsePort extracts the numeric port from a host:port addr string.
+func parsePort(addr string) int {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return 0
+	}
+	_, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0
+	}
+	p, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0
+	}
+	return p
 }
 
 func isValidPrefix(v string) bool {
