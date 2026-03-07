@@ -93,7 +93,7 @@ type ClientMap struct {
 }
 
 // StartProviderServer sets up the TUN interface and listens for TLS connections.
-func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKey *btcec.PrivateKey, authManager *auth.AuthManager) {
+func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *config.SecurityConfig, privKey *btcec.PrivateKey, authManager *auth.AuthManager) {
 	if err := EnsureElevatedPrivileges(); err != nil {
 		recordRuntimeError(err)
 		log.Fatalf("Provider requires automatic networking privileges: %v", err)
@@ -110,7 +110,18 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 
 	certLifetime := time.Duration(cfg.CertLifetimeHours) * time.Hour
 	certRotateBefore := time.Duration(cfg.CertRotateBeforeHours) * time.Hour
-	tlsConfig, err := buildRotatingServerTLSConfig(ctx, privKey, certLifetime, certRotateBefore)
+	tlsPolicy := TLSPolicy{}
+	var err error
+	if sec != nil {
+		tlsPolicy, err = ResolveTLSPolicy(sec.TLSMinVersion, sec.TLSProfile)
+		if err != nil {
+			recordRuntimeError(err)
+			log.Fatalf("Failed to resolve TLS policy: %v", err)
+		}
+	} else {
+		tlsPolicy, _ = ResolveTLSPolicy("", "")
+	}
+	tlsConfig, err := buildRotatingServerTLSConfig(ctx, privKey, certLifetime, certRotateBefore, tlsPolicy)
 	if err != nil {
 		recordRuntimeError(err)
 		log.Fatalf("Failed to generate server TLS config: %v", err)
@@ -204,6 +215,18 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 			conn.Close()
 			recordRuntimeError(err)
 			continue
+		}
+		if sec != nil && strings.TrimSpace(sec.RevocationCacheFile) != "" {
+			revoked, revErr := globalRevocationCache.IsRevoked(sec.RevocationCacheFile, clientPubKey)
+			if revErr != nil {
+				log.Printf("Warning: revocation cache check failed: %v", revErr)
+				recordRuntimeError(revErr)
+			} else if revoked {
+				log.Printf("Connection from %s rejected: client certificate is revoked", conn.RemoteAddr())
+				conn.Close()
+				recordRuntimeError(fmt.Errorf("revoked client certificate: %s", hex.EncodeToString(clientPubKey.SerializeCompressed())))
+				continue
+			}
 		}
 		if !authManager.IsPeerAuthorized(clientPubKey) {
 			log.Printf("Connection from %s rejected: client %s is not authorized", conn.RemoteAddr(), hex.EncodeToString(clientPubKey.SerializeCompressed()))
@@ -313,7 +336,7 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 }
 
 // ConnectToProvider connects to a provider and sets up the client-side tunnel.
-func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, localPrivKey *btcec.PrivateKey, serverPubKey *btcec.PublicKey, endpoint string) error {
+func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *config.SecurityConfig, localPrivKey *btcec.PrivateKey, serverPubKey *btcec.PublicKey, endpoint string) error {
 	if err := EnsureElevatedPrivileges(); err != nil {
 		recordRuntimeError(err)
 		return fmt.Errorf("client requires automatic networking privileges: %w", err)
@@ -322,7 +345,30 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, localPrivK
 	setClientConnected(true)
 	defer setClientConnected(false)
 
-	tlsConfig, err := GenerateClientTLSConfig(localPrivKey, serverPubKey)
+	tlsPolicy := TLSPolicy{}
+	var err error
+	if sec != nil {
+		tlsPolicy, err = ResolveTLSPolicy(sec.TLSMinVersion, sec.TLSProfile)
+		if err != nil {
+			return fmt.Errorf("failed to resolve TLS policy: %w", err)
+		}
+	} else {
+		tlsPolicy, _ = ResolveTLSPolicy("", "")
+	}
+
+	if sec != nil && strings.TrimSpace(sec.RevocationCacheFile) != "" {
+		revoked, revErr := globalRevocationCache.IsRevoked(sec.RevocationCacheFile, serverPubKey)
+		if revErr != nil {
+			recordRuntimeError(revErr)
+			log.Printf("Warning: revocation cache check failed: %v", revErr)
+		} else if revoked {
+			err := fmt.Errorf("provider certificate is revoked")
+			recordRuntimeError(err)
+			return err
+		}
+	}
+
+	tlsConfig, err := GenerateClientTLSConfig(localPrivKey, serverPubKey, tlsPolicy)
 	if err != nil {
 		return fmt.Errorf("failed to generate client TLS config: %w", err)
 	}

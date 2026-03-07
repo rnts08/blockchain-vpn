@@ -145,6 +145,7 @@ Edit `config.json` to match your environment:
 
 *   **rpc**: Connection details for your local `ordexcoind` node.
 *   **logging**: Runtime log output format (`text` or `json`).
+*   **security**: Key storage backend, revocation cache, and TLS policy (`key_storage_mode`, `revocation_cache_file`, `tls_min_version`, `tls_profile`).
 *   **provider**: Settings if you intend to sell VPN service (IP, Port, Price, `enable_egress_nat`, `nat_outbound_interface`, `isolation_mode`, `allowlist_file`, `denylist_file`, `cert_lifetime_hours`, `cert_rotate_before_hours`, `health_check_enabled`, `health_check_interval`).
 *   **client**: Settings for connecting to others (Interface Name).
 *   By default, the app stores `config.json`, `provider.key`, and `history.json` in your OS user config directory under `BlockchainVPN` (for example `~/.config/BlockchainVPN` on Linux).
@@ -160,6 +161,13 @@ Sample `config.json`:
   },
   "logging": {
     "format": "text"
+  },
+  "security": {
+    "key_storage_mode": "file",
+    "key_storage_service": "BlockchainVPN",
+    "revocation_cache_file": "",
+    "tls_min_version": "1.3",
+    "tls_profile": "modern"
   },
   "provider": {
     "interface_name": "bcvpn0",
@@ -252,6 +260,12 @@ To start selling bandwidth:
     ./bcvpn config set client.enable_kill_switch true
     ./bcvpn config validate
     ```
+    Security-related keys are also exposed:
+    ```bash
+    ./bcvpn config set security.key_storage_mode auto
+    ./bcvpn config set security.revocation_cache_file /path/to/revoked_keys.txt
+    ./bcvpn config set security.tls_profile compat
+    ```
 
 7.  **Runtime Metrics Endpoint (Optional)**:
     Set `provider.metrics_listen_addr` or `client.metrics_listen_addr` to expose:
@@ -300,6 +314,9 @@ To adapt this for another chain:
 - [x] Runtime metrics endpoint (`/metrics.json`) for provider/client health and throughput.
 - [x] Structured JSON log mode for CLI/GUI backend actions.
 - [x] Crash-safe route/DNS restore marker recovery on startup.
+- [x] Optional hardware-backed provider key storage integration (macOS Keychain, Windows DPAPI, Linux libsecret).
+- [x] Mutual TLS revocation cache enforcement for provider/client cert identity keys.
+- [x] Configurable TLS minimum version/profile with cipher/profile reporting in `status --json`.
 - [x] Scriptable CLI config subcommands (`config get/set/validate`).
 - [x] Cross-platform GUI application (`cmd/bcvpn-gui`) using Fyne.
 - [x] GUI first-run setup wizard (config, RPC, key, privilege checks).

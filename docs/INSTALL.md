@@ -117,6 +117,7 @@ Run in an elevated terminal ("Run as Administrator"):
 - Configure runtime settings in:
   - GUI provider/client panels (save settings to `config.json`)
   - CLI config subcommands (`bcvpn config get/set/validate`) plus `bcvpn status` / `bcvpn status --json` for verification
+  - Security settings (`security.key_storage_mode`, `security.revocation_cache_file`, `security.tls_min_version`, `security.tls_profile`)
 
 ## 6. Verify Runtime Status
 

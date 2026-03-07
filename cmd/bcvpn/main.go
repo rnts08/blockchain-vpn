@@ -62,6 +62,7 @@ func main() {
 	if err := config.ResolveProviderKeyPath(cfg, configPath); err != nil {
 		log.Fatalf("Failed to resolve provider key path: %v", err)
 	}
+	applyConfigDefaults(cfg)
 	logFormat := strings.TrimSpace(cfg.Logging.Format)
 	if env := strings.TrimSpace(os.Getenv("BCVPN_LOG_FORMAT")); env != "" {
 		logFormat = env
@@ -112,7 +113,7 @@ func main() {
 
 		authManager := auth.NewAuthManager()
 
-		providerKey, err := getProviderKey(cfg.Provider.PrivateKeyFile)
+		providerKey, err := getProviderKey(cfg)
 		if err != nil {
 			log.Fatalf("Failed to get provider key: %v", err)
 		}
@@ -146,7 +147,7 @@ func main() {
 		}()
 
 		go blockchain.MonitorPayments(ctx, client, authManager, cfg.Provider.Price)
-		go tunnel.StartProviderServer(ctx, &cfg.Provider, providerKey, authManager)
+		go tunnel.StartProviderServer(ctx, &cfg.Provider, &cfg.Security, providerKey, authManager)
 		go blockchain.StartEchoServer(ctx, cfg.Provider.ListenPort)
 
 		<-ctx.Done()
@@ -160,7 +161,7 @@ func main() {
 		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
 		defer client.Shutdown()
 
-		providerKey, err := getProviderKey(cfg.Provider.PrivateKeyFile)
+		providerKey, err := getProviderKey(cfg)
 		if err != nil {
 			log.Fatalf("Failed to get provider key: %v", err)
 		}
@@ -190,7 +191,7 @@ func main() {
 		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
 		defer client.Shutdown()
 
-		providerKey, err := getProviderKey(cfg.Provider.PrivateKeyFile)
+		providerKey, err := getProviderKey(cfg)
 		if err != nil {
 			log.Fatalf("Failed to get provider key: %v", err)
 		}
@@ -263,7 +264,7 @@ func main() {
 		}
 		fmt.Println()
 
-		interactiveConnect(ctx, client, chainParams, filteredEndpoints, &cfg.Client, *scanDryRun)
+		interactiveConnect(ctx, client, chainParams, filteredEndpoints, &cfg.Client, &cfg.Security, *scanDryRun)
 
 	case "rotate-provider-key":
 		rotateKeyCmd.Parse(os.Args[2:])
@@ -271,7 +272,7 @@ func main() {
 		if strings.TrimSpace(*rotateKeyPath) != "" {
 			keyPath = strings.TrimSpace(*rotateKeyPath)
 		}
-		if err := rotateProviderKey(keyPath); err != nil {
+		if err := rotateProviderKey(cfg, keyPath); err != nil {
 			log.Fatalf("Provider key rotation failed: %v", err)
 		}
 		log.Printf("Provider key rotated successfully. Re-broadcast your service to publish the new public key.")
@@ -314,7 +315,21 @@ func connectRPC(host, user, pass string) *rpcclient.Client {
 	return client
 }
 
-func getProviderKey(keyPath string) (*btcec.PrivateKey, error) {
+func getProviderKey(cfg *config.Config) (*btcec.PrivateKey, error) {
+	keyPath := cfg.Provider.PrivateKeyFile
+	resolvedMode, err := crypto.ResolveKeyStorageMode(cfg.Security.KeyStorageMode)
+	if err != nil {
+		return nil, err
+	}
+	if resolvedMode != "file" {
+		key, err := crypto.LoadOrCreateProviderKey(keyPath, nil, cfg.Security.KeyStorageMode, cfg.Security.KeyStorageService)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("Provider key loaded via secure storage backend (%s).", resolvedMode)
+		return key, nil
+	}
+
 	reader := bufio.NewReader(os.Stdin)
 	if _, err := os.Stat(keyPath); err == nil {
 		fmt.Print("Enter password to decrypt provider key: ")
@@ -349,7 +364,19 @@ func getProviderKey(keyPath string) (*btcec.PrivateKey, error) {
 	return key, nil
 }
 
-func rotateProviderKey(keyPath string) error {
+func rotateProviderKey(cfg *config.Config, keyPath string) error {
+	resolvedMode, err := crypto.ResolveKeyStorageMode(cfg.Security.KeyStorageMode)
+	if err != nil {
+		return err
+	}
+	if resolvedMode != "file" {
+		if err := crypto.RotateProviderKey(keyPath, nil, nil, cfg.Security.KeyStorageMode, cfg.Security.KeyStorageService); err != nil {
+			return err
+		}
+		log.Printf("Provider key rotated in secure storage backend (%s).", resolvedMode)
+		return nil
+	}
+
 	if _, err := os.Stat(keyPath); err != nil {
 		return fmt.Errorf("provider key file not found at %s", keyPath)
 	}
@@ -360,10 +387,6 @@ func rotateProviderKey(keyPath string) error {
 	oldPassword := []byte(strings.TrimSpace(oldPass))
 	if len(oldPassword) == 0 {
 		return fmt.Errorf("old password cannot be empty")
-	}
-
-	if _, err := crypto.LoadAndDecryptKey(keyPath, oldPassword); err != nil {
-		return fmt.Errorf("failed to decrypt existing key with provided password: %w", err)
 	}
 
 	fmt.Print("Enter new password for rotated provider key: ")
@@ -378,21 +401,15 @@ func rotateProviderKey(keyPath string) error {
 		return fmt.Errorf("new passwords do not match")
 	}
 
-	backupPath := fmt.Sprintf("%s.bak-%s", keyPath, time.Now().UTC().Format("20060102-150405"))
-	if err := os.Rename(keyPath, backupPath); err != nil {
-		return fmt.Errorf("failed to create backup before rotation: %w", err)
+	if err := crypto.RotateProviderKey(keyPath, oldPassword, []byte(newPassword), cfg.Security.KeyStorageMode, cfg.Security.KeyStorageService); err != nil {
+		return err
 	}
 
-	if _, err := crypto.GenerateAndEncryptKey(keyPath, []byte(newPassword)); err != nil {
-		_ = os.Rename(backupPath, keyPath)
-		return fmt.Errorf("failed to write new rotated key (restored backup): %w", err)
+	absKey := keyPath
+	if a, err := filepath.Abs(keyPath); err == nil {
+		absKey = a
 	}
-
-	absBackup := backupPath
-	if a, err := filepath.Abs(backupPath); err == nil {
-		absBackup = a
-	}
-	log.Printf("Old provider key backed up to %s", absBackup)
+	log.Printf("Old provider key backed up to timestamped file near %s", absKey)
 	return nil
 }
 
@@ -500,7 +517,7 @@ func buildProviderEndpoint(price uint64, announceIP net.IP, announcePort int, pr
 	}
 }
 
-func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainParams *chaincfg.Params, endpoints []*geoip.EnrichedVPNEndpoint, clientCfg *config.ClientConfig, dryRun bool) {
+func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainParams *chaincfg.Params, endpoints []*geoip.EnrichedVPNEndpoint, clientCfg *config.ClientConfig, secCfg *config.SecurityConfig, dryRun bool) {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter the number of the provider to connect to (or press Enter to quit): ")
 	input, _ := reader.ReadString('\n')
@@ -559,7 +576,7 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 	if dryRun {
 		fmt.Printf("[Dry Run] Simulation: Would create TUN interface %s and connect to %s.\n", clientCfg.InterfaceName, endpointAddr)
 	} else {
-		err := tunnel.ConnectToProvider(ctx, clientCfg, localKey, peerPubKey, endpointAddr)
+		err := tunnel.ConnectToProvider(ctx, clientCfg, secCfg, localKey, peerPubKey, endpointAddr)
 		select {
 		case <-ctx.Done():
 			log.Println("Disconnecting...")
@@ -800,6 +817,16 @@ func getConfigField(cfg *config.Config, key string) (any, error) {
 		return cfg.Client.MetricsListenAddr, nil
 	case "logging.format":
 		return cfg.Logging.Format, nil
+	case "security.key_storage_mode":
+		return cfg.Security.KeyStorageMode, nil
+	case "security.key_storage_service":
+		return cfg.Security.KeyStorageService, nil
+	case "security.revocation_cache_file":
+		return cfg.Security.RevocationCacheFile, nil
+	case "security.tls_min_version":
+		return cfg.Security.TLSMinVersion, nil
+	case "security.tls_profile":
+		return cfg.Security.TLSProfile, nil
 	default:
 		return nil, fmt.Errorf("unknown key %q", key)
 	}
@@ -899,6 +926,16 @@ func setConfigField(cfg *config.Config, key string, value string) error {
 		cfg.Client.MetricsListenAddr = value
 	case "logging.format":
 		cfg.Logging.Format = value
+	case "security.key_storage_mode":
+		cfg.Security.KeyStorageMode = value
+	case "security.key_storage_service":
+		cfg.Security.KeyStorageService = value
+	case "security.revocation_cache_file":
+		cfg.Security.RevocationCacheFile = value
+	case "security.tls_min_version":
+		cfg.Security.TLSMinVersion = value
+	case "security.tls_profile":
+		cfg.Security.TLSProfile = value
 	default:
 		return fmt.Errorf("unknown key %q", key)
 	}
@@ -917,6 +954,27 @@ func saveConfigFile(path string, cfg *config.Config) error {
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	return enc.Encode(cfg)
+}
+
+func applyConfigDefaults(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	if strings.TrimSpace(cfg.Logging.Format) == "" {
+		cfg.Logging.Format = "text"
+	}
+	if strings.TrimSpace(cfg.Security.KeyStorageMode) == "" {
+		cfg.Security.KeyStorageMode = "file"
+	}
+	if strings.TrimSpace(cfg.Security.KeyStorageService) == "" {
+		cfg.Security.KeyStorageService = "BlockchainVPN"
+	}
+	if strings.TrimSpace(cfg.Security.TLSMinVersion) == "" {
+		cfg.Security.TLSMinVersion = "1.3"
+	}
+	if strings.TrimSpace(cfg.Security.TLSProfile) == "" {
+		cfg.Security.TLSProfile = "modern"
+	}
 }
 
 type fileStatus struct {
@@ -945,6 +1003,15 @@ type statusOutput struct {
 	Logging struct {
 		Format string `json:"format"`
 	} `json:"logging"`
+	Security struct {
+		KeyStorageMode      string   `json:"key_storage_mode"`
+		KeyStorageSupported bool     `json:"key_storage_supported"`
+		KeyStorageService   string   `json:"key_storage_service"`
+		RevocationCacheFile string   `json:"revocation_cache_file"`
+		TLSMinVersion       string   `json:"tls_min_version"`
+		TLSProfile          string   `json:"tls_profile"`
+		TLSCipherProfile    []string `json:"tls_cipher_profile"`
+	} `json:"security"`
 	Provider struct {
 		InterfaceName        string `json:"interface_name"`
 		ListenPort           int    `json:"listen_port"`
@@ -1005,6 +1072,19 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	status.RPC.User = cfg.RPC.User
 	status.RPC.PassConfigured = strings.TrimSpace(cfg.RPC.Pass) != ""
 	status.Logging.Format = cfg.Logging.Format
+	status.Security.KeyStorageMode = cfg.Security.KeyStorageMode
+	status.Security.KeyStorageSupported = crypto.SupportsKeyStorageMode(cfg.Security.KeyStorageMode)
+	status.Security.KeyStorageService = cfg.Security.KeyStorageService
+	status.Security.RevocationCacheFile = cfg.Security.RevocationCacheFile
+	status.Security.TLSMinVersion = cfg.Security.TLSMinVersion
+	status.Security.TLSProfile = cfg.Security.TLSProfile
+	if tlsPolicy, err := tunnel.ResolveTLSPolicy(cfg.Security.TLSMinVersion, cfg.Security.TLSProfile); err == nil {
+		status.Security.TLSMinVersion = tlsPolicy.MinVersionLabel
+		status.Security.TLSProfile = tlsPolicy.Profile
+		status.Security.TLSCipherProfile = tlsPolicy.CipherNames
+	} else {
+		status.Warnings = append(status.Warnings, fmt.Sprintf("invalid TLS policy config: %v", err))
+	}
 
 	status.Provider.InterfaceName = cfg.Provider.InterfaceName
 	status.Provider.ListenPort = cfg.Provider.ListenPort
@@ -1041,8 +1121,11 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 		}
 	}
 
-	if !status.Files.ProviderKey.Exists {
+	if !status.Files.ProviderKey.Exists && strings.EqualFold(status.Security.KeyStorageMode, "file") {
 		status.Warnings = append(status.Warnings, "provider key file does not exist; provider mode will generate a new encrypted key on first start")
+	}
+	if !status.Security.KeyStorageSupported {
+		status.Warnings = append(status.Warnings, "selected key storage mode is not supported on this platform/runtime")
 	}
 	if strings.TrimSpace(cfg.Provider.AnnounceIP) == "" {
 		status.Warnings = append(status.Warnings, "provider announce_ip is empty; public IP will be auto-detected at runtime")
@@ -1090,6 +1173,15 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	fmt.Println("Logging")
 	fmt.Println(strings.Repeat("-", 20))
 	fmt.Printf("Format: %s\n", status.Logging.Format)
+	fmt.Println()
+	fmt.Println("Security")
+	fmt.Println(strings.Repeat("-", 20))
+	fmt.Printf("Key Storage Mode: %s (supported=%t)\n", status.Security.KeyStorageMode, status.Security.KeyStorageSupported)
+	fmt.Printf("Key Storage Service: %s\n", status.Security.KeyStorageService)
+	fmt.Printf("Revocation Cache File: %s\n", status.Security.RevocationCacheFile)
+	fmt.Printf("TLS Min Version: %s\n", status.Security.TLSMinVersion)
+	fmt.Printf("TLS Profile: %s\n", status.Security.TLSProfile)
+	fmt.Printf("TLS Cipher Profile: %s\n", strings.Join(status.Security.TLSCipherProfile, ", "))
 	fmt.Println()
 
 	fmt.Println("Provider")

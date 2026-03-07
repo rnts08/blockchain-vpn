@@ -19,11 +19,15 @@ func TestTLSHandshakeWithOnChainIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	serverTLS, err := GenerateServerTLSConfig(serverKey, time.Hour)
+	policy, err := ResolveTLSPolicy("", "")
+	if err != nil {
+		t.Fatalf("resolve tls policy: %v", err)
+	}
+	serverTLS, err := GenerateServerTLSConfig(serverKey, time.Hour, policy)
 	if err != nil {
 		t.Fatalf("server TLS config: %v", err)
 	}
-	clientTLS, err := GenerateClientTLSConfig(clientKey, serverKey.PubKey())
+	clientTLS, err := GenerateClientTLSConfig(clientKey, serverKey.PubKey(), policy)
 	if err != nil {
 		t.Fatalf("client TLS config: %v", err)
 	}
@@ -53,11 +57,15 @@ func TestTLSHandshakeRejectsWrongServerIdentity(t *testing.T) {
 	clientKey, _ := btcec.NewPrivateKey()
 	wrongExpectedKey, _ := btcec.NewPrivateKey()
 
-	serverTLS, err := GenerateServerTLSConfig(serverKey, time.Hour)
+	policy, err := ResolveTLSPolicy("", "")
+	if err != nil {
+		t.Fatalf("resolve tls policy: %v", err)
+	}
+	serverTLS, err := GenerateServerTLSConfig(serverKey, time.Hour, policy)
 	if err != nil {
 		t.Fatalf("server TLS config: %v", err)
 	}
-	clientTLS, err := GenerateClientTLSConfig(clientKey, wrongExpectedKey.PubKey())
+	clientTLS, err := GenerateClientTLSConfig(clientKey, wrongExpectedKey.PubKey(), policy)
 	if err != nil {
 		t.Fatalf("client TLS config: %v", err)
 	}

@@ -81,20 +81,25 @@ func certToBTCECPubKey(cert *x509.Certificate) (*btcec.PublicKey, error) {
 	return btcec.ParsePubKey(compressed)
 }
 
-func GenerateServerTLSConfig(privKey *btcec.PrivateKey, lifetime time.Duration) (*tls.Config, error) {
+func GenerateServerTLSConfig(privKey *btcec.PrivateKey, lifetime time.Duration, policy TLSPolicy) (*tls.Config, error) {
 	cert, err := generateSelfSignedCert(privKey, lifetime)
 	if err != nil {
 		return nil, err
+	}
+	minVer := policy.MinVersion
+	if minVer == 0 {
+		minVer = tls.VersionTLS13
 	}
 
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		ClientAuth:   tls.RequireAnyClientCert,
-		MinVersion:   tls.VersionTLS13,
+		MinVersion:   minVer,
+		CipherSuites: policy.CipherSuites,
 	}, nil
 }
 
-func GenerateClientTLSConfig(privKey *btcec.PrivateKey, expectedServerKey *btcec.PublicKey) (*tls.Config, error) {
+func GenerateClientTLSConfig(privKey *btcec.PrivateKey, expectedServerKey *btcec.PublicKey, policy TLSPolicy) (*tls.Config, error) {
 	cert, err := generateSelfSignedCert(privKey, defaultCertLifetime)
 	if err != nil {
 		return nil, err
@@ -104,10 +109,15 @@ func GenerateClientTLSConfig(privKey *btcec.PrivateKey, expectedServerKey *btcec
 	}
 
 	expected := expectedServerKey.SerializeCompressed()
+	minVer := policy.MinVersion
+	if minVer == 0 {
+		minVer = tls.VersionTLS13
+	}
 
 	return &tls.Config{
 		Certificates:       []tls.Certificate{cert},
-		MinVersion:         tls.VersionTLS13,
+		MinVersion:         minVer,
+		CipherSuites:       policy.CipherSuites,
 		InsecureSkipVerify: true,
 		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {

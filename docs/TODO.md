@@ -18,9 +18,9 @@
 - [x] Add persistent crash-safe cleanup markers to restore route/DNS state after abnormal termination.
 
 ## 4. Security Hardening
-- [ ] Add optional hardware-backed key storage integration where available (Keychain/DPAPI/libsecret).
-- [ ] Add mutual TLS certificate revocation cache to immediately drop revoked clients.
-- [ ] Add configurable minimum TLS policy and cipher/profile reporting in `status --json`.
+- [x] Add optional hardware-backed key storage integration where available (Keychain/DPAPI/libsecret).
+- [x] Add mutual TLS certificate revocation cache to immediately drop revoked clients.
+- [x] Add configurable minimum TLS policy and cipher/profile reporting in `status --json`.
 
 ## 5. Product and Documentation
 - [x] Add complete user guide with end-to-end flows for provider and client modes.

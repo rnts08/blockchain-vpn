@@ -11,7 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 )
 
-func buildRotatingServerTLSConfig(ctx context.Context, privKey *btcec.PrivateKey, lifetime, rotateBefore time.Duration) (*tls.Config, error) {
+func buildRotatingServerTLSConfig(ctx context.Context, privKey *btcec.PrivateKey, lifetime, rotateBefore time.Duration, policy TLSPolicy) (*tls.Config, error) {
 	if lifetime <= 0 {
 		lifetime = defaultCertLifetime
 	}
@@ -46,9 +46,15 @@ func buildRotatingServerTLSConfig(ctx context.Context, privKey *btcec.PrivateKey
 		}
 	}()
 
+	minVer := policy.MinVersion
+	if minVer == 0 {
+		minVer = tls.VersionTLS13
+	}
+
 	return &tls.Config{
-		ClientAuth: tls.RequireAnyClientCert,
-		MinVersion: tls.VersionTLS13,
+		ClientAuth:   tls.RequireAnyClientCert,
+		MinVersion:   minVer,
+		CipherSuites: policy.CipherSuites,
 		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 			c := current.Load()
 			if c == nil {

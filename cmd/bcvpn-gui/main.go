@@ -269,14 +269,16 @@ func buildSetupWizard(w fyne.Window, s *guiState) fyne.CanvasObject {
 	keyPassword.SetPlaceHolder("Provider key password")
 	keyBtn := widget.NewButton("3) Create/Unlock Provider Key", func() {
 		pass := strings.TrimSpace(keyPassword.Text)
-		if pass == "" {
+		s.mu.Lock()
+		cfgCopy := s.cfg
+		keyPath := cfgCopy.Provider.PrivateKeyFile
+		fileMode := requiresPasswordForKeyStorage(cfgCopy.Security.KeyStorageMode)
+		s.mu.Unlock()
+		if fileMode && pass == "" {
 			dialog.ShowInformation("Password required", "Enter provider key password to create/unlock key.", w)
 			return
 		}
-		s.mu.Lock()
-		keyPath := s.cfg.Provider.PrivateKeyFile
-		s.mu.Unlock()
-		if _, err := getOrCreateProviderKey(keyPath, pass); err != nil {
+		if _, err := getOrCreateProviderKey(cfgCopy, keyPath, pass); err != nil {
 			dialog.ShowError(err, w)
 			appendStatus("[FAIL] Provider key setup failed: " + err.Error())
 			return
@@ -403,7 +405,7 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	metricsAddrEntry := widget.NewEntry()
 	metricsAddrEntry.SetText(s.cfg.Provider.MetricsListenAddr)
 	passwordEntry := widget.NewPasswordEntry()
-	passwordEntry.SetPlaceHolder("Provider key password")
+	passwordEntry.SetPlaceHolder("Provider key password (file mode only)")
 
 	statusLabel := widget.NewLabel("Status: stopped")
 
@@ -486,7 +488,7 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 
 	startBtn := widget.NewButton("Start Provider", func() {
 		pass := strings.TrimSpace(passwordEntry.Text)
-		if pass == "" {
+		if requiresPasswordForKeyStorage(s.cfg.Security.KeyStorageMode) && pass == "" {
 			dialog.ShowInformation("Password required", "Enter provider key password to start provider.", w)
 			return
 		}
@@ -504,11 +506,11 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 
 	rotateKeyBtn := widget.NewButton("Rotate Provider Key", func() {
 		pass := strings.TrimSpace(passwordEntry.Text)
-		if pass == "" {
+		if requiresPasswordForKeyStorage(s.cfg.Security.KeyStorageMode) && pass == "" {
 			dialog.ShowInformation("Password required", "Enter current provider key password.", w)
 			return
 		}
-		if err := rotateProviderKeyGUI(s.cfg.Provider.PrivateKeyFile, pass); err != nil {
+		if err := rotateProviderKeyGUI(s.cfg, s.cfg.Provider.PrivateKeyFile, pass); err != nil {
 			dialog.ShowError(err, w)
 			return
 		}
@@ -693,6 +695,28 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	rpcUser.SetText(s.cfg.RPC.User)
 	rpcPass := widget.NewPasswordEntry()
 	rpcPass.SetText(s.cfg.RPC.Pass)
+	keyStorageMode := widget.NewSelect([]string{"file", "auto", "keychain", "libsecret", "dpapi"}, nil)
+	if strings.TrimSpace(s.cfg.Security.KeyStorageMode) == "" {
+		keyStorageMode.SetSelected("file")
+	} else {
+		keyStorageMode.SetSelected(s.cfg.Security.KeyStorageMode)
+	}
+	keyStorageService := widget.NewEntry()
+	keyStorageService.SetText(s.cfg.Security.KeyStorageService)
+	revocationFile := widget.NewEntry()
+	revocationFile.SetText(s.cfg.Security.RevocationCacheFile)
+	tlsMinVersion := widget.NewSelect([]string{"1.3", "1.2"}, nil)
+	if strings.TrimSpace(s.cfg.Security.TLSMinVersion) == "" {
+		tlsMinVersion.SetSelected("1.3")
+	} else {
+		tlsMinVersion.SetSelected(s.cfg.Security.TLSMinVersion)
+	}
+	tlsProfile := widget.NewSelect([]string{"modern", "compat"}, nil)
+	if strings.TrimSpace(s.cfg.Security.TLSProfile) == "" {
+		tlsProfile.SetSelected("modern")
+	} else {
+		tlsProfile.SetSelected(s.cfg.Security.TLSProfile)
+	}
 	logFormat := widget.NewSelect([]string{"text", "json"}, nil)
 	if strings.TrimSpace(s.cfg.Logging.Format) == "" {
 		logFormat.SetSelected("text")
@@ -708,6 +732,11 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.RPC.Host = strings.TrimSpace(rpcHost.Text)
 		s.cfg.RPC.User = strings.TrimSpace(rpcUser.Text)
 		s.cfg.RPC.Pass = strings.TrimSpace(rpcPass.Text)
+		s.cfg.Security.KeyStorageMode = strings.TrimSpace(keyStorageMode.Selected)
+		s.cfg.Security.KeyStorageService = strings.TrimSpace(keyStorageService.Text)
+		s.cfg.Security.RevocationCacheFile = strings.TrimSpace(revocationFile.Text)
+		s.cfg.Security.TLSMinVersion = strings.TrimSpace(tlsMinVersion.Selected)
+		s.cfg.Security.TLSProfile = strings.TrimSpace(tlsProfile.Selected)
 		s.cfg.Logging.Format = strings.TrimSpace(logFormat.Selected)
 		if err := config.Validate(s.cfg); err != nil {
 			s.mu.Unlock()
@@ -749,6 +778,11 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewFormItem("RPC Host", rpcHost),
 		widget.NewFormItem("RPC User", rpcUser),
 		widget.NewFormItem("RPC Pass", rpcPass),
+		widget.NewFormItem("Key Storage Mode", keyStorageMode),
+		widget.NewFormItem("Key Storage Service", keyStorageService),
+		widget.NewFormItem("Revocation Cache File", revocationFile),
+		widget.NewFormItem("TLS Min Version", tlsMinVersion),
+		widget.NewFormItem("TLS Profile", tlsProfile),
 		widget.NewFormItem("Log Format", logFormat),
 	)
 	buttons := container.NewGridWithColumns(3, saveBtn, validateBtn, defaultsBtn)
@@ -769,6 +803,18 @@ func applyDefaultConfigValues(cfg *config.Config) {
 	}
 	if strings.TrimSpace(cfg.Logging.Format) == "" {
 		cfg.Logging.Format = "text"
+	}
+	if strings.TrimSpace(cfg.Security.KeyStorageMode) == "" {
+		cfg.Security.KeyStorageMode = "file"
+	}
+	if strings.TrimSpace(cfg.Security.KeyStorageService) == "" {
+		cfg.Security.KeyStorageService = "BlockchainVPN"
+	}
+	if strings.TrimSpace(cfg.Security.TLSMinVersion) == "" {
+		cfg.Security.TLSMinVersion = "1.3"
+	}
+	if strings.TrimSpace(cfg.Security.TLSProfile) == "" {
+		cfg.Security.TLSProfile = "modern"
 	}
 	if strings.TrimSpace(cfg.Provider.InterfaceName) == "" {
 		cfg.Provider.InterfaceName = "bcvpn0"
@@ -871,7 +917,7 @@ func (s *guiState) startProvider(password string) error {
 	client := connectRPC(s.cfg.RPC.Host, s.cfg.RPC.User, s.cfg.RPC.Pass)
 	authManager := auth.NewAuthManager()
 
-	providerKey, err := getOrCreateProviderKey(s.cfg.Provider.PrivateKeyFile, password)
+	providerKey, err := getOrCreateProviderKey(s.cfg, s.cfg.Provider.PrivateKeyFile, password)
 	if err != nil {
 		client.Shutdown()
 		return err
@@ -924,7 +970,7 @@ func (s *guiState) startProvider(password string) error {
 
 		go blockchain.MonitorPayments(ctx, client, authManager, s.cfg.Provider.Price)
 		go blockchain.StartEchoServer(ctx, s.cfg.Provider.ListenPort)
-		tunnel.StartProviderServer(ctx, &s.cfg.Provider, providerKey, authManager)
+		tunnel.StartProviderServer(ctx, &s.cfg.Provider, &s.cfg.Security, providerKey, authManager)
 	}()
 	return nil
 }
@@ -1015,7 +1061,7 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 		s.appendLog("Dry-run connect completed.")
 		return nil
 	}
-	return tunnel.ConnectToProvider(context.Background(), &s.cfg.Client, localKey, selected.Endpoint.PublicKey, endpointAddr)
+	return tunnel.ConnectToProvider(context.Background(), &s.cfg.Client, &s.cfg.Security, localKey, selected.Endpoint.PublicKey, endpointAddr)
 }
 
 func saveConfig(path string, cfg *config.Config) error {
@@ -1047,29 +1093,26 @@ func connectRPC(host, user, pass string) *rpcclient.Client {
 	return client
 }
 
-func getOrCreateProviderKey(keyPath, password string) (*btcec.PrivateKey, error) {
-	if _, err := os.Stat(keyPath); err == nil {
-		return crypto.LoadAndDecryptKey(keyPath, []byte(password))
-	}
-	return crypto.GenerateAndEncryptKey(keyPath, []byte(password))
+func getOrCreateProviderKey(cfg *config.Config, keyPath, password string) (*btcec.PrivateKey, error) {
+	return crypto.LoadOrCreateProviderKey(keyPath, []byte(password), cfg.Security.KeyStorageMode, cfg.Security.KeyStorageService)
 }
 
-func rotateProviderKeyGUI(keyPath, currentPassword string) error {
-	if _, err := os.Stat(keyPath); err != nil {
-		return err
+func rotateProviderKeyGUI(cfg *config.Config, keyPath, currentPassword string) error {
+	return crypto.RotateProviderKey(
+		keyPath,
+		[]byte(currentPassword),
+		[]byte(currentPassword),
+		cfg.Security.KeyStorageMode,
+		cfg.Security.KeyStorageService,
+	)
+}
+
+func requiresPasswordForKeyStorage(mode string) bool {
+	resolved, err := crypto.ResolveKeyStorageMode(mode)
+	if err != nil {
+		return true
 	}
-	if _, err := crypto.LoadAndDecryptKey(keyPath, []byte(currentPassword)); err != nil {
-		return fmt.Errorf("current password invalid: %w", err)
-	}
-	backup := keyPath + ".bak-" + time.Now().UTC().Format("20060102-150405")
-	if err := os.Rename(keyPath, backup); err != nil {
-		return err
-	}
-	if _, err := crypto.GenerateAndEncryptKey(keyPath, []byte(currentPassword)); err != nil {
-		_ = os.Rename(backup, keyPath)
-		return err
-	}
-	return nil
+	return resolved == "file"
 }
 
 func determineAnnounceDetails(ctx context.Context, cfg *config.ProviderConfig) (net.IP, int, func(), error) {

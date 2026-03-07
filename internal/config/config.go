@@ -13,6 +13,7 @@ type Config struct {
 	Provider ProviderConfig `json:"provider"`
 	Client   ClientConfig   `json:"client"`
 	Logging  LoggingConfig  `json:"logging"`
+	Security SecurityConfig `json:"security"`
 }
 
 type RPCConfig struct {
@@ -23,6 +24,14 @@ type RPCConfig struct {
 
 type LoggingConfig struct {
 	Format string `json:"format"` // "text" or "json"
+}
+
+type SecurityConfig struct {
+	KeyStorageMode      string `json:"key_storage_mode"`      // "file", "keychain", "libsecret", "dpapi", or "auto"
+	KeyStorageService   string `json:"key_storage_service"`   // service/namespace for secure store records
+	RevocationCacheFile string `json:"revocation_cache_file"` // optional file containing revoked pubkeys (hex, one per line)
+	TLSMinVersion       string `json:"tls_min_version"`       // "1.2" or "1.3"
+	TLSProfile          string `json:"tls_profile"`           // "modern" or "compat"
 }
 
 type ProviderConfig struct {
@@ -149,6 +158,13 @@ func GenerateDefaultConfig(path string) error {
 		},
 		Logging: LoggingConfig{
 			Format: "text",
+		},
+		Security: SecurityConfig{
+			KeyStorageMode:      "file",
+			KeyStorageService:   "BlockchainVPN",
+			RevocationCacheFile: "",
+			TLSMinVersion:       "1.3",
+			TLSProfile:          "modern",
 		},
 		Provider: ProviderConfig{
 			InterfaceName:            "bcvpn0",

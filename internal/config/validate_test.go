@@ -52,6 +52,11 @@ func TestValidateInvalidConfig(t *testing.T) {
 			TunIP:         "bad-ip",
 			TunSubnet:     "33",
 		},
+		Security: SecurityConfig{
+			KeyStorageMode: "bad-mode",
+			TLSMinVersion:  "1.0",
+			TLSProfile:     "legacy",
+		},
 	}
 
 	if err := Validate(cfg); err == nil {

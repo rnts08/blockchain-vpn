@@ -73,6 +73,22 @@ func Validate(cfg *Config) error {
 		errs = append(errs, fmt.Errorf("logging.format must be one of: text, json"))
 	}
 
+	switch strings.ToLower(strings.TrimSpace(cfg.Security.KeyStorageMode)) {
+	case "", "file", "auto", "keychain", "libsecret", "dpapi":
+	default:
+		errs = append(errs, fmt.Errorf("security.key_storage_mode must be one of: file, auto, keychain, libsecret, dpapi"))
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Security.TLSMinVersion)) {
+	case "", "1.2", "1.3":
+	default:
+		errs = append(errs, fmt.Errorf("security.tls_min_version must be one of: 1.2, 1.3"))
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Security.TLSProfile)) {
+	case "", "modern", "compat":
+	default:
+		errs = append(errs, fmt.Errorf("security.tls_profile must be one of: modern, compat"))
+	}
+
 	return errors.Join(errs...)
 }
 
