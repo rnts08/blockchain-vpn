@@ -744,9 +744,13 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		}()
 	})
 	disconnectBtn := widget.NewButton("Disconnect All", func() {
-		go func() {
-			s.stopClientConns()
-		}()
+		dialog.ShowConfirm("Disconnect All", "Are you sure you want to disconnect all active VPN sessions?", func(confirmed bool) {
+			if confirmed {
+				go func() {
+					s.stopClientConns()
+				}()
+			}
+		}, w)
 	})
 	saveClientBtn := widget.NewButton("Save Client Settings", func() {
 		s.mu.Lock()

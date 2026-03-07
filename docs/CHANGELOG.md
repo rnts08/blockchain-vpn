@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
  
+## [0.4.7] - 2026-03-07
+
+### GUI/UX Improvements
+- **Item 5.4 Confirmation Dialogs**: Added confirmation dialog to "Disconnect All" in client mode to prevent accidental disconnection.
+
 ## [0.4.6] - 2026-03-07
 
 ### GUI/UX Improvements
