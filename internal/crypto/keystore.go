@@ -15,7 +15,17 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 )
 
-var errKeyNotFound = errors.New("provider key not found")
+var (
+	errKeyNotFound = errors.New("provider key not found")
+	currentGOOS    = runtime.GOOS
+	runCommand     = func(name string, stdin string, args ...string) ([]byte, error) {
+		cmd := exec.Command(name, args...)
+		if stdin != "" {
+			cmd.Stdin = strings.NewReader(stdin)
+		}
+		return cmd.CombinedOutput()
+	}
+)
 
 func ResolveKeyStorageMode(mode string) (string, error) {
 	m := strings.ToLower(strings.TrimSpace(mode))
@@ -23,7 +33,7 @@ func ResolveKeyStorageMode(mode string) (string, error) {
 		return "file", nil
 	}
 	if m == "auto" {
-		switch runtime.GOOS {
+		switch currentGOOS {
 		case "darwin":
 			if commandExists("security") {
 				return "keychain", nil
@@ -57,11 +67,11 @@ func SupportsKeyStorageMode(mode string) bool {
 	}
 	switch m {
 	case "keychain":
-		return runtime.GOOS == "darwin" && commandExists("security")
+		return currentGOOS == "darwin" && commandExists("security")
 	case "libsecret":
-		return runtime.GOOS == "linux" && commandExists("secret-tool")
+		return currentGOOS == "linux" && commandExists("secret-tool")
 	case "dpapi":
-		return runtime.GOOS == "windows" && (commandExists("powershell") || commandExists("pwsh"))
+		return currentGOOS == "windows" && (commandExists("powershell") || commandExists("pwsh"))
 	default:
 		return false
 	}
@@ -261,7 +271,7 @@ func commandExists(name string) bool {
 }
 
 func loadSecretKeychain(service, account string) (string, error) {
-	out, err := exec.Command("security", "find-generic-password", "-s", service, "-a", account, "-w").CombinedOutput()
+	out, err := runCommand("security", "", "find-generic-password", "-s", service, "-a", account, "-w")
 	if err != nil {
 		msg := strings.ToLower(string(out))
 		if strings.Contains(msg, "could not be found") {
@@ -273,7 +283,7 @@ func loadSecretKeychain(service, account string) (string, error) {
 }
 
 func saveSecretKeychain(service, account, secret string) error {
-	out, err := exec.Command("security", "add-generic-password", "-U", "-s", service, "-a", account, "-w", secret).CombinedOutput()
+	out, err := runCommand("security", "", "add-generic-password", "-U", "-s", service, "-a", account, "-w", secret)
 	if err != nil {
 		return fmt.Errorf("keychain store failed: %s", strings.TrimSpace(string(out)))
 	}
@@ -281,7 +291,7 @@ func saveSecretKeychain(service, account, secret string) error {
 }
 
 func loadSecretLibsecret(service, account string) (string, error) {
-	out, err := exec.Command("secret-tool", "lookup", "service", service, "account", account).CombinedOutput()
+	out, err := runCommand("secret-tool", "", "lookup", "service", service, "account", account)
 	if err != nil {
 		return "", fmt.Errorf("libsecret lookup failed: %s", strings.TrimSpace(string(out)))
 	}
@@ -293,9 +303,7 @@ func loadSecretLibsecret(service, account string) (string, error) {
 }
 
 func saveSecretLibsecret(service, account, secret string) error {
-	cmd := exec.Command("secret-tool", "store", "--label=BlockchainVPN Provider Key", "service", service, "account", account)
-	cmd.Stdin = strings.NewReader(secret)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand("secret-tool", secret, "store", "--label=BlockchainVPN Provider Key", "service", service, "account", account)
 	if err != nil {
 		return fmt.Errorf("libsecret store failed: %s", strings.TrimSpace(string(out)))
 	}
@@ -350,6 +358,8 @@ func pickPowerShell() (string, error) {
 }
 
 func runPowerShell(bin, script string, env map[string]string) (string, error) {
+	// For PowerShell we use environment variables for the secret/blob to avoid command line leaking.
+	// We'll keep the direct exec.Command for PowerShell because it needs custom Env.
 	cmd := exec.Command(bin, "-NoProfile", "-NonInteractive", "-Command", script)
 	cmd.Env = append([]string{}, os.Environ()...)
 	for k, v := range env {
