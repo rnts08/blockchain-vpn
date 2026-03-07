@@ -182,7 +182,8 @@ Sample `config.json`:
   "client": {
     "interface_name": "bcvpn1",
     "tun_ip": "10.10.0.2",
-    "tun_subnet": "24"
+    "tun_subnet": "24",
+    "enable_kill_switch": false
   }
 }
 ```
@@ -242,6 +243,7 @@ To start selling bandwidth:
     ```bash
     ./bcvpn config get provider.listen_port
     ./bcvpn config set provider.listen_port 51820
+    ./bcvpn config set client.enable_kill_switch true
     ./bcvpn config validate
     ```
 
@@ -273,6 +275,7 @@ To adapt this for another chain:
 - [x] NAT traversal support for providers (UPnP + NAT-PMP).
 - [x] Provider egress NAT backend on Linux, macOS, and Windows.
 - [x] Client routing and DNS auto-configuration for Linux, macOS, and Windows.
+- [x] Optional cross-platform client kill switch mode.
 - [x] RPC retry + exponential backoff for transient failures.
 - [x] Payment history storage and reporting.
 - [x] Machine-readable status output for automation (`bcvpn status --json`).
@@ -301,7 +304,7 @@ To adapt this for another chain:
 ### Gaps and Improvements
 
 - [ ] Expand Settings tab coverage to include all provider/client fields in one place.
-- [ ] Cross-platform kill switch and route/DNS restore stress tests.
+- [ ] Add route/DNS restore stress tests across supported OS backends.
 
 See [docs/TODO.md](docs/TODO.md) for prioritized next steps.
 

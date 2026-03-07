@@ -552,6 +552,8 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	clientTunIPEntry.SetText(s.cfg.Client.TunIP)
 	clientTunSubnetEntry := widget.NewEntry()
 	clientTunSubnetEntry.SetText(s.cfg.Client.TunSubnet)
+	clientKillSwitch := widget.NewCheck("Enable Kill Switch", nil)
+	clientKillSwitch.SetChecked(s.cfg.Client.EnableKillSwitch)
 	dryRun := widget.NewCheck("Dry run (no payment, no interface changes)", nil)
 
 	results := widget.NewList(
@@ -613,6 +615,7 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.Client.InterfaceName = strings.TrimSpace(clientIfaceEntry.Text)
 		s.cfg.Client.TunIP = strings.TrimSpace(clientTunIPEntry.Text)
 		s.cfg.Client.TunSubnet = strings.TrimSpace(clientTunSubnetEntry.Text)
+		s.cfg.Client.EnableKillSwitch = clientKillSwitch.Checked
 		if err := saveConfig(s.cfgPath, s.cfg); err != nil {
 			dialog.ShowError(err, w)
 			return
@@ -635,7 +638,7 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewLabel("Subnet"),
 		clientTunSubnetEntry,
 	)
-	actionRow := container.NewGridWithColumns(4, scanBtn, connectBtn, saveClientBtn, dryRun)
+	actionRow := container.NewGridWithColumns(5, scanBtn, connectBtn, saveClientBtn, clientKillSwitch, dryRun)
 
 	return container.NewPadded(container.NewVBox(
 		title,
@@ -650,6 +653,7 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 	configPath := widget.NewLabel("Config Path: " + s.cfgPath)
 	providerIface := widget.NewLabel("Provider Interface: " + s.cfg.Provider.InterfaceName + " (" + s.cfg.Provider.TunIP + "/" + s.cfg.Provider.TunSubnet + ")")
 	clientIface := widget.NewLabel("Client Interface: " + s.cfg.Client.InterfaceName + " (" + s.cfg.Client.TunIP + "/" + s.cfg.Client.TunSubnet + ")")
+	clientKill := widget.NewLabel(fmt.Sprintf("Client Kill Switch: %t", s.cfg.Client.EnableKillSwitch))
 	privilegeStatus := "Privileges: OK"
 	if err := tunnel.EnsureElevatedPrivileges(); err != nil {
 		privilegeStatus = "Privileges: " + err.Error()
@@ -658,7 +662,7 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 
 	return container.NewPadded(container.NewVBox(
 		title,
-		widget.NewCard("Interfaces", "Current tunnel interface settings", container.NewVBox(configPath, providerIface, clientIface, privLabel)),
+		widget.NewCard("Interfaces", "Current tunnel interface settings", container.NewVBox(configPath, providerIface, clientIface, clientKill, privLabel)),
 		buildLogPanel(s),
 	))
 }

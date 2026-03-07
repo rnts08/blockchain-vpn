@@ -106,6 +106,7 @@ Run in an elevated terminal ("Run as Administrator"):
 - Provider UDP echo server uses the same configured listen port.
 - If behind a home router, enable `provider.enable_nat` to use UPnP/NAT-PMP mapping.
 - If running provider egress NAT, set `provider.enable_egress_nat=true` and configure `provider.nat_outbound_interface`.
+- To enforce client traffic blocking outside the tunnel during a session, set `client.enable_kill_switch=true`.
 
 ## 5. Click-and-Run Behavior
 

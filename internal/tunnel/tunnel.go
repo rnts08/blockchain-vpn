@@ -343,6 +343,17 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, localPrivK
 		defer cleanupNetwork()
 	}
 
+	if cfg.EnableKillSwitch {
+		cleanupKillSwitch, err := setupKillSwitch(iface.Name(), providerHost)
+		if err != nil {
+			return fmt.Errorf("failed to activate kill switch: %w", err)
+		}
+		if cleanupKillSwitch != nil {
+			defer cleanupKillSwitch()
+		}
+		log.Printf("Kill switch enabled for session on interface %s", iface.Name())
+	}
+
 	log.Printf("Successfully connected to %s. Tunnel is active.", endpoint)
 
 	// Forward packets

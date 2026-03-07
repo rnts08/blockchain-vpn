@@ -11,12 +11,17 @@ When a client connects to a provider, BlockchainVPN automatically:
 3. Adds a direct host route for the provider endpoint outside the tunnel to prevent control-channel loops.
 4. Applies DNS servers for leak-resistant resolution.
 5. Restores previous route and DNS state when the session ends.
+6. Optionally enables kill switch rules/routes to block non-tunnel egress during the session.
 
 Platform backends:
 
 - Linux: `netlink` + `/etc/resolv.conf` backup/restore.
 - macOS: `ifconfig`, `route`, `networksetup`.
 - Windows: `netsh`, `route`, PowerShell DNS APIs.
+- Kill switch backends:
+  - Linux: `iptables` OUTPUT chain gating non-tunnel traffic.
+  - macOS: PF anchor rules (`block drop out quick all` with tunnel/provider exceptions).
+  - Windows: fallback high-metric blocking routes for split default prefixes.
 
 ## 2. Provider Networking (Automatic)
 

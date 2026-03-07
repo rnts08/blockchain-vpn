@@ -9,7 +9,7 @@
 ## 2. Cross-Platform Networking Parity
 - [x] Implement provider egress NAT backend for macOS.
 - [x] Implement provider egress NAT backend for Windows.
-- [ ] Add cross-platform kill switch mode (block outbound traffic if tunnel drops unexpectedly).
+- [x] Add cross-platform kill switch mode (block outbound traffic if tunnel drops unexpectedly).
 - [ ] Add integration tests that verify route and DNS restore logic on each supported OS backend.
 
 ## 3. Reliability and Observability

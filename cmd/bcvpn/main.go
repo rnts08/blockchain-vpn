@@ -785,6 +785,8 @@ func getConfigField(cfg *config.Config, key string) (any, error) {
 		return cfg.Client.TunIP, nil
 	case "client.tun_subnet":
 		return cfg.Client.TunSubnet, nil
+	case "client.enable_kill_switch":
+		return cfg.Client.EnableKillSwitch, nil
 	default:
 		return nil, fmt.Errorf("unknown key %q", key)
 	}
@@ -872,6 +874,12 @@ func setConfigField(cfg *config.Config, key string, value string) error {
 		cfg.Client.TunIP = value
 	case "client.tun_subnet":
 		cfg.Client.TunSubnet = value
+	case "client.enable_kill_switch":
+		v, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.Client.EnableKillSwitch = v
 	default:
 		return fmt.Errorf("unknown key %q", key)
 	}
@@ -931,9 +939,10 @@ type statusOutput struct {
 		TunSubnet            string `json:"tun_subnet"`
 	} `json:"provider"`
 	Client struct {
-		InterfaceName string `json:"interface_name"`
-		TunIP         string `json:"tun_ip"`
-		TunSubnet     string `json:"tun_subnet"`
+		InterfaceName    string `json:"interface_name"`
+		TunIP            string `json:"tun_ip"`
+		TunSubnet        string `json:"tun_subnet"`
+		EnableKillSwitch bool   `json:"enable_kill_switch"`
 	} `json:"client"`
 	History struct {
 		RecordCount int    `json:"record_count"`
@@ -989,6 +998,7 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	status.Client.InterfaceName = cfg.Client.InterfaceName
 	status.Client.TunIP = cfg.Client.TunIP
 	status.Client.TunSubnet = cfg.Client.TunSubnet
+	status.Client.EnableKillSwitch = cfg.Client.EnableKillSwitch
 
 	records, err := history.LoadHistory()
 	if err != nil {
@@ -1070,6 +1080,7 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	fmt.Println(strings.Repeat("-", 20))
 	fmt.Printf("Interface: %s\n", status.Client.InterfaceName)
 	fmt.Printf("TUN: %s/%s\n", status.Client.TunIP, status.Client.TunSubnet)
+	fmt.Printf("Kill Switch: %t\n", status.Client.EnableKillSwitch)
 	fmt.Println()
 
 	fmt.Println("History")

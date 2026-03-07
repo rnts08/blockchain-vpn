@@ -44,9 +44,10 @@ type ProviderConfig struct {
 }
 
 type ClientConfig struct {
-	InterfaceName string `json:"interface_name"`
-	TunIP         string `json:"tun_ip"`
-	TunSubnet     string `json:"tun_subnet"`
+	InterfaceName    string `json:"interface_name"`
+	TunIP            string `json:"tun_ip"`
+	TunSubnet        string `json:"tun_subnet"`
+	EnableKillSwitch bool   `json:"enable_kill_switch"`
 }
 
 const AppConfigDirName = "BlockchainVPN"
@@ -162,9 +163,10 @@ func GenerateDefaultConfig(path string) error {
 			TunSubnet:                "24",
 		},
 		Client: ClientConfig{
-			InterfaceName: "bcvpn1",
-			TunIP:         "10.10.0.2",
-			TunSubnet:     "24",
+			InterfaceName:    "bcvpn1",
+			TunIP:            "10.10.0.2",
+			TunSubnet:        "24",
+			EnableKillSwitch: false,
 		},
 	}
 
