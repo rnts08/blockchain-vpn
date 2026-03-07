@@ -2,6 +2,8 @@
 
 BlockchainVPN is a peer-to-peer VPN marketplace built on top of the OrdexCoin blockchain. It allows anyone to become a VPN provider by announcing their service on-chain, and allows clients to discover, pay for, and connect to these services in a decentralized, permissionless manner.
 
+Current version: `0.1.0`
+
 ## 1. Architecture Overview
 
 The system utilizes the blockchain as an immutable, censorship-resistant bulletin board for service discovery and a settlement layer for payments.
@@ -284,6 +286,13 @@ To start selling bandwidth:
     BCVPN_LOG_FORMAT=json ./bcvpn status --json
     ```
 
+9.  **Version Info**:
+    Print semantic version and build metadata:
+    ```bash
+    ./bcvpn version
+    ./bcvpn version --json
+    ```
+
 ## 5. Using Other Blockchains
 
 While designed for OrdexCoin, this software is compatible with most Bitcoin-derived blockchains (Bitcoin, Litecoin, Dogecoin, etc.) that support `OP_RETURN` and the standard RPC interface.
@@ -361,6 +370,7 @@ See [docs/TODO.md](docs/TODO.md) for prioritized next steps.
 - End-to-end user guide: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
 - Troubleshooting by OS: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 - Packaging and installer guidance: [docs/PACKAGING.md](docs/PACKAGING.md)
+- Versioning policy and release progression: [docs/VERSIONING.md](docs/VERSIONING.md)
 - Engineering roadmap and remaining tasks: [docs/TODO.md](docs/TODO.md)
 
 ## 7. Project File Layout

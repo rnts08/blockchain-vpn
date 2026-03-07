@@ -30,6 +30,7 @@ import (
 	"blockchain-vpn/internal/protocol"
 	"blockchain-vpn/internal/tunnel"
 	"blockchain-vpn/internal/util"
+	"blockchain-vpn/internal/version"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -79,6 +80,7 @@ func main() {
 	rotateKeyCmd := flag.NewFlagSet("rotate-provider-key", flag.ExitOnError)
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
 	configCmd := flag.NewFlagSet("config", flag.ExitOnError)
+	versionCmd := flag.NewFlagSet("version", flag.ExitOnError)
 
 	// Scan specific flags
 	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
@@ -92,9 +94,10 @@ func main() {
 	rotateKeyPath := rotateKeyCmd.String("key-file", "", "Provider private key file to rotate (defaults to provider.private_key_file from config)")
 	statusJSON := statusCmd.Bool("json", false, "Output status in machine-readable JSON format")
 	configJSON := configCmd.Bool("json", false, "Output in machine-readable JSON format")
+	versionJSON := versionCmd.Bool("json", false, "Output version in machine-readable JSON format")
 
 	if len(os.Args) < 2 {
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', or 'config' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', or 'version' subcommands")
 		os.Exit(1)
 	}
 
@@ -303,10 +306,30 @@ func main() {
 	case "config":
 		configCmd.Parse(os.Args[2:])
 		handleConfigSubcommand(configPath, cfg, configCmd.Args(), *configJSON)
+	case "version":
+		versionCmd.Parse(os.Args[2:])
+		handleVersion(*versionJSON)
 
 	default:
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', or 'config' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', or 'version' subcommands")
 		os.Exit(1)
+	}
+}
+
+func handleVersion(jsonMode bool) {
+	if !jsonMode {
+		fmt.Println(version.String())
+		return
+	}
+	payload := map[string]string{
+		"version": version.Version,
+		"commit":  version.GitCommit,
+		"built":   version.BuildDate,
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(payload); err != nil {
+		log.Fatalf("failed to encode version JSON: %v", err)
 	}
 }
 

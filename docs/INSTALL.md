@@ -138,6 +138,8 @@ Use `status` to inspect config/runtime readiness:
 ```bash
 ./bcvpn status
 ./bcvpn status --json
+./bcvpn version
+./bcvpn version --json
 ```
 
 `--json` output is intended for automation and CI checks.

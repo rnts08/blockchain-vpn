@@ -26,6 +26,7 @@ import (
 	"blockchain-vpn/internal/protocol"
 	"blockchain-vpn/internal/tunnel"
 	"blockchain-vpn/internal/util"
+	"blockchain-vpn/internal/version"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -110,7 +111,7 @@ func main() {
 	a := app.NewWithID("com.blockchainvpn.gui")
 	a.Settings().SetTheme(&guiTheme{})
 
-	w := a.NewWindow("BlockchainVPN")
+	w := a.NewWindow(fmt.Sprintf("BlockchainVPN %s", version.Version))
 	w.Resize(fyne.NewSize(1280, 860))
 
 	state, err := initState()
