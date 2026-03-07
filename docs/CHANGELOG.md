@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.4] - 2026-03-07
+
+### Networking & Transport
+- Added WebSocket fallback transport support using WSS to bypass restrictive firewalls/proxies.
+- Added IPv6 support to internal TUN interface IP pool and cross-platform OS routing layers.
+
+### Multi-Tunneling & Marketplace
+- Added support for multiple concurrent tunnels via `MultiTunnelManager`.
+- Added provider-assisted throughput probes to replace external internet speed test dependency.
+- Added signed provider reputation store and weighted selection algorithm.
+- Improved blockchain scanner with delta-scanning (cache based) and mempool-aware fee management.
+
+### Security & Validation
+- Added provider-side session duration limits (`max_session_duration_secs`) and automatic disconnect enforcement.
+- Added comprehensive validation layer for TUN subnet overlaps and port conflicts.
+- Refactored session management in `tunnel.go` with centralized cleanup and leak prevention.
+- Hardened memory safety in packet reading loops with buffer pools and enlarged TUN buffers.
+
+### Tests & Infrastructure
+- Added integration tests for multi-platform NAT traversal and secure key storage.
+- Refactored keystore for full platform mockability and added cross-platform test coverage.
+
 ## [0.3.0] - 2026-03-07
 
 ### Marketplace Protocol
