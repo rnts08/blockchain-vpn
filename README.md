@@ -370,6 +370,9 @@ See [docs/TODO.md](docs/TODO.md) for prioritized next steps.
 - End-to-end user guide: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
 - Troubleshooting by OS: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 - Packaging and installer guidance: [docs/PACKAGING.md](docs/PACKAGING.md)
+- Security model: [docs/SECURITY.md](docs/SECURITY.md)
+- Provider operations runbook: [docs/OPERATIONS.md](docs/OPERATIONS.md)
+- Automation JSON examples: [docs/AUTOMATION.md](docs/AUTOMATION.md)
 - Versioning policy and release progression: [docs/VERSIONING.md](docs/VERSIONING.md)
 - Engineering roadmap and remaining tasks: [docs/TODO.md](docs/TODO.md)
 

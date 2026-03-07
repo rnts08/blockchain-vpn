@@ -36,15 +36,15 @@ This list is a new post-MVP backlog based on a full code and docs review.
 ## 6. Testing and Release Engineering
 - [x] Add baseline semantic versioning system (`VERSION`, `bcvpn version`, `docs/VERSIONING.md`) starting at `0.1.0`.
 - [ ] Add integration test matrix in CI for Linux runtime networking paths with privilege-capable test environment.
-- [ ] Add deterministic tests for key storage mode resolution and backend fallback behavior.
+- [x] Add deterministic tests for key storage mode resolution and backend fallback behavior.
 - [ ] Add fuzz tests for protocol payload parsing and revocation cache parsing.
 - [ ] Add release smoke test scripts for CLI and GUI startup on Linux/macOS/Windows artifacts.
 
 ## 7. Documentation
-- [ ] Add dedicated security model document (`docs/SECURITY.md`) covering trust boundaries and threat model.
-- [ ] Add explicit secure-store backend prerequisites by OS (Keychain/libsecret/DPAPI) with troubleshooting.
-- [ ] Add operations runbook for providers (rotation, revocation, incident response, upgrade strategy).
-- [ ] Add examples for `status --json` and `/metrics.json` fields for automation tooling.
+- [x] Add dedicated security model document (`docs/SECURITY.md`) covering trust boundaries and threat model.
+- [x] Add explicit secure-store backend prerequisites by OS (Keychain/libsecret/DPAPI) with troubleshooting.
+- [x] Add operations runbook for providers (rotation, revocation, incident response, upgrade strategy).
+- [x] Add examples for `status --json` and `/metrics.json` fields for automation tooling.
 
 ## Future Iteration Candidates
 - [ ] Add secure auto-fallback path for `key_storage_mode=auto` when backend fails after startup and no password is pre-supplied.
