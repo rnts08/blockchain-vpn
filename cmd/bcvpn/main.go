@@ -959,8 +959,10 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 	if dryRun {
 		fmt.Printf("[Dry Run] Simulation: Would create TUN interface %s and connect to %s.\n", clientCfg.InterfaceName, endpointAddr)
 	} else {
-		err := tunnel.ConnectToProvider(
-			ctx,
+		mgr := tunnel.NewMultiTunnelManager()
+		err := mgr.Add(
+			"session-interactive",
+			clientCfg.InterfaceName,
 			clientCfg,
 			secCfg,
 			localKey,
@@ -971,14 +973,15 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 				ExpectedBandwidthKB: selectedEndpoint.AdvertisedBandwidthKB,
 			},
 		)
-		select {
-		case <-ctx.Done():
-			log.Println("Disconnecting...")
-		default:
-			if err != nil {
-				log.Fatalf("Connection failed: %v", err)
-			}
+		if err != nil {
+			log.Fatalf("Failed to add tunnel: %v", err)
 		}
+
+		// Wait indefinitely until cancelled or the tunnel errors out (handled by mgr)
+		fmt.Println("Press Ctrl+C to disconnect.")
+		<-ctx.Done()
+		fmt.Println("Shutting down tunnel...")
+		mgr.CancelAll()
 	}
 }
 

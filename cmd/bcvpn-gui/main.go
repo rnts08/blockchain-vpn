@@ -86,6 +86,8 @@ type guiState struct {
 	providerCancel  context.CancelFunc
 	providerDone    chan struct{}
 
+	clientMgr *tunnel.MultiTunnelManager
+
 	scanResults []*geoip.EnrichedVPNEndpoint
 	selectedIdx int
 }
@@ -167,6 +169,7 @@ func initState() (*guiState, error) {
 		firstRun:    firstRun,
 		logs:        logs,
 		selectedIdx: -1,
+		clientMgr:   tunnel.NewMultiTunnelManager(),
 	}, nil
 }
 
@@ -704,6 +707,11 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 			}
 		}()
 	})
+	disconnectBtn := widget.NewButton("Disconnect All", func() {
+		go func() {
+			s.stopClientConns()
+		}()
+	})
 	saveClientBtn := widget.NewButton("Save Client Settings", func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -756,7 +764,7 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewLabel("Metrics"),
 		clientMetricsAddrEntry,
 	)
-	actionRow := container.NewGridWithColumns(5, scanBtn, connectBtn, saveClientBtn, clientKillSwitch, dryRun)
+	actionRow := container.NewGridWithColumns(6, scanBtn, connectBtn, disconnectBtn, saveClientBtn, clientKillSwitch, dryRun)
 	securityRow := container.NewGridWithColumns(2, clientStrictVerify, clientThroughputVerify)
 
 	return container.NewPadded(container.NewVBox(
@@ -1592,8 +1600,9 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 		s.appendLog("Dry-run connect completed.")
 		return nil
 	}
-	return tunnel.ConnectToProvider(
-		context.Background(),
+	return s.clientMgr.Add(
+		fmt.Sprintf("gui-session-%d", time.Now().Unix()),
+		s.cfg.Client.InterfaceName,
 		&s.cfg.Client,
 		&s.cfg.Security,
 		localKey,
@@ -1604,6 +1613,12 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 			ExpectedBandwidthKB: selected.AdvertisedBandwidthKB,
 		},
 	)
+}
+
+func (s *guiState) stopClientConns() {
+	s.appendLog("Disconnecting all active client tunnels...")
+	s.clientMgr.CancelAll()
+	s.appendLog("All tunnels disconnected.")
 }
 
 func saveConfig(path string, cfg *config.Config) error {

@@ -76,6 +76,7 @@ type ClientConfig struct {
 	MetricsListenAddr          string `json:"metrics_listen_addr"` // e.g. "127.0.0.1:9091"
 	StrictVerification         bool   `json:"strict_verification"`
 	VerifyThroughputAfterSetup bool   `json:"verify_throughput_after_connect"`
+	MaxParallelTunnels         int    `json:"max_parallel_tunnels"`
 }
 
 const AppConfigDirName = "BlockchainVPN"
@@ -145,6 +146,10 @@ func LoadConfig(path string) (*Config, error) {
 	if err := decoder.Decode(cfg); err != nil {
 		return nil, err
 	}
+	if cfg.Client.MaxParallelTunnels <= 0 {
+		cfg.Client.MaxParallelTunnels = 1
+	}
+
 	return cfg, nil
 }
 
@@ -211,6 +216,7 @@ func GenerateDefaultConfig(path string) error {
 			MetricsListenAddr:          "",
 			StrictVerification:         false,
 			VerifyThroughputAfterSetup: true,
+			MaxParallelTunnels:         1,
 		},
 	}
 
