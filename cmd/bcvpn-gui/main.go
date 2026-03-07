@@ -70,8 +70,9 @@ func (t *guiTheme) Size(name fyne.ThemeSizeName) float32 {
 type guiState struct {
 	mu sync.Mutex
 
-	cfgPath string
-	cfg     *config.Config
+	cfgPath  string
+	cfg      *config.Config
+	firstRun bool
 
 	logs binding.String
 
@@ -80,6 +81,28 @@ type guiState struct {
 
 	scanResults []*geoip.EnrichedVPNEndpoint
 	selectedIdx int
+}
+
+const setupMarkerFile = "setup-complete"
+
+func buildMainTabs(w fyne.Window, state *guiState) fyne.CanvasObject {
+	providerTab := buildProviderTab(w, state)
+	clientTab := buildClientTab(w, state)
+	statusTab := buildStatusTab(state)
+	settingsTab := buildSettingsTab(w, state)
+	walletTab := buildWalletTab(state)
+
+	tabs := container.NewAppTabs(
+		container.NewTabItem("Provider Mode", providerTab),
+		container.NewTabItem("Client Mode", clientTab),
+		container.NewTabItem("Network Status", statusTab),
+		container.NewTabItem("Settings", settingsTab),
+		container.NewTabItem("Wallet", walletTab),
+	)
+	tabs.SetTabLocation(container.TabLocationTop)
+
+	bg := canvas.NewRectangle(color.NRGBA{R: 236, G: 235, B: 226, A: 255})
+	return container.NewMax(bg, tabs)
 }
 
 func main() {
@@ -95,22 +118,11 @@ func main() {
 		return
 	}
 
-	providerTab := buildProviderTab(w, state)
-	clientTab := buildClientTab(w, state)
-	statusTab := buildStatusTab(state)
-	walletTab := buildWalletTab(state)
-
-	tabs := container.NewAppTabs(
-		container.NewTabItem("Provider Mode", providerTab),
-		container.NewTabItem("Client Mode", clientTab),
-		container.NewTabItem("Network Status", statusTab),
-		container.NewTabItem("Wallet", walletTab),
-	)
-	tabs.SetTabLocation(container.TabLocationTop)
-
-	bg := canvas.NewRectangle(color.NRGBA{R: 236, G: 235, B: 226, A: 255})
-	content := container.NewMax(bg, tabs)
-	w.SetContent(content)
+	if state.firstRun {
+		w.SetContent(buildSetupWizard(w, state))
+	} else {
+		w.SetContent(buildMainTabs(w, state))
+	}
 
 	w.SetCloseIntercept(func() {
 		state.stopProvider()
@@ -121,9 +133,13 @@ func main() {
 }
 
 func initState() (*guiState, error) {
-	cfgPath, cfg, err := loadConfigWithFallback()
+	cfgPath, cfg, generatedDefault, err := loadConfigWithFallback()
 	if err != nil {
 		return nil, err
+	}
+	firstRun := generatedDefault
+	if setupDone, err := hasCompletedSetup(); err == nil {
+		firstRun = firstRun || !setupDone
 	}
 	logs := binding.NewString()
 	_ = logs.Set("GUI ready.\n")
@@ -131,45 +147,240 @@ func initState() (*guiState, error) {
 	return &guiState{
 		cfgPath:     cfgPath,
 		cfg:         cfg,
+		firstRun:    firstRun,
 		logs:        logs,
 		selectedIdx: -1,
 	}, nil
 }
 
-func loadConfigWithFallback() (string, *config.Config, error) {
+func loadConfigWithFallback() (string, *config.Config, bool, error) {
 	defaultPath, err := config.DefaultConfigPath()
 	if err != nil {
-		return "", nil, err
+		return "", nil, false, err
 	}
 	path := defaultPath
+	generatedDefault := false
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if _, legacyErr := os.Stat("config.json"); legacyErr == nil {
 			path = "config.json"
 		} else {
 			if err := config.GenerateDefaultConfig(defaultPath); err != nil {
-				return "", nil, err
+				return "", nil, false, err
 			}
+			generatedDefault = true
 		}
 	}
 	cfg, err := config.LoadConfig(path)
 	if err != nil {
-		return "", nil, err
+		return "", nil, false, err
 	}
 	if err := config.ResolveProviderKeyPath(cfg, path); err != nil {
-		return "", nil, err
+		return "", nil, false, err
 	}
-	return path, cfg, nil
+	return path, cfg, generatedDefault, nil
+}
+
+func hasCompletedSetup() (bool, error) {
+	dir, err := config.AppConfigDir()
+	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(filepath.Join(dir, setupMarkerFile))
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func markSetupCompleted() error {
+	dir, err := config.AppConfigDir()
+	if err != nil {
+		return err
+	}
+	p := filepath.Join(dir, setupMarkerFile)
+	return os.WriteFile(p, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+}
+
+func buildSetupWizard(w fyne.Window, s *guiState) fyne.CanvasObject {
+	title := widget.NewLabelWithStyle("First-Run Setup Wizard", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	desc := widget.NewLabel("Complete these checks to enable click-and-run provider/client operation.")
+	elevHint := widget.NewLabel("Elevation: " + elevationHint())
+	status := widget.NewMultiLineEntry()
+	status.Disable()
+	status.SetMinRowsVisible(8)
+	status.SetText("Welcome to BlockchainVPN setup.\n")
+
+	configDone := false
+	rpcDone := false
+	keyDone := false
+	privDone := false
+
+	appendStatus := func(line string) {
+		status.SetText(status.Text + line + "\n")
+	}
+
+	configBtn := widget.NewButton("1) Ensure Config", func() {
+		if _, err := os.Stat(s.cfgPath); os.IsNotExist(err) {
+			if err := config.GenerateDefaultConfig(s.cfgPath); err != nil {
+				dialog.ShowError(err, w)
+				return
+			}
+		}
+		cfg, err := config.LoadConfig(s.cfgPath)
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		if err := config.ResolveProviderKeyPath(cfg, s.cfgPath); err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		s.mu.Lock()
+		s.cfg = cfg
+		s.mu.Unlock()
+		configDone = true
+		appendStatus("[OK] Config ready: " + s.cfgPath)
+	})
+
+	rpcBtn := widget.NewButton("2) Check RPC Connectivity", func() {
+		s.mu.Lock()
+		cfg := s.cfg
+		s.mu.Unlock()
+		if err := checkRPCConnectivity(cfg); err != nil {
+			dialog.ShowError(err, w)
+			appendStatus("[FAIL] RPC connectivity failed: " + err.Error())
+			return
+		}
+		rpcDone = true
+		appendStatus("[OK] RPC connectivity check passed")
+	})
+
+	keyPassword := widget.NewPasswordEntry()
+	keyPassword.SetPlaceHolder("Provider key password")
+	keyBtn := widget.NewButton("3) Create/Unlock Provider Key", func() {
+		pass := strings.TrimSpace(keyPassword.Text)
+		if pass == "" {
+			dialog.ShowInformation("Password required", "Enter provider key password to create/unlock key.", w)
+			return
+		}
+		s.mu.Lock()
+		keyPath := s.cfg.Provider.PrivateKeyFile
+		s.mu.Unlock()
+		if _, err := getOrCreateProviderKey(keyPath, pass); err != nil {
+			dialog.ShowError(err, w)
+			appendStatus("[FAIL] Provider key setup failed: " + err.Error())
+			return
+		}
+		keyDone = true
+		appendStatus("[OK] Provider key ready")
+	})
+
+	privBtn := widget.NewButton("4) Check Networking Privileges", func() {
+		if err := tunnel.EnsureElevatedPrivileges(); err != nil {
+			appendStatus("[FAIL] Privilege check failed: " + err.Error())
+			dialog.ShowError(err, w)
+			return
+		}
+		privDone = true
+		appendStatus("[OK] Networking privileges confirmed")
+	})
+
+	relaunchBtn := widget.NewButton("Relaunch Elevated", func() {
+		if err := relaunchElevated(); err != nil {
+			dialog.ShowError(err, w)
+			appendStatus("[FAIL] Elevation relaunch failed: " + err.Error())
+			return
+		}
+		appendStatus("[INFO] Relaunch command issued; closing current process.")
+		w.Close()
+	})
+	if !canRelaunchElevated() {
+		relaunchBtn.Disable()
+	}
+
+	finishBtn := widget.NewButton("Finish Setup", func() {
+		if !configDone || !rpcDone || !keyDone || !privDone {
+			dialog.ShowInformation("Setup Incomplete", "Complete all setup checks before finishing.", w)
+			return
+		}
+		if err := markSetupCompleted(); err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		s.firstRun = false
+		appendStatus("[OK] Setup completed. Loading main UI...")
+		w.SetContent(buildMainTabs(w, s))
+	})
+
+	buttonRow1 := container.NewGridWithColumns(2, configBtn, rpcBtn)
+	buttonRow2 := container.NewGridWithColumns(2, keyBtn, privBtn)
+	buttonRow3 := container.NewGridWithColumns(2, relaunchBtn, finishBtn)
+
+	return container.NewPadded(container.NewVBox(
+		title,
+		desc,
+		elevHint,
+		widget.NewCard("Step 3 Input", "Provider key password", keyPassword),
+		buttonRow1,
+		buttonRow2,
+		buttonRow3,
+		widget.NewCard("Setup Status", "", status),
+	))
+}
+
+func checkRPCConnectivity(cfg *config.Config) error {
+	connCfg := &rpcclient.ConnConfig{
+		Host:         cfg.RPC.Host,
+		User:         cfg.RPC.User,
+		Pass:         cfg.RPC.Pass,
+		HTTPPostMode: true,
+		DisableTLS:   true,
+	}
+	client, err := rpcclient.New(connCfg, nil)
+	if err != nil {
+		return fmt.Errorf("rpc connect failed: %w", err)
+	}
+	defer client.Shutdown()
+	if _, err := client.GetBlockCount(); err != nil {
+		return fmt.Errorf("rpc blockcount check failed: %w", err)
+	}
+	return nil
 }
 
 func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	title := widget.NewLabelWithStyle("Provider Control", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 
+	ifaceEntry := widget.NewEntry()
+	ifaceEntry.SetText(s.cfg.Provider.InterfaceName)
+	listenPortEntry := widget.NewEntry()
+	listenPortEntry.SetText(fmt.Sprintf("%d", s.cfg.Provider.ListenPort))
+	announceIPEntry := widget.NewEntry()
+	announceIPEntry.SetText(s.cfg.Provider.AnnounceIP)
 	countryEntry := widget.NewEntry()
 	countryEntry.SetText(s.cfg.Provider.Country)
 	priceEntry := widget.NewEntry()
 	priceEntry.SetText(fmt.Sprintf("%d", s.cfg.Provider.Price))
 	bwEntry := widget.NewEntry()
 	bwEntry.SetText(s.cfg.Provider.BandwidthLimit)
+	tunIPEntry := widget.NewEntry()
+	tunIPEntry.SetText(s.cfg.Provider.TunIP)
+	tunSubnetEntry := widget.NewEntry()
+	tunSubnetEntry.SetText(s.cfg.Provider.TunSubnet)
+	natEnabled := widget.NewCheck("Enable NAT Traversal (UPnP/NAT-PMP)", nil)
+	natEnabled.SetChecked(s.cfg.Provider.EnableNAT)
+	egressNATEnabled := widget.NewCheck("Enable Provider Egress NAT", nil)
+	egressNATEnabled.SetChecked(s.cfg.Provider.EnableEgressNAT)
+	natOutboundEntry := widget.NewEntry()
+	natOutboundEntry.SetText(s.cfg.Provider.NATOutboundInterface)
+	isolationSelect := widget.NewSelect([]string{"none", "sandbox"}, nil)
+	if strings.TrimSpace(s.cfg.Provider.IsolationMode) == "" {
+		isolationSelect.SetSelected("none")
+	} else {
+		isolationSelect.SetSelected(s.cfg.Provider.IsolationMode)
+	}
 	allowEntry := widget.NewEntry()
 	allowEntry.SetText(s.cfg.Provider.AllowlistFile)
 	denyEntry := widget.NewEntry()
@@ -178,6 +389,10 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	lifeEntry.SetText(fmt.Sprintf("%d", s.cfg.Provider.CertLifetimeHours))
 	rotateEntry := widget.NewEntry()
 	rotateEntry.SetText(fmt.Sprintf("%d", s.cfg.Provider.CertRotateBeforeHours))
+	healthEnabled := widget.NewCheck("Enable Health Checks", nil)
+	healthEnabled.SetChecked(s.cfg.Provider.HealthCheckEnabled)
+	healthIntervalEntry := widget.NewEntry()
+	healthIntervalEntry.SetText(s.cfg.Provider.HealthCheckInterval)
 	passwordEntry := widget.NewPasswordEntry()
 	passwordEntry.SetPlaceHolder("Provider key password")
 
@@ -191,6 +406,11 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 			dialog.ShowError(fmt.Errorf("invalid price: %w", err), w)
 			return
 		}
+		listenPort, err := strconv.Atoi(strings.TrimSpace(listenPortEntry.Text))
+		if err != nil || listenPort <= 0 || listenPort > 65535 {
+			dialog.ShowError(fmt.Errorf("invalid listen port"), w)
+			return
+		}
 		life, err := strconv.Atoi(strings.TrimSpace(lifeEntry.Text))
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("invalid cert lifetime: %w", err), w)
@@ -201,14 +421,42 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 			dialog.ShowError(fmt.Errorf("invalid cert rotate window: %w", err), w)
 			return
 		}
+		announceIP := strings.TrimSpace(announceIPEntry.Text)
+		if announceIP != "" && net.ParseIP(announceIP) == nil {
+			dialog.ShowError(fmt.Errorf("invalid announce IP"), w)
+			return
+		}
+		if net.ParseIP(strings.TrimSpace(tunIPEntry.Text)) == nil {
+			dialog.ShowError(fmt.Errorf("invalid provider TUN IP"), w)
+			return
+		}
+		if _, err := strconv.Atoi(strings.TrimSpace(tunSubnetEntry.Text)); err != nil {
+			dialog.ShowError(fmt.Errorf("invalid provider TUN subnet"), w)
+			return
+		}
+		if _, err := time.ParseDuration(strings.TrimSpace(healthIntervalEntry.Text)); err != nil {
+			dialog.ShowError(fmt.Errorf("invalid health check interval: %w", err), w)
+			return
+		}
 
+		s.cfg.Provider.InterfaceName = strings.TrimSpace(ifaceEntry.Text)
+		s.cfg.Provider.ListenPort = listenPort
+		s.cfg.Provider.AnnounceIP = announceIP
 		s.cfg.Provider.Country = strings.TrimSpace(countryEntry.Text)
 		s.cfg.Provider.Price = price
 		s.cfg.Provider.BandwidthLimit = strings.TrimSpace(bwEntry.Text)
+		s.cfg.Provider.TunIP = strings.TrimSpace(tunIPEntry.Text)
+		s.cfg.Provider.TunSubnet = strings.TrimSpace(tunSubnetEntry.Text)
+		s.cfg.Provider.EnableNAT = natEnabled.Checked
+		s.cfg.Provider.EnableEgressNAT = egressNATEnabled.Checked
+		s.cfg.Provider.NATOutboundInterface = strings.TrimSpace(natOutboundEntry.Text)
+		s.cfg.Provider.IsolationMode = strings.TrimSpace(isolationSelect.Selected)
 		s.cfg.Provider.AllowlistFile = strings.TrimSpace(allowEntry.Text)
 		s.cfg.Provider.DenylistFile = strings.TrimSpace(denyEntry.Text)
 		s.cfg.Provider.CertLifetimeHours = life
 		s.cfg.Provider.CertRotateBeforeHours = rotate
+		s.cfg.Provider.HealthCheckEnabled = healthEnabled.Checked
+		s.cfg.Provider.HealthCheckInterval = strings.TrimSpace(healthIntervalEntry.Text)
 		if err := saveConfig(s.cfgPath, s.cfg); err != nil {
 			dialog.ShowError(err, w)
 			return
@@ -259,13 +507,24 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	})
 
 	form := widget.NewForm(
+		widget.NewFormItem("Interface Name", ifaceEntry),
+		widget.NewFormItem("Listen Port", listenPortEntry),
+		widget.NewFormItem("Announce IP (optional)", announceIPEntry),
 		widget.NewFormItem("Country", countryEntry),
 		widget.NewFormItem("Price (sats/session)", priceEntry),
 		widget.NewFormItem("Bandwidth Limit", bwEntry),
+		widget.NewFormItem("Provider TUN IP", tunIPEntry),
+		widget.NewFormItem("Provider TUN Subnet", tunSubnetEntry),
+		widget.NewFormItem("NAT Traversal", natEnabled),
+		widget.NewFormItem("Provider Egress NAT", egressNATEnabled),
+		widget.NewFormItem("NAT Outbound Interface", natOutboundEntry),
+		widget.NewFormItem("Isolation Mode", isolationSelect),
 		widget.NewFormItem("Allowlist File", allowEntry),
 		widget.NewFormItem("Denylist File", denyEntry),
 		widget.NewFormItem("Cert Lifetime Hours", lifeEntry),
 		widget.NewFormItem("Rotate Before Hours", rotateEntry),
+		widget.NewFormItem("Health Checks", healthEnabled),
+		widget.NewFormItem("Health Check Interval", healthIntervalEntry),
 		widget.NewFormItem("Key Password", passwordEntry),
 	)
 
@@ -287,6 +546,12 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	sortSelect.SetSelected("latency")
 	countryEntry := widget.NewEntry()
 	countryEntry.SetPlaceHolder("Country filter e.g. US")
+	clientIfaceEntry := widget.NewEntry()
+	clientIfaceEntry.SetText(s.cfg.Client.InterfaceName)
+	clientTunIPEntry := widget.NewEntry()
+	clientTunIPEntry.SetText(s.cfg.Client.TunIP)
+	clientTunSubnetEntry := widget.NewEntry()
+	clientTunSubnetEntry.SetText(s.cfg.Client.TunSubnet)
 	dryRun := widget.NewCheck("Dry run (no payment, no interface changes)", nil)
 
 	results := widget.NewList(
@@ -332,6 +597,28 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 			}
 		}()
 	})
+	saveClientBtn := widget.NewButton("Save Client Settings", func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		if net.ParseIP(strings.TrimSpace(clientTunIPEntry.Text)) == nil {
+			dialog.ShowError(fmt.Errorf("invalid client TUN IP"), w)
+			return
+		}
+		if _, err := strconv.Atoi(strings.TrimSpace(clientTunSubnetEntry.Text)); err != nil {
+			dialog.ShowError(fmt.Errorf("invalid client TUN subnet"), w)
+			return
+		}
+
+		s.cfg.Client.InterfaceName = strings.TrimSpace(clientIfaceEntry.Text)
+		s.cfg.Client.TunIP = strings.TrimSpace(clientTunIPEntry.Text)
+		s.cfg.Client.TunSubnet = strings.TrimSpace(clientTunSubnetEntry.Text)
+		if err := saveConfig(s.cfgPath, s.cfg); err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		s.appendLog("Saved client settings.")
+	})
 
 	filterRow := container.NewGridWithColumns(4,
 		widget.NewLabel("Sort:"),
@@ -339,11 +626,20 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewLabel("Country:"),
 		countryEntry,
 	)
-	actionRow := container.NewGridWithColumns(3, scanBtn, connectBtn, dryRun)
+	settingsRow := container.NewGridWithColumns(
+		6,
+		widget.NewLabel("Interface"),
+		clientIfaceEntry,
+		widget.NewLabel("TUN IP"),
+		clientTunIPEntry,
+		widget.NewLabel("Subnet"),
+		clientTunSubnetEntry,
+	)
+	actionRow := container.NewGridWithColumns(4, scanBtn, connectBtn, saveClientBtn, dryRun)
 
 	return container.NewPadded(container.NewVBox(
 		title,
-		widget.NewCard("Filters", "Scan and choose the best provider", container.NewVBox(filterRow, actionRow)),
+		widget.NewCard("Filters", "Scan and choose the best provider", container.NewVBox(filterRow, settingsRow, actionRow)),
 		widget.NewCard("Provider List", "Latency, price, and country-enriched endpoint table", results),
 		buildLogPanel(s),
 	))
@@ -354,12 +650,131 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 	configPath := widget.NewLabel("Config Path: " + s.cfgPath)
 	providerIface := widget.NewLabel("Provider Interface: " + s.cfg.Provider.InterfaceName + " (" + s.cfg.Provider.TunIP + "/" + s.cfg.Provider.TunSubnet + ")")
 	clientIface := widget.NewLabel("Client Interface: " + s.cfg.Client.InterfaceName + " (" + s.cfg.Client.TunIP + "/" + s.cfg.Client.TunSubnet + ")")
+	privilegeStatus := "Privileges: OK"
+	if err := tunnel.EnsureElevatedPrivileges(); err != nil {
+		privilegeStatus = "Privileges: " + err.Error()
+	}
+	privLabel := widget.NewLabel(privilegeStatus)
 
 	return container.NewPadded(container.NewVBox(
 		title,
-		widget.NewCard("Interfaces", "Current tunnel interface settings", container.NewVBox(configPath, providerIface, clientIface)),
+		widget.NewCard("Interfaces", "Current tunnel interface settings", container.NewVBox(configPath, providerIface, clientIface, privLabel)),
 		buildLogPanel(s),
 	))
+}
+
+func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
+	title := widget.NewLabelWithStyle("Global Settings", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	hint := widget.NewLabel("Validation hints: host required, ports 1-65535, valid IP/prefix, valid health_check_interval duration (e.g. 30s).")
+
+	rpcHost := widget.NewEntry()
+	rpcHost.SetText(s.cfg.RPC.Host)
+	rpcUser := widget.NewEntry()
+	rpcUser.SetText(s.cfg.RPC.User)
+	rpcPass := widget.NewPasswordEntry()
+	rpcPass.SetText(s.cfg.RPC.Pass)
+	statusOut := widget.NewMultiLineEntry()
+	statusOut.Disable()
+	statusOut.SetMinRowsVisible(6)
+
+	saveBtn := widget.NewButton("Save + Validate", func() {
+		s.mu.Lock()
+		s.cfg.RPC.Host = strings.TrimSpace(rpcHost.Text)
+		s.cfg.RPC.User = strings.TrimSpace(rpcUser.Text)
+		s.cfg.RPC.Pass = strings.TrimSpace(rpcPass.Text)
+		if err := config.Validate(s.cfg); err != nil {
+			s.mu.Unlock()
+			dialog.ShowError(fmt.Errorf("config validation failed: %w", err), w)
+			return
+		}
+		if err := saveConfig(s.cfgPath, s.cfg); err != nil {
+			s.mu.Unlock()
+			dialog.ShowError(err, w)
+			return
+		}
+		s.mu.Unlock()
+		statusOut.SetText("Config saved and validated.")
+		s.appendLog("Settings saved and validated.")
+	})
+
+	validateBtn := widget.NewButton("Validate Current Config", func() {
+		s.mu.Lock()
+		err := config.Validate(s.cfg)
+		s.mu.Unlock()
+		if err != nil {
+			statusOut.SetText("Validation failed:\n" + err.Error())
+			return
+		}
+		statusOut.SetText("Config is valid.")
+	})
+
+	defaultsBtn := widget.NewButton("Apply Defaults For Empty Fields", func() {
+		s.mu.Lock()
+		applyDefaultConfigValues(s.cfg)
+		rpcHost.SetText(s.cfg.RPC.Host)
+		rpcUser.SetText(s.cfg.RPC.User)
+		rpcPass.SetText(s.cfg.RPC.Pass)
+		s.mu.Unlock()
+		statusOut.SetText("Applied defaults for empty fields. Review and click Save + Validate.")
+	})
+
+	form := widget.NewForm(
+		widget.NewFormItem("RPC Host", rpcHost),
+		widget.NewFormItem("RPC User", rpcUser),
+		widget.NewFormItem("RPC Pass", rpcPass),
+	)
+	buttons := container.NewGridWithColumns(3, saveBtn, validateBtn, defaultsBtn)
+
+	return container.NewPadded(container.NewVBox(
+		title,
+		hint,
+		widget.NewCard("RPC", "Global daemon connection settings", form),
+		buttons,
+		widget.NewCard("Validation Output", "", statusOut),
+		buildLogPanel(s),
+	))
+}
+
+func applyDefaultConfigValues(cfg *config.Config) {
+	if strings.TrimSpace(cfg.RPC.Host) == "" {
+		cfg.RPC.Host = "localhost:18443"
+	}
+	if strings.TrimSpace(cfg.Provider.InterfaceName) == "" {
+		cfg.Provider.InterfaceName = "bcvpn0"
+	}
+	if cfg.Provider.ListenPort == 0 {
+		cfg.Provider.ListenPort = 51820
+	}
+	if cfg.Provider.Price == 0 {
+		cfg.Provider.Price = 1000
+	}
+	if strings.TrimSpace(cfg.Provider.BandwidthLimit) == "" {
+		cfg.Provider.BandwidthLimit = "10mbit"
+	}
+	if strings.TrimSpace(cfg.Provider.TunIP) == "" {
+		cfg.Provider.TunIP = "10.10.0.1"
+	}
+	if strings.TrimSpace(cfg.Provider.TunSubnet) == "" {
+		cfg.Provider.TunSubnet = "24"
+	}
+	if strings.TrimSpace(cfg.Provider.HealthCheckInterval) == "" {
+		cfg.Provider.HealthCheckInterval = "30s"
+	}
+	if cfg.Provider.CertLifetimeHours == 0 {
+		cfg.Provider.CertLifetimeHours = 720
+	}
+	if cfg.Provider.CertRotateBeforeHours == 0 {
+		cfg.Provider.CertRotateBeforeHours = 24
+	}
+	if strings.TrimSpace(cfg.Client.InterfaceName) == "" {
+		cfg.Client.InterfaceName = "bcvpn1"
+	}
+	if strings.TrimSpace(cfg.Client.TunIP) == "" {
+		cfg.Client.TunIP = "10.10.0.2"
+	}
+	if strings.TrimSpace(cfg.Client.TunSubnet) == "" {
+		cfg.Client.TunSubnet = "24"
+	}
 }
 
 func buildWalletTab(s *guiState) fyne.CanvasObject {
@@ -412,6 +827,9 @@ func (s *guiState) startProvider(password string) error {
 	defer s.mu.Unlock()
 	if s.providerRunning {
 		return fmt.Errorf("provider already running")
+	}
+	if err := tunnel.EnsureElevatedPrivileges(); err != nil {
+		return fmt.Errorf("provider networking setup requires elevated privileges: %w", err)
 	}
 	client := connectRPC(s.cfg.RPC.Host, s.cfg.RPC.User, s.cfg.RPC.Pass)
 	authManager := auth.NewAuthManager()
@@ -546,6 +964,9 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 	}
 
 	if !dryRun {
+		if err := tunnel.EnsureElevatedPrivileges(); err != nil {
+			return fmt.Errorf("cannot proceed with payment until networking privileges are available: %w", err)
+		}
 		if _, err := blockchain.SendPayment(client, providerAddr, selected.Endpoint.Price, localKey.PubKey()); err != nil {
 			return err
 		}

@@ -1,68 +1,59 @@
-# Networking Configuration for Split Routing
+# Networking Automation Guide
 
-This document details the Linux commands required to implement the "Split Routing" logic described in `GUI.md`. This configuration allows a user to run a VPN Provider (Server) and a VPN Client simultaneously without routing loops.
+This document describes what BlockchainVPN configures automatically at runtime so users do not need to apply manual route/DNS/TUN steps.
 
-## Variables
+## 1. Client Networking (Automatic)
 
-Adjust these variables to match your system configuration:
+When a client connects to a provider, BlockchainVPN automatically:
 
-```bash
-PHY_IFACE="eth0"          # Your physical network interface (e.g., eth0, wlan0)
-PHY_GW="192.168.1.1"      # Your physical default gateway
-PROVIDER_PORT="51820"     # The TCP port your Provider node listens on
-PROVIDER_IFACE="bcvpn0"     # The TUN interface for your Provider clients
-CLIENT_IFACE="bcvpn1"       # The TUN interface for your outgoing Client connection
-MARK_ID="0x100"           # Arbitrary firewall mark ID
-TABLE_ID="200"            # Arbitrary routing table ID
-```
+1. Creates and configures the client TUN interface.
+2. Adds split default routes (`0.0.0.0/1` and `128.0.0.0/1`) through the TUN interface.
+3. Adds a direct host route for the provider endpoint outside the tunnel to prevent control-channel loops.
+4. Applies DNS servers for leak-resistant resolution.
+5. Restores previous route and DNS state when the session ends.
 
-## 1. Policy Based Routing (PBR)
+Platform backends:
 
-When the Client VPN is active, it typically replaces the default route. We must ensure that traffic related to the Provider service (incoming handshakes and their replies) bypasses the client tunnel and exits via the physical interface.
+- Linux: `netlink` + `/etc/resolv.conf` backup/restore.
+- macOS: `ifconfig`, `route`, `networksetup`.
+- Windows: `netsh`, `route`, PowerShell DNS APIs.
 
-### Step A: Create a separate routing table
+## 2. Provider Networking (Automatic)
 
-Add a default route to the custom table that points to the physical gateway.
+When provider mode starts, BlockchainVPN automatically:
 
-```bash
-ip route add default via $PHY_GW dev $PHY_IFACE table $TABLE_ID
-```
+1. Creates/configures provider TUN interface.
+2. Starts TLS listener and UDP echo service.
+3. Optionally enables NAT traversal (UPnP/NAT-PMP) for home routers.
+4. Optionally enables provider egress NAT backend (Linux/macOS/Windows backends).
+5. Runs active health checks for TUN and listener.
 
-### Step B: Mark Provider Traffic
+## 3. Privilege Requirements
 
-Use `iptables` to mark outgoing packets that originate from the Provider's listening port. This identifies replies to incoming VPN clients.
+Automatic networking changes require elevated privileges:
 
-```bash
-iptables -t mangle -A OUTPUT -p tcp --sport $PROVIDER_PORT -j MARK --set-mark $MARK_ID
-```
+- Linux: root (or equivalent networking capabilities)
+- macOS: administrator/sudo
+- Windows: elevated Administrator terminal
 
-### Step C: Create a Routing Rule
+The application now preflights privileges before provider start and before client payment/connection. If elevation is missing, the operation fails early with a clear error.
 
-Tell the kernel to use the custom table (which routes via `eth0`) for any packet bearing the mark.
+## 4. No-Manual-Step Operation
 
-```bash
-ip rule add fwmark $MARK_ID lookup $TABLE_ID
-```
+For Linux, macOS, and Windows client mode, route/DNS/TUN changes are automated by runtime backends.
 
-*Note: You may also need to flush the route cache for changes to take effect immediately:*
-```bash
-ip route flush cache
-```
+For provider mode:
 
-## 2. Firewall Rules
+- Core provider networking is automated across Linux/macOS/Windows.
+- Provider egress NAT backend is available on Linux/macOS/Windows.
 
-Ensure traffic is allowed in and out of the Provider interface.
+## 5. Verification
 
-### Input (Allow external clients to connect)
-```bash
-iptables -A INPUT -p tcp --dport $PROVIDER_PORT -j ACCEPT
-```
-
-### Forwarding (Allow Provider clients to access the Internet)
-These rules allow traffic from your Provider clients (`bcvpn0`) to exit via your physical interface (`eth0`), performing NAT (Masquerade) so they share your IP.
+Use:
 
 ```bash
-iptables -A FORWARD -i $PROVIDER_IFACE -o $PHY_IFACE -j ACCEPT
-iptables -A FORWARD -i $PHY_IFACE -o $PROVIDER_IFACE -m state --state RELATED,ESTABLISHED -j ACCEPT
-iptables -t nat -A POSTROUTING -o $PHY_IFACE -j MASQUERADE
+./bcvpn status
+./bcvpn status --json
 ```
+
+`status` reports privilege readiness and key runtime settings required for automated networking.

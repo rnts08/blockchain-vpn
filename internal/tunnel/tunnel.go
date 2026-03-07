@@ -94,6 +94,10 @@ type ClientMap struct {
 
 // StartProviderServer sets up the TUN interface and listens for TLS connections.
 func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKey *btcec.PrivateKey, authManager *auth.AuthManager) {
+	if err := EnsureElevatedPrivileges(); err != nil {
+		log.Fatalf("Provider requires automatic networking privileges: %v", err)
+	}
+
 	if err := applyProviderIsolation(cfg.IsolationMode); err != nil {
 		log.Printf("Warning: could not apply provider isolation mode %q: %v", cfg.IsolationMode, err)
 	} else if cfg.IsolationMode != "" && cfg.IsolationMode != "none" {
@@ -292,6 +296,10 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 
 // ConnectToProvider connects to a provider and sets up the client-side tunnel.
 func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, localPrivKey *btcec.PrivateKey, serverPubKey *btcec.PublicKey, endpoint string) error {
+	if err := EnsureElevatedPrivileges(); err != nil {
+		return fmt.Errorf("client requires automatic networking privileges: %w", err)
+	}
+
 	tlsConfig, err := GenerateClientTLSConfig(localPrivKey, serverPubKey)
 	if err != nil {
 		return fmt.Errorf("failed to generate client TLS config: %w", err)

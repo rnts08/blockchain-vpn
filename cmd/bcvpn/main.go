@@ -70,6 +70,7 @@ func main() {
 	updatePriceCmd := flag.NewFlagSet("update-price", flag.ExitOnError)
 	rotateKeyCmd := flag.NewFlagSet("rotate-provider-key", flag.ExitOnError)
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
+	configCmd := flag.NewFlagSet("config", flag.ExitOnError)
 
 	// Scan specific flags
 	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
@@ -82,9 +83,10 @@ func main() {
 	updatePriceNewPrice := updatePriceCmd.Uint64("price", 0, "The new price in satoshis per session")
 	rotateKeyPath := rotateKeyCmd.String("key-file", "", "Provider private key file to rotate (defaults to provider.private_key_file from config)")
 	statusJSON := statusCmd.Bool("json", false, "Output status in machine-readable JSON format")
+	configJSON := configCmd.Bool("json", false, "Output in machine-readable JSON format")
 
 	if len(os.Args) < 2 {
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', or 'status' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', or 'config' subcommands")
 		os.Exit(1)
 	}
 
@@ -92,6 +94,10 @@ func main() {
 	case "start-provider":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
+
+		if err := tunnel.EnsureElevatedPrivileges(); err != nil {
+			log.Fatalf("Provider mode requires automatic networking privileges: %v", err)
+		}
 
 		startProviderCmd.Parse(os.Args[2:])
 		client := connectRPC(cfg.RPC.Host, cfg.RPC.User, cfg.RPC.Pass)
@@ -276,8 +282,12 @@ func main() {
 		statusCmd.Parse(os.Args[2:])
 		handleStatus(cfg, configPath, *statusJSON)
 
+	case "config":
+		configCmd.Parse(os.Args[2:])
+		handleConfigSubcommand(configPath, cfg, configCmd.Args(), *configJSON)
+
 	default:
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', or 'status' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', or 'config' subcommands")
 		os.Exit(1)
 	}
 }
@@ -525,6 +535,9 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 	if dryRun {
 		fmt.Println("[Dry Run] Simulation: Payment skipped. No funds spent.")
 	} else {
+		if err := tunnel.EnsureElevatedPrivileges(); err != nil {
+			log.Fatalf("Cannot proceed: automatic networking privileges are required before payment: %v", err)
+		}
 		fmt.Println("Sending payment...")
 		_, err := blockchain.SendPayment(client, providerAddr, selectedEndpoint.Endpoint.Price, localKey.PubKey())
 		if err != nil {
@@ -639,6 +652,246 @@ func handleHistorySinceLast(cfg *config.Config) {
 	}
 }
 
+func handleConfigSubcommand(configPath string, cfg *config.Config, args []string, jsonMode bool) {
+	if len(args) == 0 {
+		fmt.Println("Usage:")
+		fmt.Println("  bcvpn config get [key]")
+		fmt.Println("  bcvpn config set <key> <value>")
+		fmt.Println("  bcvpn config validate")
+		return
+	}
+
+	switch strings.ToLower(strings.TrimSpace(args[0])) {
+	case "get":
+		if len(args) < 2 {
+			printConfigValue("", cfg, jsonMode)
+			return
+		}
+		key := strings.TrimSpace(args[1])
+		v, err := getConfigField(cfg, key)
+		if err != nil {
+			log.Fatalf("config get failed: %v", err)
+		}
+		printConfigValue(key, v, jsonMode)
+
+	case "set":
+		if len(args) < 3 {
+			log.Fatal("Usage: bcvpn config set <key> <value>")
+		}
+		key := strings.TrimSpace(args[1])
+		value := strings.Join(args[2:], " ")
+		if err := setConfigField(cfg, key, value); err != nil {
+			log.Fatalf("config set failed: %v", err)
+		}
+		if err := config.Validate(cfg); err != nil {
+			log.Fatalf("config became invalid after set: %v", err)
+		}
+		if err := saveConfigFile(configPath, cfg); err != nil {
+			log.Fatalf("failed to write config: %v", err)
+		}
+		log.Printf("Updated %s", key)
+
+	case "validate":
+		if err := config.Validate(cfg); err != nil {
+			log.Fatalf("Config invalid: %v", err)
+		}
+		if jsonMode {
+			printConfigValue("valid", true, true)
+			return
+		}
+		fmt.Println("Config is valid.")
+
+	default:
+		log.Fatalf("unknown config subcommand %q (expected: get, set, validate)", args[0])
+	}
+}
+
+func printConfigValue(key string, v any, jsonMode bool) {
+	if jsonMode {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		payload := map[string]any{"value": v}
+		if key != "" {
+			payload["key"] = key
+		}
+		if err := enc.Encode(payload); err != nil {
+			log.Fatalf("failed to encode JSON output: %v", err)
+		}
+		return
+	}
+
+	if key == "" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(v); err != nil {
+			log.Fatalf("failed to print config: %v", err)
+		}
+		return
+	}
+	fmt.Printf("%s=%v\n", key, v)
+}
+
+func getConfigField(cfg *config.Config, key string) (any, error) {
+	switch key {
+	case "rpc.host":
+		return cfg.RPC.Host, nil
+	case "rpc.user":
+		return cfg.RPC.User, nil
+	case "rpc.pass":
+		return cfg.RPC.Pass, nil
+	case "provider.interface_name":
+		return cfg.Provider.InterfaceName, nil
+	case "provider.listen_port":
+		return cfg.Provider.ListenPort, nil
+	case "provider.announce_ip":
+		return cfg.Provider.AnnounceIP, nil
+	case "provider.country":
+		return cfg.Provider.Country, nil
+	case "provider.price_sats_per_session":
+		return cfg.Provider.Price, nil
+	case "provider.private_key_file":
+		return cfg.Provider.PrivateKeyFile, nil
+	case "provider.bandwidth_limit":
+		return cfg.Provider.BandwidthLimit, nil
+	case "provider.enable_nat":
+		return cfg.Provider.EnableNAT, nil
+	case "provider.enable_egress_nat":
+		return cfg.Provider.EnableEgressNAT, nil
+	case "provider.nat_outbound_interface":
+		return cfg.Provider.NATOutboundInterface, nil
+	case "provider.isolation_mode":
+		return cfg.Provider.IsolationMode, nil
+	case "provider.allowlist_file":
+		return cfg.Provider.AllowlistFile, nil
+	case "provider.denylist_file":
+		return cfg.Provider.DenylistFile, nil
+	case "provider.cert_lifetime_hours":
+		return cfg.Provider.CertLifetimeHours, nil
+	case "provider.cert_rotate_before_hours":
+		return cfg.Provider.CertRotateBeforeHours, nil
+	case "provider.health_check_enabled":
+		return cfg.Provider.HealthCheckEnabled, nil
+	case "provider.health_check_interval":
+		return cfg.Provider.HealthCheckInterval, nil
+	case "provider.bandwidth_monitor_interval":
+		return cfg.Provider.BandwidthMonitorInterval, nil
+	case "provider.tun_ip":
+		return cfg.Provider.TunIP, nil
+	case "provider.tun_subnet":
+		return cfg.Provider.TunSubnet, nil
+	case "client.interface_name":
+		return cfg.Client.InterfaceName, nil
+	case "client.tun_ip":
+		return cfg.Client.TunIP, nil
+	case "client.tun_subnet":
+		return cfg.Client.TunSubnet, nil
+	default:
+		return nil, fmt.Errorf("unknown key %q", key)
+	}
+}
+
+func setConfigField(cfg *config.Config, key string, value string) error {
+	switch key {
+	case "rpc.host":
+		cfg.RPC.Host = value
+	case "rpc.user":
+		cfg.RPC.User = value
+	case "rpc.pass":
+		cfg.RPC.Pass = value
+	case "provider.interface_name":
+		cfg.Provider.InterfaceName = value
+	case "provider.listen_port":
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		cfg.Provider.ListenPort = v
+	case "provider.announce_ip":
+		cfg.Provider.AnnounceIP = value
+	case "provider.country":
+		cfg.Provider.Country = value
+	case "provider.price_sats_per_session":
+		v, err := strconv.ParseUint(value, 10, 64)
+		if err != nil {
+			return err
+		}
+		cfg.Provider.Price = v
+	case "provider.private_key_file":
+		cfg.Provider.PrivateKeyFile = value
+	case "provider.bandwidth_limit":
+		cfg.Provider.BandwidthLimit = value
+	case "provider.enable_nat":
+		v, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.Provider.EnableNAT = v
+	case "provider.enable_egress_nat":
+		v, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.Provider.EnableEgressNAT = v
+	case "provider.nat_outbound_interface":
+		cfg.Provider.NATOutboundInterface = value
+	case "provider.isolation_mode":
+		cfg.Provider.IsolationMode = value
+	case "provider.allowlist_file":
+		cfg.Provider.AllowlistFile = value
+	case "provider.denylist_file":
+		cfg.Provider.DenylistFile = value
+	case "provider.cert_lifetime_hours":
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		cfg.Provider.CertLifetimeHours = v
+	case "provider.cert_rotate_before_hours":
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		cfg.Provider.CertRotateBeforeHours = v
+	case "provider.health_check_enabled":
+		v, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.Provider.HealthCheckEnabled = v
+	case "provider.health_check_interval":
+		cfg.Provider.HealthCheckInterval = value
+	case "provider.bandwidth_monitor_interval":
+		cfg.Provider.BandwidthMonitorInterval = value
+	case "provider.tun_ip":
+		cfg.Provider.TunIP = value
+	case "provider.tun_subnet":
+		cfg.Provider.TunSubnet = value
+	case "client.interface_name":
+		cfg.Client.InterfaceName = value
+	case "client.tun_ip":
+		cfg.Client.TunIP = value
+	case "client.tun_subnet":
+		cfg.Client.TunSubnet = value
+	default:
+		return fmt.Errorf("unknown key %q", key)
+	}
+	return nil
+}
+
+func saveConfigFile(path string, cfg *config.Config) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	return enc.Encode(cfg)
+}
+
 type fileStatus struct {
 	Path      string `json:"path"`
 	Exists    bool   `json:"exists"`
@@ -687,6 +940,10 @@ type statusOutput struct {
 		LastPayment string `json:"last_payment,omitempty"`
 		LoadError   string `json:"load_error,omitempty"`
 	} `json:"history"`
+	Networking struct {
+		PrivilegesOK    bool   `json:"privileges_ok"`
+		PrivilegesError string `json:"privileges_error,omitempty"`
+	} `json:"networking"`
 	Warnings []string `json:"warnings,omitempty"`
 }
 
@@ -756,6 +1013,12 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	if cfg.Provider.EnableEgressNAT && strings.TrimSpace(cfg.Provider.NATOutboundInterface) == "" {
 		status.Warnings = append(status.Warnings, "provider egress NAT is enabled but nat_outbound_interface is empty")
 	}
+	if err := tunnel.EnsureElevatedPrivileges(); err != nil {
+		status.Networking.PrivilegesError = err.Error()
+		status.Warnings = append(status.Warnings, "automatic networking changes require elevated privileges")
+	} else {
+		status.Networking.PrivilegesOK = true
+	}
 
 	if jsonMode {
 		enc := json.NewEncoder(os.Stdout)
@@ -817,6 +1080,14 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	}
 	if status.History.LoadError != "" {
 		fmt.Printf("Load Error: %s\n", status.History.LoadError)
+	}
+	fmt.Println()
+
+	fmt.Println("Networking")
+	fmt.Println(strings.Repeat("-", 20))
+	fmt.Printf("Privileges OK: %t\n", status.Networking.PrivilegesOK)
+	if status.Networking.PrivilegesError != "" {
+		fmt.Printf("Privilege Error: %s\n", status.Networking.PrivilegesError)
 	}
 
 	if len(status.Warnings) > 0 {

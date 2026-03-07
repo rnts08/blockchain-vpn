@@ -1,40 +1,28 @@
-# BlockchainVPN TODO
+# BlockchainVPN TODO (Next Iteration)
 
-## 1. Tunnel/TLS Core
-- [x] Remove legacy interface-manager dependency and rely on TLS-over-TUN transport.
-- [x] Bind client trust to on-chain provider pubkey during TLS handshake.
-- [x] Add integration tests for provider/client handshake and packet forwarding.
-- [x] Add per-session throughput accounting and enforcement.
+## 1. Click-and-Run UX
+- [x] Add GUI auto-elevation/relaunch flow (macOS/Windows/Linux) so users can start networking features without manual terminal steps.
+- [x] Add first-run setup wizard in GUI (RPC check, config generation, key creation, privilege check).
+- [x] Expose all provider/client settings in a dedicated GUI Settings tab with validation hints and defaults.
+- [x] Add CLI `config` subcommands (`get`, `set`, `validate`) for scriptable settings management.
 
-## 2. Cross-Platform Networking
-- [x] Linux automatic TUN address configuration.
-- [x] Linux automatic route and DNS setup/restore.
-- [x] Implement macOS backend for TUN address, routing, and DNS.
-- [x] Non-Linux stubs with clear runtime warnings.
-- [x] Implement Windows backend for TUN address, routing, and DNS.
+## 2. Cross-Platform Networking Parity
+- [x] Implement provider egress NAT backend for macOS.
+- [x] Implement provider egress NAT backend for Windows.
+- [ ] Add cross-platform kill switch mode (block outbound traffic if tunnel drops unexpectedly).
+- [ ] Add integration tests that verify route and DNS restore logic on each supported OS backend.
 
-## 3. Provider Networking
-- [x] Implement provider egress/NAT backend (Linux runtime backend plus non-Linux stubs).
-- [x] Implement NAT traversal for home routers (UPnP and NAT-PMP).
-- [x] Add optional provider namespace/sandbox isolation mode.
-- [x] Add active health checks for TUN interface and listener.
+## 3. Reliability and Observability
+- [ ] Add provider/client runtime metrics endpoint (session count, throughput, errors, health state).
+- [ ] Add structured JSON log mode for both CLI and GUI backend actions.
+- [ ] Add persistent crash-safe cleanup markers to restore route/DNS state after abnormal termination.
 
-## 4. Blockchain and Payments
-- [x] Service announcement, discovery, payment payloads.
-- [x] Price update announcements.
-- [x] Replace naive UTXO selection with deterministic coin selection.
-- [x] Improve payment monitor reorg handling with tx->peer index.
-- [x] Add retry and backoff strategy for RPC connectivity loss.
-- [x] Replace static fee fallback with dynamic fee source from node RPCs.
+## 4. Security Hardening
+- [ ] Add optional hardware-backed key storage integration where available (Keychain/DPAPI/libsecret).
+- [ ] Add mutual TLS certificate revocation cache to immediately drop revoked clients.
+- [ ] Add configurable minimum TLS policy and cipher/profile reporting in `status --json`.
 
-## 5. Security and Hardening
-- [x] Encrypt provider private key at rest.
-- [x] Strict OP_RETURN payload decoding.
-- [x] Add cert lifetime tuning and key rotation workflow.
-- [x] Add optional allowlist/denylist for provider access policies.
-
-## 6. Product Surface
-- [x] Implement GUI app based on `docs/GUI.md`.
-- [x] Add machine-readable status output for automation (`--json` mode).
-- [x] Add installation and OS-specific privilege setup guides.
-- [x] Use OS application config directory for `config.json`, `provider.key`, and `history.json`.
+## 5. Product and Documentation
+- [ ] Add complete user guide with end-to-end flows for provider and client modes.
+- [ ] Add troubleshooting guide by OS (permission denied, TUN creation failure, route/DNS conflicts, firewall issues).
+- [ ] Add packaging and installer docs for Linux/macOS/Windows releases.

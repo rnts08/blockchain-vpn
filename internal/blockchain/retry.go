@@ -4,7 +4,13 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
+)
+
+var (
+	retryRandMu sync.Mutex
+	retryRand   = rand.New(rand.NewSource(time.Now().UnixNano()))
 )
 
 func withRetry[T any](ctx context.Context, op string, attempts int, initialBackoff time.Duration, fn func() (T, error)) (T, error) {
@@ -29,7 +35,7 @@ func withRetry[T any](ctx context.Context, op string, attempts int, initialBacko
 		}
 
 		// +/-20% jitter to avoid sync retry storms.
-		jitter := 0.8 + rand.Float64()*0.4
+		jitter := retryJitter()
 		sleep := time.Duration(float64(backoff) * jitter)
 		select {
 		case <-ctx.Done():
@@ -40,4 +46,10 @@ func withRetry[T any](ctx context.Context, op string, attempts int, initialBacko
 	}
 
 	return zero, fmt.Errorf("%s failed after %d attempts: %w", op, attempts, lastErr)
+}
+
+func retryJitter() float64 {
+	retryRandMu.Lock()
+	defer retryRandMu.Unlock()
+	return 0.8 + retryRand.Float64()*0.4
 }

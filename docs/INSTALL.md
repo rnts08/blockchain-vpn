@@ -17,6 +17,19 @@ go build -o bcvpn ./cmd/bcvpn
 go build -o bcvpn-gui ./cmd/bcvpn-gui
 ```
 
+Cross-platform CLI builds:
+
+```bash
+GOOS=linux GOARCH=amd64 go build -o bcvpn-linux-amd64 ./cmd/bcvpn
+GOOS=darwin GOARCH=amd64 go build -o bcvpn-darwin-amd64 ./cmd/bcvpn
+GOOS=windows GOARCH=amd64 go build -o bcvpn-windows-amd64.exe ./cmd/bcvpn
+```
+
+GUI note:
+
+- GUI cross-compilation can require target-specific OpenGL/cgo toolchains.
+- Build `cmd/bcvpn-gui` natively on the target OS for the most reliable result.
+
 ## 2. Config and Data Paths
 
 BlockchainVPN stores runtime files in the OS user config directory under `BlockchainVPN`:
@@ -62,6 +75,7 @@ Required for full runtime networking features:
 - Create/configure TUN interface
 - Apply route changes
 - Apply DNS changes (via `networksetup`)
+- Provider egress NAT backend setup
 
 Run from an administrator context when connecting or providing service:
 
@@ -77,6 +91,7 @@ Required for full runtime networking features:
 - Create/configure TUN interface
 - Apply route changes
 - Apply DNS settings
+- Provider egress NAT backend setup
 
 Run in an elevated terminal ("Run as Administrator"):
 
@@ -92,7 +107,17 @@ Run in an elevated terminal ("Run as Administrator"):
 - If behind a home router, enable `provider.enable_nat` to use UPnP/NAT-PMP mapping.
 - If running provider egress NAT, set `provider.enable_egress_nat=true` and configure `provider.nat_outbound_interface`.
 
-## 5. Verify Runtime Status
+## 5. Click-and-Run Behavior
+
+- GUI and CLI now preflight privilege requirements before provider start and before client payment/connection.
+- If privileges are missing, the operation is stopped before funds are spent and a clear error is shown.
+- GUI first-run wizard performs config, RPC, key, and privilege checks before loading the main tabs.
+- GUI includes a platform-specific "Relaunch Elevated" action to request admin/root rights and reopen automatically.
+- Configure runtime settings in:
+  - GUI provider/client panels (save settings to `config.json`)
+  - CLI config subcommands (`bcvpn config get/set/validate`) plus `bcvpn status` / `bcvpn status --json` for verification
+
+## 6. Verify Runtime Status
 
 Use `status` to inspect config/runtime readiness:
 

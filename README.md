@@ -23,7 +23,7 @@ The system utilizes the blockchain as an immutable, censorship-resistant bulleti
     *   Connects to an `ordexcoind` node to scan for Service Announcements.
     *   Maintains a local cache of available providers.
     *   Performs active probing (UDP Echo) to determine availability and speed.
-    *   Performs GeoIP lookups locally to determine country of origin.
+    *   Performs GeoIP lookups to estimate country of origin.
     *   Facilitates payment and configures the local network interface to tunnel traffic.
 
 ## 2. Protocol Specification
@@ -63,7 +63,7 @@ Clients purchase access by sending a transaction to the provider's address (deri
 1.  **Initialization:**
     *   Generates or loads a `secp256k1` private/public key (`btcec`).
     *   Detects public IP address (automatically or via config).
-    *   Sets up a TUN interface and applies bandwidth limits (Linux only).
+    *   Sets up a TUN interface and applies runtime networking configuration (platform-dependent backend).
 2.  **Announcement:**
     *   Constructs a raw transaction using `ordexcoind` RPC.
     *   Adds an output with `OP_RETURN` containing the service payload.
@@ -105,10 +105,33 @@ Clients purchase access by sending a transaction to the provider's address (deri
 
 ### Installation
 
+Build the CLI and GUI for your current OS:
+
 ```bash
-go build -o bcvpn ./cmd/bcvpn/
-go build -o bcvpn-gui ./cmd/bcvpn-gui/
+go build -o bcvpn ./cmd/bcvpn
+go build -o bcvpn-gui ./cmd/bcvpn-gui
 ```
+
+Cross-compile the CLI for major platforms:
+
+```bash
+GOOS=linux GOARCH=amd64 go build -o bcvpn-linux-amd64 ./cmd/bcvpn
+GOOS=darwin GOARCH=amd64 go build -o bcvpn-darwin-amd64 ./cmd/bcvpn
+GOOS=windows GOARCH=amd64 go build -o bcvpn-windows-amd64.exe ./cmd/bcvpn
+```
+
+Or use `Makefile` targets:
+
+```bash
+make build            # native CLI
+make build-gui        # native GUI
+make build-cli-all    # cross-platform CLI artifacts
+```
+
+Notes:
+
+*   CLI cross-compilation is supported for Linux/macOS/Windows.
+*   GUI builds use Fyne/OpenGL dependencies and are best built natively on the target OS.
 
 ### Configuration
 
@@ -208,10 +231,18 @@ To start selling bandwidth:
     ```
 
 5.  **Status (Human or JSON)**:
-    Inspect current config/runtime readiness for automation or diagnostics.
+    Inspect current config/runtime readiness for automation or diagnostics (including networking privilege readiness).
     ```bash
     ./bcvpn status
     ./bcvpn status --json
+    ```
+
+6.  **CLI Config Management**:
+    Read, update, and validate settings from the CLI.
+    ```bash
+    ./bcvpn config get provider.listen_port
+    ./bcvpn config set provider.listen_port 51820
+    ./bcvpn config validate
     ```
 
 ## 5. Using Other Blockchains
@@ -224,74 +255,62 @@ To adapt this for another chain:
 2.  **Address Format**: The code dynamically detects the chain (Mainnet, Testnet, Regtest) from the RPC connection and adjusts address decoding accordingly.
 3.  **Fees**: Fee selection uses node-reported dynamic estimates (`estimatesmartfee`, relay fee fallback).
 
-## 6. Project Status & Roadmap
+## 6. Project Status
 
-### Completed Features
+### Feature Checklist
 
-- [x] **Core Protocol**: Service announcement and payment payloads defined and implemented.
-- [x] **Provider Logic**:
-  - [x] Automatic IP detection.
-  - [x] Service announcement broadcasting (with re-announce).
-  - [x] TUN interface setup and management (Linux).
-  - [x] Payment monitoring and automatic client authorization via TLS certificate verification.
-  - [x] UDP Echo server for latency tests.
-  - [x] Per-session throughput accounting and bandwidth limit enforcement.
-- [x] **Client Logic**:
-    - [x] Blockchain scanning for providers.
-    - [x] GeoIP enrichment and Latency testing.
-    - [x] Sorting and filtering (Price, Country, Latency).
-    - [x] Interactive selection and connection.
-    - [x] Payment transaction construction (with OP_RETURN).
-    - [x] Payment retry mechanism.
-    - [x] Payment history logging.
-- [x] **Cross-Platform Buildability**:
-    - [x] Linux support (full runtime feature set).
-    - [x] macOS and Windows route/DNS runtime backends.
+- [x] On-chain service announcement and discovery protocol (`OP_RETURN` payloads).
+- [x] Provider service announcement rebroadcasting and price update announcements.
+- [x] TLS-over-TUN tunnel transport with cert identity bound to provider public key.
+- [x] Payment flow with deterministic UTXO selection and dynamic fee estimation (`estimatesmartfee` + relay fallback).
+- [x] Payment monitor with reorg handling and tx->peer authorization tracking.
+- [x] Dynamic provider-side client IP allocation.
+- [x] Throughput accounting and optional bandwidth limiting per session.
+- [x] Active provider health checks for TUN interface and TLS listener.
+- [x] Provider access policies via optional allowlist/denylist files.
+- [x] Provider key encryption at rest and rotation workflow.
+- [x] Optional provider sandbox hardening mode on Linux (`isolation_mode=sandbox`).
+- [x] NAT traversal support for providers (UPnP + NAT-PMP).
+- [x] Provider egress NAT backend on Linux, macOS, and Windows.
+- [x] Client routing and DNS auto-configuration for Linux, macOS, and Windows.
+- [x] RPC retry + exponential backoff for transient failures.
+- [x] Payment history storage and reporting.
+- [x] Machine-readable status output for automation (`bcvpn status --json`).
+- [x] Scriptable CLI config subcommands (`config get/set/validate`).
+- [x] Cross-platform GUI application (`cmd/bcvpn-gui`) using Fyne.
+- [x] GUI first-run setup wizard (config, RPC, key, privilege checks).
+- [x] GUI auto-elevation relaunch flow (Linux/macOS/Windows backends).
+- [x] OS-agnostic application config directory for `config.json`, `provider.key`, and `history.json`.
 
-### Todo List
+### How It Works
 
-- [ ] **Core VPN Functionality**
-  - [x] **Provider Egress NAT**: Implement provider egress NAT backend (Linux runtime backend with platform stubs).
-  - [x] **Client Routing**: Implement logic to modify the client's system routing table to direct all traffic through the TUN interface upon connection.
-  - [x] **Client DNS**: Configure the client's DNS settings upon connection to prevent DNS leaks.
-  - [x] **Dynamic IP Management**: Replace static TUN IPs with a dynamic IP address pool managed by the provider.
+1.  Provider starts (`start-provider`), optionally opens NAT mappings, announces endpoint to chain, and serves TLS-over-TUN sessions.
+2.  Client scans chain (`scan`), enriches candidates with latency/GeoIP, and selects a provider.
+3.  Client sends on-chain payment containing a temporary public key.
+4.  Provider payment monitor authorizes that key until session expiry.
+5.  Client connects over TLS, receives a dynamic TUN IP, and traffic is forwarded through provider.
 
-- [ ] **Robustness & Error Handling**
-  - [x] Handle blockchain reorgs in the Payment Monitor (remove authorization if payment tx is orphaned).
-  - [x] Validate `chaincfg` parameters dynamically for Altchains beyond standard testnets.
-  - [x] Graceful shutdown and cleanup of TUN interfaces and firewall rules.
-  - [x] Active health checks for provider TUN interface and TLS listener.
-  - [x] Integration tests for TLS handshake identity validation and stream forwarding/accounting.
-  - [x] Retry and exponential backoff strategy for transient RPC connectivity loss.
+### Platform Coverage
 
-- [ ] **Cross-Platform Support**
-  - [x] Ensure file paths for config and keys are OS-agnostic.
-  - [x] Add macOS route + DNS backend.
-  - [x] Add Windows route + DNS backend.
+- Linux: full runtime support, including provider egress NAT and sandbox hardening mode.
+- macOS: full client route/DNS/TUN automation support and provider egress NAT backend.
+- Windows: full client route/DNS/TUN automation support and provider egress NAT backend.
+- Other OSes: explicit runtime stubs and clear unsupported errors.
+- Privilege preflight is enforced before provider start and before client payment/connection.
 
-- [ ] **Security**
-  - [x] Encrypt the `provider.key` file on disk.
-  - [x] Cert lifetime tuning and automatic certificate rotation workflow.
-  - [x] Provider key rotation workflow (`rotate-provider-key`).
-  - [x] Optional allowlist/denylist access policies.
-  - [x] Validate input data from `OP_RETURN` strictly to prevent injection attacks.
-  - [x] Optional provider sandbox isolation mode (Linux).
-  - [ ] Run the TUN interface in a separate network namespace (optional, for better isolation).
+### Gaps and Improvements
 
-- [ ] **Advanced Features**
-  - [x] **NAT Traversal**: Implement UPnP and NAT-PMP for providers behind home routers.
-  - [x] **Dynamic Pricing**: Allow providers to update price without re-announcing (or minimize re-announcement cost).
-  - [x] **Session Management**: Implement logic to handle session expiration gracefully (auto-disconnect or auto-renew).
+- [ ] Expand Settings tab coverage to include all provider/client fields in one place.
+- [ ] Cross-platform kill switch and route/DNS restore stress tests.
 
-- [ ] **Future Refactoring & Features**
-  - [x] **GUI Implementation**: Build a graphical user interface based on `GUI.md`.
-  - [x] **Code Structure**: Refactor into logical sub-packages (`internal/protocol`, `internal/tunnel`, etc.).
-  - [x] **Coin Selection**: Implement deterministic UTXO selection instead of using the first available.
-  - [x] **Fee Estimation**: Replace hardcoded transaction fees with dynamic estimation using `estimatesmartfee` + relay-fee fallback.
-  - [x] **Configuration Management**: Move configuration files (`config.json`, `provider.key`, `history.json`) to a dedicated OS application config directory.
-  - [x] **Automation Status Output**: Add machine-readable status output (`bcvpn status --json`).
-  - [x] **Install/Privilege Guides**: Add installation and OS-specific privilege setup guide (`docs/INSTALL.md`).
+See [docs/TODO.md](docs/TODO.md) for prioritized next steps.
 
+### Documentation
+
+- Detailed install and privilege setup: [docs/INSTALL.md](docs/INSTALL.md)
+- UI design and behavior: [docs/GUI.md](docs/GUI.md)
+- Networking notes: [docs/NETWORKING.md](docs/NETWORKING.md)
+- Engineering roadmap and remaining tasks: [docs/TODO.md](docs/TODO.md)
 
 ## 7. Project File Layout
 

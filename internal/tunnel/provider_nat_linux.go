@@ -5,7 +5,6 @@ package tunnel
 import (
 	"bytes"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -75,16 +74,6 @@ func getDefaultOutboundInterface() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("could not determine outbound interface from default route: %s", out)
-}
-
-func cidrFromIPPrefix(ip, prefix string) (string, error) {
-	prefix = strings.TrimSpace(prefix)
-	cidr := fmt.Sprintf("%s/%s", ip, prefix)
-	_, ipNet, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return "", fmt.Errorf("invalid TUN CIDR %s: %w", cidr, err)
-	}
-	return ipNet.String(), nil
 }
 
 func runLinuxCommand(name string, args ...string) (string, error) {
