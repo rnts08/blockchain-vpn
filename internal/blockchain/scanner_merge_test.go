@@ -29,7 +29,7 @@ func TestMergeProviderStateAppliesPriceAndHeartbeat(t *testing.T) {
 	priceUpdates := map[string]uint64{pubHex: 1500}
 	heartbeats := map[string]heartbeatState{pubHex: {flags: protocol.AvailabilityFlagAvailable}}
 
-	merged := mergeProviderState(announcementByPubKey, priceUpdates, heartbeats)
+	merged := mergeProviderState(announcementByPubKey, priceUpdates, heartbeats, nil)
 	if len(merged) != 1 {
 		t.Fatalf("expected one merged announcement, got %d", len(merged))
 	}

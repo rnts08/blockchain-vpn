@@ -1410,7 +1410,13 @@ func (s *guiState) scanProviders(sortBy, country string, maxPrice uint64, minBan
 	client := connectRPC(s.cfg.RPC.Host, s.cfg.RPC.User, s.cfg.RPC.Pass)
 	defer client.Shutdown()
 
-	results, _, err := blockchain.ScanForVPNs(client, 0, nil)
+	repPath, _ := blockchain.DefaultReputationStorePath()
+	var repStore *blockchain.ReputationStore
+	if repPath != "" {
+		repStore, _ = blockchain.NewReputationStore(repPath)
+	}
+
+	results, _, err := blockchain.ScanForVPNs(client, 0, nil, repStore)
 	if err != nil {
 		return err
 	}
@@ -1533,7 +1539,14 @@ func computeProviderScoreGUI(ep *geoip.EnrichedVPNEndpoint) float64 {
 	if strings.TrimSpace(ep.DeclaredCountry) != "" {
 		countryBoost = 1.05
 	}
-	return countryBoost * ((float64(ep.AdvertisedBandwidthKB) / 1000.0) + capacity) / (price * float64(latencyMS))
+
+	repBoost := 1.0
+	if ep.ReputationScore != 0 {
+		// Map 1-100 to a 0.1x - 2.0x multiplier
+		repBoost = 0.1 + (float64(ep.ReputationScore) / 100.0 * 1.9)
+	}
+
+	return countryBoost * repBoost * ((float64(ep.AdvertisedBandwidthKB) / 1000.0) + capacity) / (price * float64(latencyMS))
 }
 
 func (s *guiState) connectSelectedProvider(dryRun bool) error {

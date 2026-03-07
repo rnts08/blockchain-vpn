@@ -310,8 +310,20 @@ func main() {
 			}
 		}
 
+		repPath, err := blockchain.DefaultReputationStorePath()
+		if err != nil {
+			log.Printf("Warning: failed to get default reputation path: %v", err)
+		}
+		var repStore *blockchain.ReputationStore
+		if repPath != "" {
+			repStore, err = blockchain.NewReputationStore(repPath)
+			if err != nil {
+				log.Printf("Warning: failed to load reputation store: %v", err)
+			}
+		}
+
 		fmt.Println("Scanning for VPN providers and price updates...")
-		endpoints, priceUpdates, err := blockchain.ScanForVPNs(client, *scanStartBlock, cache)
+		endpoints, priceUpdates, err := blockchain.ScanForVPNs(client, *scanStartBlock, cache, repStore)
 		if err != nil {
 			log.Fatalf("Failed to scan for VPNs: %v", err)
 		}
@@ -1091,7 +1103,13 @@ func computeProviderScore(ep *geoip.EnrichedVPNEndpoint) float64 {
 	if strings.TrimSpace(ep.DeclaredCountry) != "" {
 		countryBoost = 1.05
 	}
-	return countryBoost * ((bandwidth / 1000.0) + capacity) / (price * float64(latencyMS))
+
+	repBoost := 1.0
+	if ep.ReputationScore != 0 {
+		repBoost = 0.1 + (float64(ep.ReputationScore) / 100.0 * 1.9)
+	}
+
+	return countryBoost * repBoost * ((bandwidth / 1000.0) + capacity) / (price * float64(latencyMS))
 }
 
 func handleFullHistory() {

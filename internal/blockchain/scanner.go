@@ -25,6 +25,7 @@ type ProviderAnnouncement struct {
 	DeclaredCountry       string
 	AvailabilityFlags     uint8
 	LastHeartbeatSeen     bool
+	ReputationScore       int
 }
 
 func (p *ProviderAnnouncement) AvailableSlots() int {
@@ -40,7 +41,8 @@ type heartbeatState struct {
 
 // ScanForVPNs scans the blockchain for VPN service announcements starting from
 // the current tip and going backwards until startBlock or the cached max height.
-func ScanForVPNs(client *rpcclient.Client, startBlock int64, cache *ScanCache) ([]*ProviderAnnouncement, map[string]uint64, error) {
+// If repStore is provided, it processes decoded reputation payloads and applies scores.
+func ScanForVPNs(client *rpcclient.Client, startBlock int64, cache *ScanCache, repStore *ReputationStore) ([]*ProviderAnnouncement, map[string]uint64, error) {
 	announcementByPubKey := make(map[string]*ProviderAnnouncement)
 	priceUpdates := make(map[string]uint64) // Key: hex pubkey, Value: new price
 	heartbeats := make(map[string]heartbeatState)
@@ -130,6 +132,16 @@ func ScanForVPNs(client *rpcclient.Client, startBlock int64, cache *ScanCache) (
 						if _, exists := heartbeats[pubKeyHex]; !exists {
 							heartbeats[pubKeyHex] = heartbeatState{flags: hb.Flags}
 						}
+						continue
+					}
+
+					// Try to decode reputation update.
+					if repStore != nil {
+						if rep, err := protocol.DecodeReputationPayload(payload); err == nil {
+							// For simplicity, we just save the most recent score as a simple record.
+							// In a full implementation, the logic might weight or aggregate multiple signatures.
+							_ = repStore.Record(rep.HexPubKey(), int(rep.Score), rep.Source)
+						}
 					}
 				}
 			}
@@ -179,11 +191,11 @@ func ScanForVPNs(client *rpcclient.Client, startBlock int64, cache *ScanCache) (
 		finalHBs = heartbeats
 	}
 
-	announcements := mergeProviderState(finalAnns, finalPrices, finalHBs)
+	announcements := mergeProviderState(finalAnns, finalPrices, finalHBs, repStore)
 	return announcements, finalPrices, nil
 }
 
-func mergeProviderState(announcementByPubKey map[string]*ProviderAnnouncement, priceUpdates map[string]uint64, heartbeats map[string]heartbeatState) []*ProviderAnnouncement {
+func mergeProviderState(announcementByPubKey map[string]*ProviderAnnouncement, priceUpdates map[string]uint64, heartbeats map[string]heartbeatState, repStore *ReputationStore) []*ProviderAnnouncement {
 	announcements := make([]*ProviderAnnouncement, 0, len(announcementByPubKey))
 	for pubKeyHex, ann := range announcementByPubKey {
 		if ann == nil || ann.Endpoint == nil {
@@ -195,6 +207,9 @@ func mergeProviderState(announcementByPubKey map[string]*ProviderAnnouncement, p
 		if hb, ok := heartbeats[pubKeyHex]; ok {
 			ann.AvailabilityFlags = hb.flags
 			ann.LastHeartbeatSeen = true
+		}
+		if repStore != nil {
+			ann.ReputationScore = repStore.Score(pubKeyHex)
 		}
 		if ann.DeclaredCountry == "" {
 			ann.DeclaredCountry = strings.ToUpper(strings.TrimSpace(ann.Endpoint.CountryCode))
