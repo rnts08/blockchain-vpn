@@ -35,10 +35,10 @@ This list is a new post-MVP backlog based on a full code and docs review.
 
 ## 6. Testing and Release Engineering
 - [x] Add baseline semantic versioning system (`VERSION`, `bcvpn version`, `docs/VERSIONING.md`) starting at `0.1.0`.
-- [ ] Add integration test matrix in CI for Linux runtime networking paths with privilege-capable test environment.
+- [x] Add integration test matrix in CI for Linux runtime networking paths with privilege-capable test environment.
 - [x] Add deterministic tests for key storage mode resolution and backend fallback behavior.
 - [ ] Add fuzz tests for protocol payload parsing and revocation cache parsing.
-- [ ] Add release smoke test scripts for CLI and GUI startup on Linux/macOS/Windows artifacts.
+- [x] Add release smoke test scripts for CLI and GUI startup on Linux/macOS/Windows artifacts.
 
 ## 7. Documentation
 - [x] Add dedicated security model document (`docs/SECURITY.md`) covering trust boundaries and threat model.

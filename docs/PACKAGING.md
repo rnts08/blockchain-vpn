@@ -67,6 +67,7 @@ Post-install:
 1. `go test ./...`
 2. `make build-cli-all`
 3. Native GUI build per OS
-4. Smoke test provider/client flows
-5. Verify `bcvpn status --json`
-6. Publish checksums and release notes
+4. Run smoke script: `./scripts/release-smoke.sh`
+5. Smoke test provider/client flows
+6. Verify `bcvpn status --json` and `bcvpn doctor --json`
+7. Publish checksums and release notes
