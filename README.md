@@ -342,6 +342,8 @@ To adapt this for another chain:
 
 - [x] On-chain service announcement and discovery protocol (`OP_RETURN` payloads).
 - [x] v2 provider metadata payload (bandwidth, country, capacity, availability flags) with scanner compatibility for v1/v2.
+- [x] Advanced scanner filtering (country, price, bandwidth, latency, slots) and multi-field sorting.
+- [x] Provider score/ranking algorithm and output in CLI/GUI.
 - [x] Provider service announcement rebroadcasting and price update announcements.
 - [x] Provider heartbeat/availability broadcasts for freshness-aware discovery.
 - [x] TLS-over-TUN tunnel transport with cert identity bound to provider public key.
@@ -416,6 +418,7 @@ See [docs/TODO.md](docs/TODO.md) for prioritized next steps.
 - Automation JSON examples: [docs/AUTOMATION.md](docs/AUTOMATION.md)
 - Versioning policy and release progression: [docs/VERSIONING.md](docs/VERSIONING.md)
 - Engineering roadmap and remaining tasks: [docs/TODO.md](docs/TODO.md)
+- Version history and notable changes: [docs/CHANGELOG.md](docs/CHANGELOG.md)
 
 ## 7. Project File Layout
 

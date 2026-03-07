@@ -351,7 +351,8 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 }
 
 func readTunLoop(iface *water.Interface, clients *ClientMap) {
-	packet := make([]byte, 2048)
+	// 65535 bytes covers the maximum theoretical IP packet size (full 16-bit length field).
+	packet := make([]byte, 65535)
 	for {
 		n, err := iface.Read(packet)
 		if err != nil {
@@ -375,6 +376,9 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 					log.Printf("Info: failed to write packet to client %s: %v", destIP.String(), err)
 				}
 			}
+		} else if n > 0 {
+			version := packet[0] >> 4
+			log.Printf("Info: readTunLoop dropping non-IPv4 packet (version=%d, len=%d)", version, n)
 		}
 	}
 }
