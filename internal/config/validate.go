@@ -72,6 +72,11 @@ func Validate(cfg *Config) error {
 	default:
 		errs = append(errs, fmt.Errorf("logging.format must be one of: text, json"))
 	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Logging.Level)) {
+	case "", "debug", "info", "warn", "error":
+	default:
+		errs = append(errs, fmt.Errorf("logging.level must be one of: debug, info, warn, error"))
+	}
 
 	switch strings.ToLower(strings.TrimSpace(cfg.Security.KeyStorageMode)) {
 	case "", "file", "auto", "keychain", "libsecret", "dpapi":

@@ -24,6 +24,7 @@ type RPCConfig struct {
 
 type LoggingConfig struct {
 	Format string `json:"format"` // "text" or "json"
+	Level  string `json:"level"`  // "debug", "info", "warn", "error"
 }
 
 type SecurityConfig struct {
@@ -159,6 +160,7 @@ func GenerateDefaultConfig(path string) error {
 		},
 		Logging: LoggingConfig{
 			Format: "text",
+			Level:  "info",
 		},
 		Security: SecurityConfig{
 			KeyStorageMode:      "file",

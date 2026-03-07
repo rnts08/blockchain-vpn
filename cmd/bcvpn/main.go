@@ -66,10 +66,14 @@ func main() {
 	}
 	applyConfigDefaults(cfg)
 	logFormat := strings.TrimSpace(cfg.Logging.Format)
+	logLevel := strings.TrimSpace(cfg.Logging.Level)
 	if env := strings.TrimSpace(os.Getenv("BCVPN_LOG_FORMAT")); env != "" {
 		logFormat = env
 	}
-	obs.ConfigureLogging(logFormat, "bcvpn-cli")
+	if env := strings.TrimSpace(os.Getenv("BCVPN_LOG_LEVEL")); env != "" {
+		logLevel = env
+	}
+	obs.ConfigureLogging(logFormat, logLevel, "bcvpn-cli")
 	_ = tunnel.RecoverPendingNetworkState()
 
 	// Subcommands
@@ -990,6 +994,8 @@ func getConfigField(cfg *config.Config, key string) (any, error) {
 		return cfg.Client.MetricsListenAddr, nil
 	case "logging.format":
 		return cfg.Logging.Format, nil
+	case "logging.level":
+		return cfg.Logging.Level, nil
 	case "security.key_storage_mode":
 		return cfg.Security.KeyStorageMode, nil
 	case "security.key_storage_service":
@@ -1101,6 +1107,8 @@ func setConfigField(cfg *config.Config, key string, value string) error {
 		cfg.Client.MetricsListenAddr = value
 	case "logging.format":
 		cfg.Logging.Format = value
+	case "logging.level":
+		cfg.Logging.Level = value
 	case "security.key_storage_mode":
 		cfg.Security.KeyStorageMode = value
 	case "security.key_storage_service":
@@ -1139,6 +1147,9 @@ func applyConfigDefaults(cfg *config.Config) {
 	}
 	if strings.TrimSpace(cfg.Logging.Format) == "" {
 		cfg.Logging.Format = "text"
+	}
+	if strings.TrimSpace(cfg.Logging.Level) == "" {
+		cfg.Logging.Level = "info"
 	}
 	if strings.TrimSpace(cfg.Security.KeyStorageMode) == "" {
 		cfg.Security.KeyStorageMode = "file"
@@ -1182,6 +1193,7 @@ type statusOutput struct {
 	} `json:"rpc"`
 	Logging struct {
 		Format string `json:"format"`
+		Level  string `json:"level"`
 	} `json:"logging"`
 	Security struct {
 		KeyStorageMode      string   `json:"key_storage_mode"`
@@ -1255,6 +1267,7 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	status.RPC.User = cfg.RPC.User
 	status.RPC.PassConfigured = strings.TrimSpace(cfg.RPC.Pass) != ""
 	status.Logging.Format = cfg.Logging.Format
+	status.Logging.Level = cfg.Logging.Level
 	status.Security.KeyStorageMode = cfg.Security.KeyStorageMode
 	resolvedStoreMode, storeOK, storeDetail := crypto.KeyStorageStatus(cfg.Security.KeyStorageMode)
 	status.Security.KeyStorageResolved = resolvedStoreMode
@@ -1363,6 +1376,7 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	fmt.Println("Logging")
 	fmt.Println(strings.Repeat("-", 20))
 	fmt.Printf("Format: %s\n", status.Logging.Format)
+	fmt.Printf("Level: %s\n", status.Logging.Level)
 	fmt.Println()
 	fmt.Println("Security")
 	fmt.Println(strings.Repeat("-", 20))

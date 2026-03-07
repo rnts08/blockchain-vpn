@@ -120,10 +120,14 @@ func main() {
 		return
 	}
 	logFormat := strings.TrimSpace(state.cfg.Logging.Format)
+	logLevel := strings.TrimSpace(state.cfg.Logging.Level)
 	if env := strings.TrimSpace(os.Getenv("BCVPN_LOG_FORMAT")); env != "" {
 		logFormat = env
 	}
-	obs.ConfigureLogging(logFormat, "bcvpn-gui")
+	if env := strings.TrimSpace(os.Getenv("BCVPN_LOG_LEVEL")); env != "" {
+		logLevel = env
+	}
+	obs.ConfigureLogging(logFormat, logLevel, "bcvpn-gui")
 	_ = tunnel.RecoverPendingNetworkState()
 
 	if state.firstRun {
@@ -727,6 +731,12 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	} else {
 		logFormat.SetSelected(s.cfg.Logging.Format)
 	}
+	logLevel := widget.NewSelect([]string{"debug", "info", "warn", "error"}, nil)
+	if strings.TrimSpace(s.cfg.Logging.Level) == "" {
+		logLevel.SetSelected("info")
+	} else {
+		logLevel.SetSelected(s.cfg.Logging.Level)
+	}
 	statusOut := widget.NewMultiLineEntry()
 	statusOut.Disable()
 	statusOut.SetMinRowsVisible(6)
@@ -743,6 +753,7 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.Security.TLSProfile = strings.TrimSpace(tlsProfile.Selected)
 		s.cfg.Security.MetricsAuthToken = strings.TrimSpace(metricsAuthToken.Text)
 		s.cfg.Logging.Format = strings.TrimSpace(logFormat.Selected)
+		s.cfg.Logging.Level = strings.TrimSpace(logLevel.Selected)
 		if err := config.Validate(s.cfg); err != nil {
 			s.mu.Unlock()
 			dialog.ShowError(fmt.Errorf("config validation failed: %w", err), w)
@@ -790,6 +801,7 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewFormItem("TLS Profile", tlsProfile),
 		widget.NewFormItem("Metrics Auth Token", metricsAuthToken),
 		widget.NewFormItem("Log Format", logFormat),
+		widget.NewFormItem("Log Level", logLevel),
 	)
 	buttons := container.NewGridWithColumns(3, saveBtn, validateBtn, defaultsBtn)
 
@@ -809,6 +821,9 @@ func applyDefaultConfigValues(cfg *config.Config) {
 	}
 	if strings.TrimSpace(cfg.Logging.Format) == "" {
 		cfg.Logging.Format = "text"
+	}
+	if strings.TrimSpace(cfg.Logging.Level) == "" {
+		cfg.Logging.Level = "info"
 	}
 	if strings.TrimSpace(cfg.Security.KeyStorageMode) == "" {
 		cfg.Security.KeyStorageMode = "file"

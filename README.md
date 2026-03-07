@@ -162,7 +162,8 @@ Sample `config.json`:
     "pass": "yourrpcpassword"
   },
   "logging": {
-    "format": "text"
+    "format": "text",
+    "level": "info"
   },
   "security": {
     "key_storage_mode": "file",
@@ -281,9 +282,10 @@ To start selling bandwidth:
     ```
 
 8.  **Structured Logs (Optional)**:
-    Set `logging.format` to `json` in `config.json`, or override at runtime:
+    Set `logging.format` (`text`/`json`) and `logging.level` (`debug`/`info`/`warn`/`error`) in `config.json`, or override at runtime:
     ```bash
     BCVPN_LOG_FORMAT=json ./bcvpn status --json
+    BCVPN_LOG_LEVEL=warn ./bcvpn start-provider
     ```
 
 9.  **Version Info**:
