@@ -138,3 +138,10 @@ func (m *MultiTunnelManager) List() map[string]string {
 	}
 	return list
 }
+
+// ActiveCount returns the number of currently active tunnels.
+func (m *MultiTunnelManager) ActiveCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.tunnels)
+}

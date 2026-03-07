@@ -521,8 +521,13 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	})
 
 	stopBtn := widget.NewButton("Stop Provider", func() {
-		s.stopProvider()
-		statusLabel.SetText("Status: stopped")
+		dialog.ShowConfirm("Stop Provider", "Are you sure you want to stop the provider? All connected clients will be disconnected.", func(confirmed bool) {
+			if !confirmed {
+				return
+			}
+			s.stopProvider()
+			statusLabel.SetText("Status: stopped")
+		}, w)
 	})
 	rebroadcastBtn := widget.NewButton("Rebroadcast Service", func() {
 		pass := strings.TrimSpace(passwordEntry.Text)
@@ -787,9 +792,21 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 		privilegeStatus = "Privileges: " + err.Error()
 	}
 	privLabel := widget.NewLabel(privilegeStatus)
+
+	providerStatusLabel := widget.NewLabel("Provider: Stopped")
+	if s.providerRunning {
+		providerStatusLabel.Text = "Provider: Running"
+	}
+
+	clientStatusLabel := widget.NewLabel("Client: Disconnected")
+
 	metricsBox := widget.NewMultiLineEntry()
 	metricsBox.Disable()
 	metricsBox.SetMinRowsVisible(8)
+	metricsAutoRefresh := widget.NewCheck("Auto-refresh (5s)", nil)
+	metricsAutoRefresh.SetChecked(false)
+	var metricsTicker *time.Ticker
+	var metricsStop chan struct{}
 	refreshMetrics := func() {
 		s.mu.Lock()
 		cfg := *s.cfg
@@ -801,6 +818,42 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 		fmt.Fprintf(&out, "Provider Metrics:\n%s\n\n", fetchMetricsSummary(cfg.Provider.MetricsListenAddr, cfg.Security.MetricsAuthToken))
 		fmt.Fprintf(&out, "Client Metrics:\n%s", fetchMetricsSummary(cfg.Client.MetricsListenAddr, cfg.Security.MetricsAuthToken))
 		metricsBox.SetText(out.String())
+
+		s.mu.Lock()
+		providerStatusLabel.Text = "Provider: " + func() string {
+			if s.providerRunning {
+				return "Running"
+			}
+			return "Stopped"
+		}()
+		s.mu.Unlock()
+
+		if s.clientMgr != nil {
+			active := s.clientMgr.ActiveCount()
+			if active > 0 {
+				clientStatusLabel.Text = fmt.Sprintf("Client: Connected (%d active)", active)
+			} else {
+				clientStatusLabel.Text = "Client: Disconnected"
+			}
+		}
+	}
+	metricsTicker = time.NewTicker(5 * time.Second)
+	metricsStop = make(chan struct{})
+	metricsAutoRefresh.OnChanged = func(checked bool) {
+		if checked {
+			go func() {
+				for {
+					select {
+					case <-metricsStop:
+						return
+					case <-metricsTicker.C:
+						refreshMetrics()
+					}
+				}
+			}()
+		} else {
+			metricsStop <- struct{}{}
+		}
 	}
 	refreshBtn := widget.NewButton("Refresh Metrics", refreshMetrics)
 	refreshMetrics()
@@ -869,8 +922,8 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 	return container.NewPadded(container.NewVBox(
 		title,
 		versionLabel,
-		widget.NewCard("Interfaces", "Current tunnel interface settings", container.NewVBox(configPath, providerIface, clientIface, clientKill, privLabel)),
-		widget.NewCard("Runtime Metrics", "Provider/client runtime metrics endpoint snapshots", container.NewVBox(refreshBtn, metricsBox)),
+		widget.NewCard("Interfaces", "Current tunnel interface settings", container.NewVBox(configPath, providerIface, clientIface, clientKill, privLabel, providerStatusLabel, clientStatusLabel)),
+		widget.NewCard("Runtime Metrics", "Provider/client runtime metrics with auto-refresh", container.NewVBox(container.NewGridWithColumns(3, refreshBtn, metricsAutoRefresh), metricsBox)),
 		widget.NewCard("Doctor", "Config/privilege/tool readiness checks", container.NewVBox(doctorBtn, doctorBox)),
 		widget.NewCard("Event Timeline", "Recent runtime session and auth events", container.NewVBox(eventsBtn, eventsBox)),
 		exportDiagBtn,
