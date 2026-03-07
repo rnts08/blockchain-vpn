@@ -69,6 +69,8 @@ type ProviderConfig struct {
 	AnnouncementFeeMode         string `json:"announcement_fee_mode"` // "conservative" or "economical"
 	ThroughputProbePort         int    `json:"throughput_probe_port"` // 0 = disable provider-assisted probes
 	WebSocketFallbackPort       int    `json:"websocket_fallback_port"`
+	HeartbeatInterval           string `json:"heartbeat_interval"`       // e.g. "5m"
+	PaymentMonitorInterval      string `json:"payment_monitor_interval"` // e.g. "1m"
 }
 
 type ClientConfig struct {
@@ -217,6 +219,8 @@ func GenerateDefaultConfig(path string) error {
 			AnnouncementFeeMode:         "conservative",
 			ThroughputProbePort:         51821,
 			WebSocketFallbackPort:       0, // Disabled by default
+			HeartbeatInterval:           "5m",
+			PaymentMonitorInterval:      "30s",
 		},
 		Client: ClientConfig{
 			InterfaceName:              "bcvpn1",

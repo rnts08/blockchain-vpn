@@ -4,45 +4,7 @@ This document outlines the prioritized implementation plan based on code analysi
 
 ---
 
-## PHASE 2: HIGH PRIORITY SECURITY ✅ DONE
-
-### 2.1 RPC Password Stored Plaintext ✅ DONE
-**Location:** `internal/config/config.go:25`  
-**Issue:** Password in plaintext JSON config file.  
-**Fix:** 
-- Document localhost-only RPC setup (no password required)
-- Add security warnings to INSTALL.md
-- Update default config to localhost:25173
-- Auto-detect localhost and disable TLS/password
-
----
-
-## PHASE 3: HIGH PRIORITY BUGS
-
-### 3.4 Payment Amount Not Verified ✅ DONE
-**Location:** `internal/blockchain/payment.go:146-234`  
-**Issue:** No check that paid amount >= provider's advertised price before sending.  
-**Fix:** Added client-side verification and provider-side verification of actual transaction outputs.
-
----
-
-## PHASE 4: MEDIUM PRIORITY ✅ DONE
-
-### 4.1 Port Conflict Detection ✅ DONE
-**Issue:** No warning when provider+client ports conflict on same machine.  
-**Fix:** Added port conflict detection and auto-rotation utility functions.
-
-### 4.2 Provider Offline Mid-Session ✅ DONE
-**Issue:** No handling when provider disconnects unexpectedly.  
-**Fix:** Added CreditManager for pay-as-you-go auto-recharge system.
-
-### 4.5 Certificate Pinning Missing ✅ DONE
-**Issue:** No pinning between sessions for known providers.  
-**Fix:** Added certificate fingerprint to heartbeat and on-chain announcement.
-
----
-
-## PHASE 5: GUI/UX IMPROVEMENTS
+## GUI/UX IMPROVEMENTS
 
 ### 5.1 Status Label Not Reflecting Actual State
 **Location:** `cmd/bcvpn-gui/main.go:425,520,525`  
@@ -79,7 +41,7 @@ This document outlines the prioritized implementation plan based on code analysi
 
 ---
 
-## PHASE 6: LOW PRIORITY / NICE TO HAVE
+## LOW PRIORITY / NICE TO HAVE
 
 ### 6.1 Wallet Transaction Detection
 **Location:** `internal/blockchain/provider.go:310-313`  
@@ -113,7 +75,7 @@ This document outlines the prioritized implementation plan based on code analysi
 
 ---
 
-## PHASE 7: TESTING
+## TESTING
 
 ### 7.1 GUI Integration Tests
 **Issue:** No UI automation tests.  
@@ -123,17 +85,3 @@ This document outlines the prioritized implementation plan based on code analysi
 **Issue:** Protocol fuzz tests may miss edge cases.  
 **Fix:** Expand coverage, add corpus.
 
----
-
-## REMAINING SUMMARY
-
-| Phase | Items | Status |
-|-------|-------|--------|
-| 2 | 2.1 | ✅ DONE |
-| 3 | 3.4 | ✅ DONE |
-| 4 | 4.1, 4.2, 4.5 | ✅ DONE |
-| 5 | 5.1-5.8 | ❌ Not started |
-| 6 | 6.1-6.6 | ❌ Not started |
-| 7 | 7.1-7.2 | ❌ Not started |
-
-**Remaining Issues:** 16

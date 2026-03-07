@@ -82,9 +82,10 @@ type guiState struct {
 
 	logs binding.String
 
-	providerRunning bool
-	providerCancel  context.CancelFunc
-	providerDone    chan struct{}
+	providerRunning  bool
+	providerStarting bool
+	providerCancel   context.CancelFunc
+	providerDone     chan struct{}
 
 	clientMgr *tunnel.MultiTunnelManager
 
@@ -1066,6 +1067,11 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	} else {
 		logLevel.SetSelected(s.cfg.Logging.Level)
 	}
+	hbInterval := widget.NewEntry()
+	hbInterval.SetText(s.cfg.Provider.HeartbeatInterval)
+	pmInterval := widget.NewEntry()
+	pmInterval.SetText(s.cfg.Provider.PaymentMonitorInterval)
+
 	statusOut := widget.NewMultiLineEntry()
 	statusOut.Disable()
 	statusOut.SetMinRowsVisible(6)
@@ -1086,6 +1092,8 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.Security.MetricsAuthToken = strings.TrimSpace(metricsAuthToken.Text)
 		s.cfg.Logging.Format = strings.TrimSpace(logFormat.Selected)
 		s.cfg.Logging.Level = strings.TrimSpace(logLevel.Selected)
+		s.cfg.Provider.HeartbeatInterval = strings.TrimSpace(hbInterval.Text)
+		s.cfg.Provider.PaymentMonitorInterval = strings.TrimSpace(pmInterval.Text)
 
 		metricsAddrConfigured := strings.TrimSpace(s.cfg.Provider.MetricsListenAddr) != "" || strings.TrimSpace(s.cfg.Client.MetricsListenAddr) != ""
 		metricsAuthConfigured := strings.TrimSpace(s.cfg.Security.MetricsAuthToken) != ""
@@ -1189,6 +1197,8 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewFormItem("Metrics Auth Token", metricsAuthToken),
 		widget.NewFormItem("Log Format", logFormat),
 		widget.NewFormItem("Log Level", logLevel),
+		widget.NewFormItem("Heartbeat Interval", hbInterval),
+		widget.NewFormItem("Payment Monitor Interval", pmInterval),
 	)
 	buttons := container.NewGridWithColumns(3, saveBtn, validateBtn, defaultsBtn)
 	profileRow := container.NewGridWithColumns(3, widget.NewLabel("Profile Path"), profilePath, container.NewGridWithColumns(2, exportBtn, importBtn))
@@ -1255,6 +1265,12 @@ func applyDefaultConfigValues(cfg *config.Config) {
 	}
 	if strings.TrimSpace(cfg.Provider.MetricsListenAddr) == "" {
 		cfg.Provider.MetricsListenAddr = ""
+	}
+	if strings.TrimSpace(cfg.Provider.HeartbeatInterval) == "" {
+		cfg.Provider.HeartbeatInterval = "5m"
+	}
+	if strings.TrimSpace(cfg.Provider.PaymentMonitorInterval) == "" {
+		cfg.Provider.PaymentMonitorInterval = "30s"
 	}
 	if cfg.Provider.CertLifetimeHours == 0 {
 		cfg.Provider.CertLifetimeHours = 720
@@ -1324,9 +1340,18 @@ func (s *guiState) appendLog(line string) {
 func (s *guiState) startProvider(password string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.providerRunning {
-		return fmt.Errorf("provider already running")
+	if s.providerRunning || s.providerStarting {
+		return fmt.Errorf("provider already running or starting")
 	}
+	s.providerStarting = true
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		s.providerStarting = false
+		s.mu.Unlock()
+	}()
+
 	if err := tunnel.EnsureElevatedPrivileges(); err != nil {
 		return fmt.Errorf("provider networking setup requires elevated privileges: %w", err)
 	}
@@ -1353,6 +1378,7 @@ func (s *guiState) startProvider(password string) error {
 		return err
 	}
 	endpoint := buildProviderEndpoint(&s.cfg.Provider, announceIP, announcePort, providerKey)
+	endpoint.ThroughputProbePort = uint16(s.cfg.Provider.ThroughputProbePort)
 
 	go func() {
 		defer client.Shutdown()
@@ -1386,7 +1412,10 @@ func (s *guiState) startProvider(password string) error {
 			}
 		}()
 
-		go blockchain.MonitorPayments(ctx, client, authManager, s.cfg.Provider.Price)
+		go func() {
+			pmInterval, _ := time.ParseDuration(s.cfg.Provider.PaymentMonitorInterval)
+			blockchain.MonitorPayments(ctx, client, authManager, s.cfg.Provider.Price, pmInterval)
+		}()
 		go func() {
 			if err := blockchain.StartEchoServer(ctx, s.cfg.Provider.ListenPort); err != nil {
 				s.appendLog("Echo server error: " + err.Error())
@@ -1404,7 +1433,11 @@ func (s *guiState) startProvider(password string) error {
 		}
 	}()
 	go func() {
-		hbTicker := time.NewTicker(5 * time.Minute)
+		hbInterval, _ := time.ParseDuration(s.cfg.Provider.HeartbeatInterval)
+		if hbInterval <= 0 {
+			hbInterval = 5 * time.Minute
+		}
+		hbTicker := time.NewTicker(hbInterval)
 		defer hbTicker.Stop()
 		if err := blockchain.AnnounceHeartbeat(client, providerKey.PubKey(), protocol.AvailabilityFlagAvailable); err != nil {
 			s.appendLog(fmt.Sprintf("Initial heartbeat broadcast failed: %v", err))
@@ -1698,18 +1731,26 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 		s.appendLog("Dry-run connect completed.")
 		return nil
 	}
-	return s.clientMgr.Add(
+	mgr := s.clientMgr
+	if mgr == nil {
+		mgr = tunnel.NewMultiTunnelManager()
+		s.clientMgr = mgr
+	}
+	peerPubKey := selected.Endpoint.PublicKey
+	expected := tunnel.ClientSecurityExpectations{
+		ExpectedCountry:     effectiveCountryGUI(selected),
+		ExpectedBandwidthKB: selected.AdvertisedBandwidthKB,
+		ThroughputProbePort: selected.Endpoint.ThroughputProbePort,
+	}
+	return mgr.Add(
 		fmt.Sprintf("gui-session-%d", time.Now().Unix()),
 		s.cfg.Client.InterfaceName,
 		&s.cfg.Client,
 		&s.cfg.Security,
 		localKey,
-		selected.Endpoint.PublicKey,
+		peerPubKey,
 		endpointAddr,
-		tunnel.ClientSecurityExpectations{
-			ExpectedCountry:     selected.Country,
-			ExpectedBandwidthKB: selected.AdvertisedBandwidthKB,
-		},
+		expected,
 	)
 }
 

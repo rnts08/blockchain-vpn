@@ -27,6 +27,7 @@ type VPNEndpoint struct {
 	MaxConsumers          uint16           // optional metadata (v2 payload), 0 = unknown/unlimited
 	CountryCode           string           // optional metadata (v2 payload), ISO alpha2 upper-case
 	AvailabilityFlags     uint8            // optional metadata (v2 payload), bit0=available
+	ThroughputProbePort   uint16           // optional metadata (v2 payload)
 	CertFingerprint       []byte           // SHA256 hash of current TLS certificate (33 bytes prefix)
 }
 
@@ -112,6 +113,9 @@ func (v *VPNEndpoint) EncodePayloadV2() ([]byte, error) {
 	country := normalizeCountryCode(v.CountryCode)
 	buf.WriteString(country)
 	buf.WriteByte(v.AvailabilityFlags)
+	if err := binary.Write(buf, binary.BigEndian, v.ThroughputProbePort); err != nil {
+		return nil, err
+	}
 
 	if v.PublicKey == nil {
 		return nil, fmt.Errorf("public key cannot be nil")
@@ -249,6 +253,10 @@ func DecodePayloadV2(data []byte) (*VPNEndpoint, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not read availability flags: %w", err)
 	}
+	var probePort uint16
+	if err := binary.Read(buf, binary.BigEndian, &probePort); err != nil {
+		return nil, fmt.Errorf("could not read throughput probe port: %w", err)
+	}
 	if buf.Len() != btcec.PubKeyBytesLenCompressed {
 		return nil, fmt.Errorf("incorrect remaining payload length for public key, expected %d, got %d", btcec.PubKeyBytesLenCompressed, buf.Len())
 	}
@@ -269,6 +277,7 @@ func DecodePayloadV2(data []byte) (*VPNEndpoint, error) {
 		MaxConsumers:          maxConsumers,
 		CountryCode:           normalizeCountryCode(string(country)),
 		AvailabilityFlags:     flags,
+		ThroughputProbePort:   probePort,
 	}, nil
 }
 

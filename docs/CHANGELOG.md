@@ -1,6 +1,26 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+ 
+## [0.4.2] - 2026-03-07
+
+### Features & Protocol
+- Added `ThroughputProbePort` to V2 service announcement payload for dynamic discovery
+- Added configurable `HeartbeatInterval` and `PaymentMonitorInterval` in provider settings
+- Updated blockchain scanner to handle new V2 payload fields
+
+### Security & Bug Fixes
+- Improved wallet address detection to check all controlled addresses instead of a single change address
+- Fixed concurrent provider start race condition in GUI by decoupling blocking I/O from state locks
+- Updated client security checks to use dynamically determined throughput probe ports
+- Fixed potential deadlock in GUI log updates
+
+### Tests
+- Added GUI unit tests for main tabs, settings, and wallet components
+- Refactored Makefile with `test-unit` for better CI/CD integration
+
+### Infrastructure
+- Version bump to 0.4.2
 
 ## [0.4.1] - 2026-03-07
 

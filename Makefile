@@ -24,8 +24,8 @@ build-windows:
 
 build-cli-all: build-linux build-darwin build-windows
 
-test:
-	$(GO) test -short ./...
+test-unit:
+	$(GO) test -v ./...
 
 test-functional:
 	$(GO) test -v -tags functional ./...

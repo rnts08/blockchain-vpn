@@ -24,6 +24,7 @@ type ProviderAnnouncement struct {
 	MaxConsumers          uint16
 	DeclaredCountry       string
 	AvailabilityFlags     uint8
+	ThroughputProbePort   uint16
 	LastHeartbeatSeen     bool
 	ReputationScore       int
 }
@@ -97,6 +98,7 @@ func ScanForVPNs(client *rpcclient.Client, startBlock int64, cache *ScanCache, r
 								MaxConsumers:          endpoint.MaxConsumers,
 								DeclaredCountry:       strings.ToUpper(endpoint.CountryCode),
 								AvailabilityFlags:     endpoint.AvailabilityFlags,
+								ThroughputProbePort:   endpoint.ThroughputProbePort,
 							}
 						}
 						continue

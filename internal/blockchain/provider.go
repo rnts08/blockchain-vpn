@@ -251,7 +251,7 @@ func StartEchoServer(ctx context.Context, port int) error {
 
 // MonitorPayments checks for incoming transactions to the wallet.
 // It polls the blockchain periodically for new payments.
-func MonitorPayments(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, servicePrice uint64) {
+func MonitorPayments(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, servicePrice uint64, pollingInterval time.Duration) {
 	// Start tracking from the current best block to avoid listing old transactions.
 	var lastBlockHash *chainhash.Hash
 	payments := newPaymentTracker()
@@ -266,12 +266,15 @@ func MonitorPayments(ctx context.Context, client *rpcclient.Client, authManager 
 	}
 
 	log.Println("Starting payment monitor (polling mode)...")
-	runPaymentMonitorPolling(ctx, client, authManager, servicePrice, lastBlockHash, payments)
+	runPaymentMonitorPolling(ctx, client, authManager, servicePrice, lastBlockHash, payments, pollingInterval)
 }
 
 // runPaymentMonitorPolling is a fallback for when block notifications are not available.
-func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, servicePrice uint64, lastBlockHash *chainhash.Hash, payments *paymentTracker) {
-	ticker := time.NewTicker(1 * time.Minute)
+func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, servicePrice uint64, lastBlockHash *chainhash.Hash, payments *paymentTracker, interval time.Duration) {
+	if interval <= 0 {
+		interval = 1 * time.Minute
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -314,13 +317,28 @@ func processBlockForPayments(ctx context.Context, client *rpcclient.Client, bloc
 	}
 }
 
-// GetProviderAddresses returns all addresses controlled by the wallet
+// GetProviderAddresses returns all addresses controlled by the wallet that have UTXOs.
 func GetProviderAddresses(client *rpcclient.Client) ([]string, error) {
-	addresses, err := client.GetRawChangeAddress("")
+	unspent, err := client.ListUnspent()
 	if err != nil {
 		return nil, err
 	}
-	return []string{addresses.String()}, nil
+	var addresses []string
+	seen := make(map[string]bool)
+	for _, u := range unspent {
+		if !seen[u.Address] {
+			addresses = append(addresses, u.Address)
+			seen[u.Address] = true
+		}
+	}
+	// Fallback to change address if list is empty
+	if len(addresses) == 0 {
+		addr, err := client.GetRawChangeAddress("")
+		if err == nil {
+			addresses = append(addresses, addr.String())
+		}
+	}
+	return addresses, nil
 }
 
 // processTxForPayment checks a single transaction for a valid payment payload.

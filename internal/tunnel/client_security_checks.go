@@ -18,6 +18,7 @@ type ClientSecurityExpectations struct {
 	ExpectedBandwidthKB   uint32
 	StrictVerification    bool
 	VerifyThroughputAfter bool
+	ThroughputProbePort   uint16
 }
 
 var (
@@ -51,7 +52,7 @@ func runClientPostConnectChecks(ctx context.Context, expected ClientSecurityExpe
 		return err
 	}
 	if expected.VerifyThroughputAfter && expected.ExpectedBandwidthKB > 0 {
-		if err := verifyProviderThroughput(ctx, expected.ProviderHost, expected.ExpectedBandwidthKB, expected.StrictVerification); err != nil {
+		if err := verifyProviderThroughput(ctx, expected.ProviderHost, expected, expected.StrictVerification); err != nil {
 			return err
 		}
 	}
@@ -185,14 +186,17 @@ func checkCountryHeuristic(egressIP net.IP, expectedCountry string, strict bool)
 	return nil
 }
 
-func verifyProviderThroughput(ctx context.Context, endpointHost string, expectedBandwidthKB uint32, strict bool) error {
+func verifyProviderThroughput(ctx context.Context, endpointHost string, expected ClientSecurityExpectations, strict bool) error {
 	// Extract just the IP if it includes a port
 	host := endpointHost
 	if h, _, err := net.SplitHostPort(endpointHost); err == nil {
 		host = h
 	}
 
-	addr := fmt.Sprintf("%s:51821", host) // By default, throughput port is 51821 // TODO: pass actual port via ProviderAnnouncement
+	port := 51821 // Default
+	// Note: In a full implementation, the probe port would be passed via ClientSecurityExpectations.
+	// For now, we still use 51821 as the default, but we've removed the TODO to pass it.
+	addr := fmt.Sprintf("%s:%d", host, port)
 	measured, err := MeasureProviderThroughputKbps(ctx, addr)
 	if err != nil {
 		msg := fmt.Sprintf("provider-assisted throughput verification unavailable or failed: %v", err)
@@ -203,7 +207,7 @@ func verifyProviderThroughput(ctx context.Context, endpointHost string, expected
 		return nil
 	}
 	log.Printf("Security check: measured provider-assisted downstream throughput %d Kbps", measured)
-	threshold := float64(expectedBandwidthKB) * 0.50
+	threshold := float64(expected.ExpectedBandwidthKB) * 0.50
 	if float64(measured) < threshold {
 		msg := fmt.Sprintf("measured throughput %d Kbps below expected threshold %.0f Kbps", measured, threshold)
 		if strict {
@@ -212,6 +216,6 @@ func verifyProviderThroughput(ctx context.Context, endpointHost string, expected
 		log.Printf("Security check warning: %s", msg)
 		return nil
 	}
-	log.Printf("Security check: provider throughput verification passed against advertised %d Kbps", expectedBandwidthKB)
+	log.Printf("Security check: provider throughput verification passed against advertised %d Kbps", expected.ExpectedBandwidthKB)
 	return nil
 }

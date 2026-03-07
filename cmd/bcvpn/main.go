@@ -176,7 +176,11 @@ func main() {
 		}()
 		go func() {
 			defer providerWG.Done()
-			hbTicker := time.NewTicker(5 * time.Minute)
+			hbInterval, _ := time.ParseDuration(cfg.Provider.HeartbeatInterval)
+			if hbInterval <= 0 {
+				hbInterval = 5 * time.Minute
+			}
+			hbTicker := time.NewTicker(hbInterval)
 			defer hbTicker.Stop()
 
 			if err := blockchain.AnnounceHeartbeat(client, providerKey.PubKey(), protocol.AvailabilityFlagAvailable); err != nil {
@@ -195,7 +199,8 @@ func main() {
 		}()
 		go func() {
 			defer providerWG.Done()
-			blockchain.MonitorPayments(ctx, client, authManager, cfg.Provider.Price)
+			pmInterval, _ := time.ParseDuration(cfg.Provider.PaymentMonitorInterval)
+			blockchain.MonitorPayments(ctx, client, authManager, cfg.Provider.Price, pmInterval)
 		}()
 		go func() {
 			defer providerWG.Done()
@@ -966,7 +971,12 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 		fmt.Printf("[Dry Run] Simulation: Would create TUN interface %s and connect to %s.\n", clientCfg.InterfaceName, endpointAddr)
 	} else {
 		mgr := tunnel.NewMultiTunnelManager()
-		err := mgr.Add(
+		expected := tunnel.ClientSecurityExpectations{
+			ExpectedCountry:     selectedEndpoint.Country,
+			ExpectedBandwidthKB: selectedEndpoint.AdvertisedBandwidthKB,
+			ThroughputProbePort: selectedEndpoint.Endpoint.ThroughputProbePort,
+		}
+		if err := mgr.Add(
 			"session-interactive",
 			clientCfg.InterfaceName,
 			clientCfg,
@@ -974,12 +984,8 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 			localKey,
 			peerPubKey,
 			endpointAddr,
-			tunnel.ClientSecurityExpectations{
-				ExpectedCountry:     selectedEndpoint.Country,
-				ExpectedBandwidthKB: selectedEndpoint.AdvertisedBandwidthKB,
-			},
-		)
-		if err != nil {
+			expected,
+		); err != nil {
 			log.Fatalf("Failed to add tunnel: %v", err)
 		}
 
