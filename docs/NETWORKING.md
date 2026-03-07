@@ -65,3 +65,7 @@ Use:
 `status` reports privilege readiness and key runtime settings required for automated networking.
 
 If metrics addresses are configured, runtime health/session counters are also exposed via `/metrics.json`.
+
+Recommended practice:
+
+- Bind metrics to loopback (`127.0.0.1:<port>`) unless protected by host firewall/reverse proxy.

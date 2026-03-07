@@ -82,3 +82,19 @@ Notes:
 - Kill switch applies while session is active.
 - Cleanup runs on normal disconnect.
 - If host crashes, reconnect/restart to reapply normal networking cleanup.
+
+## 8. Secure Key Storage Backend Errors
+
+Symptoms:
+
+- Provider key setup fails in `keychain`, `libsecret`, or `dpapi` modes.
+- Status shows key storage mode unsupported.
+
+Fix:
+
+- Confirm backend prerequisites are installed:
+  - macOS: `security`
+  - Linux: `secret-tool` (libsecret tools)
+  - Windows: `powershell` or `pwsh`
+- Use `security.key_storage_mode=auto` for fallback behavior.
+- Use `security.key_storage_mode=file` if secure-store backend is unavailable.

@@ -50,6 +50,16 @@ Generate initial config:
 ./bcvpn generate-config
 ```
 
+## 2.1 Secure Key Storage Backend Prerequisites
+
+If `security.key_storage_mode` is not `file`, ensure backend tooling exists:
+
+- macOS `keychain`: `security` CLI (built-in on standard macOS installs)
+- Linux `libsecret`: `secret-tool` from libsecret (`libsecret-tools` package on many distros)
+- Windows `dpapi`: `powershell` or `pwsh`
+
+If backend prerequisites are missing, use `security.key_storage_mode=file` or `auto` (falls back to file mode).
+
 ## 3. Required Privileges by OS
 
 ### Linux

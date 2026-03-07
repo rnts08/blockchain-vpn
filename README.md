@@ -341,8 +341,10 @@ To adapt this for another chain:
 
 ### Gaps and Improvements
 
-- [x] Expand Settings tab coverage to include provider/client/security runtime fields in the GUI.
-- [x] Add route/DNS restore stress tests across supported OS backends.
+- [ ] Replace fixed TLS certificate serial numbers with random serial generation.
+- [ ] Remove fatal exits from internal runtime packages and bubble errors to CLI/GUI.
+- [ ] Harden metrics endpoint with optional auth and safer default exposure guidance.
+- [ ] Expand runtime backend tests (secure-store behavior, graceful shutdown, DNS leak checks).
 
 See [docs/TODO.md](docs/TODO.md) for prioritized next steps.
 
