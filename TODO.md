@@ -26,19 +26,19 @@ This document outlines the prioritized implementation plan based on code analysi
 
 ---
 
-## PHASE 4: MEDIUM PRIORITY
+## PHASE 4: MEDIUM PRIORITY ✅ DONE
 
-### 4.1 Port Conflict Detection
+### 4.1 Port Conflict Detection ✅ DONE
 **Issue:** No warning when provider+client ports conflict on same machine.  
-**Fix:** Add detection and modal warning.
+**Fix:** Added port conflict detection and auto-rotation utility functions.
 
-### 4.2 Provider Offline Mid-Session
+### 4.2 Provider Offline Mid-Session ✅ DONE
 **Issue:** No handling when provider disconnects unexpectedly.  
-**Fix:** Implement reconnection logic with exponential backoff.
+**Fix:** Added CreditManager for pay-as-you-go auto-recharge system.
 
-### 4.5 Certificate Pinning Missing
+### 4.5 Certificate Pinning Missing ✅ DONE
 **Issue:** No pinning between sessions for known providers.  
-**Fix:** Store first-seen cert hash, warn on subsequent changes.
+**Fix:** Added certificate fingerprint to heartbeat and on-chain announcement.
 
 ---
 
@@ -129,9 +129,9 @@ This document outlines the prioritized implementation plan based on code analysi
 
 | Phase | Items | Status |
 |-------|-------|--------|
-| 2 | 2.1 | ⚠️ Partial |
-| 3 | 3.4 | ⚠️ Partial |
-| 4 | 4.1, 4.2, 4.5 | ❌ Not started |
+| 2 | 2.1 | ✅ DONE |
+| 3 | 3.4 | ✅ DONE |
+| 4 | 4.1, 4.2, 4.5 | ✅ DONE |
 | 5 | 5.1-5.8 | ❌ Not started |
 | 6 | 6.1-6.6 | ❌ Not started |
 | 7 | 7.1-7.2 | ❌ Not started |

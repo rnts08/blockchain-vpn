@@ -43,6 +43,7 @@ type SecurityConfig struct {
 type ProviderConfig struct {
 	InterfaceName               string `json:"interface_name"`
 	ListenPort                  int    `json:"listen_port"`
+	AutoRotatePort              bool   `json:"auto_rotate_port"` // Automatically rotate to unprivileged port if bind fails
 	AnnounceIP                  string `json:"announce_ip"`
 	Country                     string `json:"country"` // 2-letter country code (e.g., "US"). Leave empty to auto-detect.
 	Price                       uint64 `json:"price_sats_per_session"`
@@ -80,6 +81,10 @@ type ClientConfig struct {
 	VerifyThroughputAfterSetup bool   `json:"verify_throughput_after_connect"`
 	MaxParallelTunnels         int    `json:"max_parallel_tunnels"`
 	EnableWebSocketFallback    bool   `json:"enable_websocket_fallback"`
+	AutoRechargeEnabled        bool   `json:"auto_recharge_enabled"`     // Enable automatic recharge when credits run low
+	AutoRechargeThreshold      uint64 `json:"auto_recharge_threshold"`   // Sats remaining before auto-recharge triggers
+	AutoRechargeAmount         uint64 `json:"auto_recharge_amount"`      // Sats to add on auto-recharge
+	AutoRechargeMinBalance     uint64 `json:"auto_recharge_min_balance"` // Minimum balance to maintain
 }
 
 const AppConfigDirName = "BlockchainVPN"

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -10,11 +11,12 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 )
 
-const MagicBytes = 0x56504E01            // "VPN" + Version 1
-const MagicBytesV2 = 0x56504E02          // "VPN" + Version 2 (metadata)
-const PriceUpdateMagicBytes = 0x50524943 // "PRIC"
-const PaymentMagicBytes = 0x50415901     // "PAY" + Version 1
-const HeartbeatMagicBytes = 0x56484254   // "VHBT"
+const MagicBytes = 0x56504E01                // "VPN" + Version 1
+const MagicBytesV2 = 0x56504E02              // "VPN" + Version 2 (metadata)
+const PriceUpdateMagicBytes = 0x50524943     // "PRIC"
+const PaymentMagicBytes = 0x50415901         // "PAY" + Version 1
+const HeartbeatMagicBytes = 0x56484254       // "VHBT"
+const CertFingerprintMagicBytes = 0x43455254 // "CERT" - for certificate fingerprint announcements
 
 type VPNEndpoint struct {
 	IP                    net.IP
@@ -25,6 +27,7 @@ type VPNEndpoint struct {
 	MaxConsumers          uint16           // optional metadata (v2 payload), 0 = unknown/unlimited
 	CountryCode           string           // optional metadata (v2 payload), ISO alpha2 upper-case
 	AvailabilityFlags     uint8            // optional metadata (v2 payload), bit0=available
+	CertFingerprint       []byte           // SHA256 hash of current TLS certificate (33 bytes prefix)
 }
 
 const AvailabilityFlagAvailable = 0x01
@@ -403,4 +406,54 @@ func DecodeHeartbeatPayload(data []byte) (*HeartbeatPayload, error) {
 		return nil, fmt.Errorf("could not read heartbeat flags: %w", err)
 	}
 	return &HeartbeatPayload{PublicKey: pubKey, Flags: flags}, nil
+}
+
+type CertFingerprintPayload struct {
+	PublicKey       *btcec.PublicKey
+	CertFingerprint []byte // First 16 bytes of SHA256 of the TLS certificate
+}
+
+func ComputeCertFingerprint(certHash []byte) []byte {
+	hash := sha256.Sum256(certHash)
+	return hash[:16]
+}
+
+func EncodeCertFingerprintPayload(pubKey *btcec.PublicKey, certFingerprint []byte) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	if err := binary.Write(buf, binary.BigEndian, uint32(CertFingerprintMagicBytes)); err != nil {
+		return nil, err
+	}
+	if pubKey == nil {
+		return nil, fmt.Errorf("public key cannot be nil")
+	}
+	buf.Write(pubKey.SerializeCompressed())
+	if len(certFingerprint) < 16 {
+		certFingerprint = make([]byte, 16)
+	}
+	buf.Write(certFingerprint[:16])
+	return buf.Bytes(), nil
+}
+
+func DecodeCertFingerprintPayload(data []byte) (*CertFingerprintPayload, error) {
+	buf := bytes.NewReader(data)
+	var magic uint32
+	if err := binary.Read(buf, binary.BigEndian, &magic); err != nil {
+		return nil, fmt.Errorf("could not read magic bytes: %w", err)
+	}
+	if magic != CertFingerprintMagicBytes {
+		return nil, fmt.Errorf("invalid cert fingerprint magic bytes")
+	}
+	pubKeyBytes := make([]byte, btcec.PubKeyBytesLenCompressed)
+	if _, err := buf.Read(pubKeyBytes); err != nil {
+		return nil, fmt.Errorf("could not read public key: %w", err)
+	}
+	pubKey, err := btcec.ParsePubKey(pubKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid public key in cert fingerprint payload: %w", err)
+	}
+	fingerprint := make([]byte, 16)
+	if _, err := buf.Read(fingerprint); err != nil {
+		return nil, fmt.Errorf("could not read cert fingerprint: %w", err)
+	}
+	return &CertFingerprintPayload{PublicKey: pubKey, CertFingerprint: fingerprint}, nil
 }
