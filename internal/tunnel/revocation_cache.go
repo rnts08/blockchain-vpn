@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -73,8 +74,21 @@ func (c *revocationCache) refresh(path string) error {
 	}
 	defer f.Close()
 
+	next, err := parseRevocationEntries(f)
+	if err != nil {
+		c.lastErr = fmt.Errorf("revocation cache parse failed: %w", err)
+		return c.lastErr
+	}
+
+	c.revokedSet = next
+	c.lastMtime = info.ModTime()
+	c.lastErr = nil
+	return nil
+}
+
+func parseRevocationEntries(r io.Reader) (map[string]struct{}, error) {
 	next := map[string]struct{}{}
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(r)
 	lineNo := 0
 	for scanner.Scan() {
 		lineNo++
@@ -85,22 +99,15 @@ func (c *revocationCache) refresh(path string) error {
 		line = strings.ToLower(line)
 		raw, decErr := hex.DecodeString(line)
 		if decErr != nil || len(raw) != 33 {
-			c.lastErr = fmt.Errorf("invalid revoked key entry at line %d: %q", lineNo, line)
-			return c.lastErr
+			return nil, fmt.Errorf("invalid revoked key entry at line %d: %q", lineNo, line)
 		}
 		if _, exists := next[line]; exists {
-			c.lastErr = fmt.Errorf("duplicate revoked key entry at line %d: %q", lineNo, line)
-			return c.lastErr
+			return nil, fmt.Errorf("duplicate revoked key entry at line %d: %q", lineNo, line)
 		}
 		next[line] = struct{}{}
 	}
 	if err := scanner.Err(); err != nil {
-		c.lastErr = fmt.Errorf("revocation cache parse failed: %w", err)
-		return c.lastErr
+		return nil, err
 	}
-
-	c.revokedSet = next
-	c.lastMtime = info.ModTime()
-	c.lastErr = nil
-	return nil
+	return next, nil
 }
