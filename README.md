@@ -120,8 +120,9 @@ Generate a default configuration file:
 Edit `config.json` to match your environment:
 
 *   **rpc**: Connection details for your local `ordexcoind` node.
-*   **provider**: Settings if you intend to sell VPN service (IP, Port, Price, `enable_egress_nat`, `nat_outbound_interface`, `isolation_mode`, `health_check_enabled`, `health_check_interval`).
+*   **provider**: Settings if you intend to sell VPN service (IP, Port, Price, `enable_egress_nat`, `nat_outbound_interface`, `isolation_mode`, `allowlist_file`, `denylist_file`, `cert_lifetime_hours`, `cert_rotate_before_hours`, `health_check_enabled`, `health_check_interval`).
 *   **client**: Settings for connecting to others (Interface Name).
+*   By default, the app stores `config.json`, `provider.key`, and `history.json` in your OS user config directory under `BlockchainVPN` (for example `~/.config/BlockchainVPN` on Linux).
 
 Sample `config.json`:
 
@@ -138,12 +139,16 @@ Sample `config.json`:
     "announce_ip": "",
     "country": "",
     "price_sats_per_session": 1000,
-    "private_key_file": "provider.key",
+    "private_key_file": "<APP_CONFIG_DIR>/provider.key",
     "bandwidth_limit": "10mbit",
     "enable_nat": true,
     "enable_egress_nat": false,
     "nat_outbound_interface": "",
     "isolation_mode": "none",
+    "allowlist_file": "",
+    "denylist_file": "",
+    "cert_lifetime_hours": 720,
+    "cert_rotate_before_hours": 24,
     "health_check_enabled": true,
     "health_check_interval": "30s",
     "bandwidth_monitor_interval": "30s",
@@ -195,6 +200,12 @@ To start selling bandwidth:
     ./bcvpn history
     ```
 
+4.  **Rotate Provider Key**:
+    Rotate the encrypted provider key file and generate a new provider identity.
+    ```bash
+    ./bcvpn rotate-provider-key
+    ```
+
 ## 5. Using Other Blockchains
 
 While designed for OrdexCoin, this software is compatible with most Bitcoin-derived blockchains (Bitcoin, Litecoin, Dogecoin, etc.) that support `OP_RETURN` and the standard RPC interface.
@@ -203,7 +214,7 @@ To adapt this for another chain:
 
 1.  **RPC Configuration**: Update `config.json` with the RPC credentials and port of the target blockchain's daemon (e.g., `8332` for Bitcoin).
 2.  **Address Format**: The code dynamically detects the chain (Mainnet, Testnet, Regtest) from the RPC connection and adjusts address decoding accordingly.
-3.  **Fees**: Ensure the hardcoded fees (e.g., `10000` sats in `provider.go`) are appropriate for the target network's fee market.
+3.  **Fees**: Fee selection uses node-reported dynamic estimates (`estimatesmartfee`, relay fee fallback).
 
 ## 6. Project Status & Roadmap
 
@@ -252,12 +263,15 @@ To adapt this for another chain:
 
 - [ ] **Security**
   - [x] Encrypt the `provider.key` file on disk.
+  - [x] Cert lifetime tuning and automatic certificate rotation workflow.
+  - [x] Provider key rotation workflow (`rotate-provider-key`).
+  - [x] Optional allowlist/denylist access policies.
   - [x] Validate input data from `OP_RETURN` strictly to prevent injection attacks.
   - [x] Optional provider sandbox isolation mode (Linux).
   - [ ] Run the TUN interface in a separate network namespace (optional, for better isolation).
 
 - [ ] **Advanced Features**
-  - [ ] **NAT Traversal**: Implement UPnP or NAT-PMP for providers behind home routers.
+  - [x] **NAT Traversal**: Implement UPnP and NAT-PMP for providers behind home routers.
   - [x] **Dynamic Pricing**: Allow providers to update price without re-announcing (or minimize re-announcement cost).
   - [x] **Session Management**: Implement logic to handle session expiration gracefully (auto-disconnect or auto-renew).
 
@@ -265,8 +279,8 @@ To adapt this for another chain:
   - [ ] **GUI Implementation**: Build a graphical user interface based on `GUI.md`.
   - [x] **Code Structure**: Refactor into logical sub-packages (`internal/protocol`, `internal/tunnel`, etc.).
   - [x] **Coin Selection**: Implement deterministic UTXO selection instead of using the first available.
-  - [ ] **Fee Estimation**: Replace hardcoded transaction fees with dynamic estimation using `estimatesmartfee`.
-  - [ ] **Configuration Management**: Move all configuration files (`config.json`, `provider.key`, `history.json`) to a dedicated application directory (e.g., `~/.config/BlockchainVPN`).
+  - [x] **Fee Estimation**: Replace hardcoded transaction fees with dynamic estimation using `estimatesmartfee` + relay-fee fallback.
+  - [x] **Configuration Management**: Move configuration files (`config.json`, `provider.key`, `history.json`) to a dedicated OS application config directory.
 
 
 ## 7. Project File Layout

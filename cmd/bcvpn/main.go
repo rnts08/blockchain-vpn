@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,22 +34,30 @@ import (
 	"github.com/btcsuite/btcd/rpcclient"
 )
 
-const defaultConfigFilename = "config.json"
-
 func main() {
+	defaultConfigPath, err := config.DefaultConfigPath()
+	if err != nil {
+		log.Fatalf("Failed to resolve default config path: %v", err)
+	}
+
 	// Handle generate-config before loading config
 	if len(os.Args) >= 2 && os.Args[1] == "generate-config" {
-		if err := config.GenerateDefaultConfig(defaultConfigFilename); err != nil {
+		if err := config.GenerateDefaultConfig(defaultConfigPath); err != nil {
 			log.Fatalf("Failed to generate config: %v", err)
 		}
-		log.Printf("Generated default config at %s", defaultConfigFilename)
+		log.Printf("Generated default config at %s", defaultConfigPath)
 		return
 	}
 
+	configPath := resolveConfigPath(defaultConfigPath)
+
 	// Load configuration
-	cfg, err := config.LoadConfig(defaultConfigFilename)
+	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
-		log.Fatalf("Failed to load config file at %s: %v. Please create one or run 'generate-config'.", defaultConfigFilename, err)
+		log.Fatalf("Failed to load config file at %s: %v. Please create one or run 'generate-config'.", configPath, err)
+	}
+	if err := config.ResolveProviderKeyPath(cfg, configPath); err != nil {
+		log.Fatalf("Failed to resolve provider key path: %v", err)
 	}
 
 	// Subcommands
@@ -56,6 +66,7 @@ func main() {
 	historyCmd := flag.NewFlagSet("history", flag.ExitOnError)
 	rebroadcastCmd := flag.NewFlagSet("rebroadcast", flag.ExitOnError)
 	updatePriceCmd := flag.NewFlagSet("update-price", flag.ExitOnError)
+	rotateKeyCmd := flag.NewFlagSet("rotate-provider-key", flag.ExitOnError)
 
 	// Scan specific flags
 	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
@@ -66,9 +77,10 @@ func main() {
 
 	// Update-price specific flags
 	updatePriceNewPrice := updatePriceCmd.Uint64("price", 0, "The new price in satoshis per session")
+	rotateKeyPath := rotateKeyCmd.String("key-file", "", "Provider private key file to rotate (defaults to provider.private_key_file from config)")
 
 	if len(os.Args) < 2 {
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'scan', or 'history' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', or 'history' subcommands")
 		os.Exit(1)
 	}
 
@@ -236,6 +248,17 @@ func main() {
 
 		interactiveConnect(ctx, client, chainParams, filteredEndpoints, &cfg.Client, *scanDryRun)
 
+	case "rotate-provider-key":
+		rotateKeyCmd.Parse(os.Args[2:])
+		keyPath := cfg.Provider.PrivateKeyFile
+		if strings.TrimSpace(*rotateKeyPath) != "" {
+			keyPath = strings.TrimSpace(*rotateKeyPath)
+		}
+		if err := rotateProviderKey(keyPath); err != nil {
+			log.Fatalf("Provider key rotation failed: %v", err)
+		}
+		log.Printf("Provider key rotated successfully. Re-broadcast your service to publish the new public key.")
+
 	case "history":
 		historyCmd.Parse(os.Args[2:])
 
@@ -246,7 +269,7 @@ func main() {
 		}
 
 	default:
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'scan', or 'history' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', or 'history' subcommands")
 		os.Exit(1)
 	}
 }
@@ -299,6 +322,116 @@ func getProviderKey(keyPath string) (*btcec.PrivateKey, error) {
 	}
 	log.Printf("New encrypted provider key saved to %s", keyPath)
 	return key, nil
+}
+
+func rotateProviderKey(keyPath string) error {
+	if _, err := os.Stat(keyPath); err != nil {
+		return fmt.Errorf("provider key file not found at %s", keyPath)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter current password to decrypt provider key: ")
+	oldPass, _ := reader.ReadString('\n')
+	oldPassword := []byte(strings.TrimSpace(oldPass))
+	if len(oldPassword) == 0 {
+		return fmt.Errorf("old password cannot be empty")
+	}
+
+	if _, err := crypto.LoadAndDecryptKey(keyPath, oldPassword); err != nil {
+		return fmt.Errorf("failed to decrypt existing key with provided password: %w", err)
+	}
+
+	fmt.Print("Enter new password for rotated provider key: ")
+	pass1, _ := reader.ReadString('\n')
+	fmt.Print("Confirm new password: ")
+	pass2, _ := reader.ReadString('\n')
+	newPassword := strings.TrimSpace(pass1)
+	if newPassword == "" {
+		return fmt.Errorf("new password cannot be empty")
+	}
+	if newPassword != strings.TrimSpace(pass2) {
+		return fmt.Errorf("new passwords do not match")
+	}
+
+	backupPath := fmt.Sprintf("%s.bak-%s", keyPath, time.Now().UTC().Format("20060102-150405"))
+	if err := os.Rename(keyPath, backupPath); err != nil {
+		return fmt.Errorf("failed to create backup before rotation: %w", err)
+	}
+
+	if _, err := crypto.GenerateAndEncryptKey(keyPath, []byte(newPassword)); err != nil {
+		_ = os.Rename(backupPath, keyPath)
+		return fmt.Errorf("failed to write new rotated key (restored backup): %w", err)
+	}
+
+	absBackup := backupPath
+	if a, err := filepath.Abs(backupPath); err == nil {
+		absBackup = a
+	}
+	log.Printf("Old provider key backed up to %s", absBackup)
+	return nil
+}
+
+func resolveConfigPath(defaultPath string) string {
+	if _, err := os.Stat(defaultPath); err == nil {
+		return defaultPath
+	}
+	if _, err := os.Stat("config.json"); err == nil {
+		if err := migrateLegacyLocalFiles(defaultPath); err != nil {
+			log.Printf("Warning: failed to migrate local config files to app config dir: %v", err)
+			return "config.json"
+		}
+		return defaultPath
+	}
+	return defaultPath
+}
+
+func migrateLegacyLocalFiles(defaultConfigPath string) error {
+	if err := copyFile("config.json", defaultConfigPath); err != nil {
+		return err
+	}
+	if err := os.Remove("config.json"); err != nil {
+		log.Printf("Warning: migrated config copied but old local file could not be removed: %v", err)
+	}
+
+	defaultKeyPath, err := config.DefaultProviderKeyPath()
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat("provider.key"); err == nil {
+		if _, err := os.Stat(defaultKeyPath); os.IsNotExist(err) {
+			if err := copyFile("provider.key", defaultKeyPath); err != nil {
+				return err
+			}
+			if err := os.Remove("provider.key"); err != nil {
+				log.Printf("Warning: migrated provider key copied but old local file could not be removed: %v", err)
+			}
+		}
+	}
+
+	log.Printf("Migrated local config files to %s", filepath.Dir(defaultConfigPath))
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
 }
 
 func determineAnnounceDetails(ctx context.Context, cfg *config.ProviderConfig) (net.IP, int, func(), error) {

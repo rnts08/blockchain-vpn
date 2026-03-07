@@ -164,19 +164,9 @@ func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amou
 
 	// 3. Estimate Fee
 	// We estimate fee for a target of 6 blocks (approx 1 hour).
-	mode := btcjson.EstimateModeConservative
-	feeRate, err := client.EstimateSmartFee(6, &mode)
+	feePerKb, err := estimateDynamicFeePerKb(context.Background(), client, 6)
 	if err != nil {
-		return nil, fmt.Errorf("failed to estimate fee: %w", err)
-	}
-	// If fee estimation fails (e.g. not enough data), fallback to a reasonable default (e.g. 10 sat/vbyte)
-	// For simplicity, we'll use a fixed fallback if the rate is invalid.
-	// Note: EstimateSmartFee returns BTC/kB.
-	var feePerKb btcutil.Amount
-	if feeRate.FeeRate != nil && *feeRate.FeeRate > 0 {
-		feePerKb, _ = btcutil.NewAmount(*feeRate.FeeRate)
-	} else {
-		feePerKb = btcutil.Amount(10000) // Fallback: 0.0001 BTC/kB
+		return nil, fmt.Errorf("failed to determine dynamic fee: %w", err)
 	}
 
 	// Estimated transaction size (P2PKH input ~148 bytes, P2PKH output ~34 bytes, OP_RETURN ~40-50 bytes)

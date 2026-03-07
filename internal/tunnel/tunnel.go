@@ -100,9 +100,16 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 		log.Printf("Provider isolation mode enabled: %s", cfg.IsolationMode)
 	}
 
-	tlsConfig, err := GenerateServerTLSConfig(privKey)
+	certLifetime := time.Duration(cfg.CertLifetimeHours) * time.Hour
+	certRotateBefore := time.Duration(cfg.CertRotateBeforeHours) * time.Hour
+	tlsConfig, err := buildRotatingServerTLSConfig(ctx, privKey, certLifetime, certRotateBefore)
 	if err != nil {
 		log.Fatalf("Failed to generate server TLS config: %v", err)
+	}
+
+	policy, err := loadAccessPolicy(cfg.AllowlistFile, cfg.DenylistFile)
+	if err != nil {
+		log.Fatalf("Failed to load provider access policy: %v", err)
 	}
 
 	listenAddr := fmt.Sprintf("0.0.0.0:%d", cfg.ListenPort)
@@ -174,6 +181,11 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, privKe
 		clientPubKey, err := certToBTCECPubKey(state.PeerCertificates[0])
 		if err != nil {
 			log.Printf("Connection from %s rejected: %v", conn.RemoteAddr(), err)
+			conn.Close()
+			continue
+		}
+		if err := policy.check(clientPubKey); err != nil {
+			log.Printf("Connection from %s rejected by policy: %v", conn.RemoteAddr(), err)
 			conn.Close()
 			continue
 		}

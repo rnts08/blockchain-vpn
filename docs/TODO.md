@@ -15,6 +15,7 @@
 
 ## 3. Provider Networking
 - [x] Implement provider egress/NAT backend (Linux runtime backend plus non-Linux stubs).
+- [x] Implement NAT traversal for home routers (UPnP and NAT-PMP).
 - [x] Add optional provider namespace/sandbox isolation mode.
 - [x] Add active health checks for TUN interface and listener.
 
@@ -24,14 +25,16 @@
 - [x] Replace naive UTXO selection with deterministic coin selection.
 - [x] Improve payment monitor reorg handling with tx->peer index.
 - [x] Add retry and backoff strategy for RPC connectivity loss.
+- [x] Replace static fee fallback with dynamic fee source from node RPCs.
 
 ## 5. Security and Hardening
 - [x] Encrypt provider private key at rest.
 - [x] Strict OP_RETURN payload decoding.
-- [ ] Add cert lifetime tuning and key rotation workflow.
-- [ ] Add optional allowlist/denylist for provider access policies.
+- [x] Add cert lifetime tuning and key rotation workflow.
+- [x] Add optional allowlist/denylist for provider access policies.
 
 ## 6. Product Surface
 - [ ] Implement GUI app based on `docs/GUI.md`.
 - [ ] Add machine-readable status output for automation (`--json` mode).
 - [ ] Add installation and OS-specific privilege setup guides.
+- [x] Use OS application config directory for `config.json`, `provider.key`, and `history.json`.

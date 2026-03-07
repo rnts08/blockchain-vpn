@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"blockchain-vpn/internal/config"
 )
 
-const historyFileName = "payment_history.json"
-const appConfigDir = "BlockchainVPN"
+const historyFileName = "history.json"
+const legacyHistoryFileName = "payment_history.json"
 
 var historyMu sync.Mutex
 
@@ -23,15 +25,11 @@ type PaymentRecord struct {
 }
 
 func getHistoryPath() (string, error) {
-	configDir, err := os.UserConfigDir()
+	configDir, err := config.AppConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("could not get user config dir: %w", err)
+		return "", fmt.Errorf("could not get app config dir: %w", err)
 	}
-	appDir := filepath.Join(configDir, appConfigDir)
-	if err := os.MkdirAll(appDir, 0755); err != nil {
-		return "", fmt.Errorf("could not create app config dir: %w", err)
-	}
-	return filepath.Join(appDir, historyFileName), nil
+	return filepath.Join(configDir, historyFileName), nil
 }
 
 func SavePaymentRecord(record PaymentRecord) error {
@@ -77,12 +75,23 @@ func loadHistoryInternal() ([]PaymentRecord, error) {
 
 	file, err := os.Open(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			if legacy, legacyErr := getLegacyHistoryPath(); legacyErr == nil {
+				if lf, openLegacyErr := os.Open(legacy); openLegacyErr == nil {
+					defer lf.Close()
+					return decodeHistory(lf)
+				}
+			}
+		}
 		return nil, err
 	}
 	defer file.Close()
+	return decodeHistory(file)
+}
 
+func decodeHistory(r io.Reader) ([]PaymentRecord, error) {
 	var records []PaymentRecord
-	decoder := json.NewDecoder(file)
+	decoder := json.NewDecoder(r)
 	if err := decoder.Decode(&records); err != nil {
 		// An empty file will cause an EOF error, which is fine.
 		if err == io.EOF {
@@ -91,4 +100,12 @@ func loadHistoryInternal() ([]PaymentRecord, error) {
 		return nil, err
 	}
 	return records, nil
+}
+
+func getLegacyHistoryPath() (string, error) {
+	configDir, err := config.AppConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, legacyHistoryFileName), nil
 }

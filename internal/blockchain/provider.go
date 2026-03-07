@@ -40,16 +40,9 @@ func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint) e
 	}
 
 	// 6. Estimate Fee
-	mode := btcjson.EstimateModeConservative
-	feeRate, err := client.EstimateSmartFee(6, &mode)
+	feePerKb, err := estimateDynamicFeePerKb(context.Background(), client, 6)
 	if err != nil {
-		return fmt.Errorf("failed to estimate fee: %w", err)
-	}
-	var feePerKb btcutil.Amount
-	if feeRate.FeeRate != nil && *feeRate.FeeRate > 0 {
-		feePerKb, _ = btcutil.NewAmount(*feeRate.FeeRate)
-	} else {
-		feePerKb = btcutil.Amount(10000) // Fallback
+		return fmt.Errorf("failed to determine dynamic fee: %w", err)
 	}
 
 	// Estimate size: 1 input, 2 outputs (op_return, change) ~ 250 bytes
@@ -117,16 +110,9 @@ func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newP
 	}
 
 	// Estimate Fee
-	mode := btcjson.EstimateModeConservative
-	feeRate, err := client.EstimateSmartFee(6, &mode)
+	feePerKb, err := estimateDynamicFeePerKb(context.Background(), client, 6)
 	if err != nil {
-		return fmt.Errorf("failed to estimate fee: %w", err)
-	}
-	var feePerKb btcutil.Amount
-	if feeRate.FeeRate != nil && *feeRate.FeeRate > 0 {
-		feePerKb, _ = btcutil.NewAmount(*feeRate.FeeRate)
-	} else {
-		feePerKb = btcutil.Amount(10000) // Fallback
+		return fmt.Errorf("failed to determine dynamic fee: %w", err)
 	}
 
 	estimatedSize := 250

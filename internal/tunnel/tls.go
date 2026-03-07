@@ -18,11 +18,16 @@ import (
 
 var identityExtensionOID = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 55555, 1, 1}
 
-func generateSelfSignedCert(privKey *btcec.PrivateKey) (tls.Certificate, error) {
+const defaultCertLifetime = 365 * 24 * time.Hour
+
+func generateSelfSignedCert(privKey *btcec.PrivateKey, lifetime time.Duration) (tls.Certificate, error) {
 	pubKeyID := hex.EncodeToString(privKey.PubKey().SerializeCompressed())
 	tlsPrivKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("failed to generate TLS keypair: %w", err)
+	}
+	if lifetime <= 0 {
+		lifetime = defaultCertLifetime
 	}
 
 	template := x509.Certificate{
@@ -32,7 +37,7 @@ func generateSelfSignedCert(privKey *btcec.PrivateKey) (tls.Certificate, error) 
 			CommonName:   "p2p-node-" + pubKeyID,
 		},
 		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		NotAfter:              time.Now().Add(lifetime),
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
@@ -76,8 +81,8 @@ func certToBTCECPubKey(cert *x509.Certificate) (*btcec.PublicKey, error) {
 	return btcec.ParsePubKey(compressed)
 }
 
-func GenerateServerTLSConfig(privKey *btcec.PrivateKey) (*tls.Config, error) {
-	cert, err := generateSelfSignedCert(privKey)
+func GenerateServerTLSConfig(privKey *btcec.PrivateKey, lifetime time.Duration) (*tls.Config, error) {
+	cert, err := generateSelfSignedCert(privKey, lifetime)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +95,7 @@ func GenerateServerTLSConfig(privKey *btcec.PrivateKey) (*tls.Config, error) {
 }
 
 func GenerateClientTLSConfig(privKey *btcec.PrivateKey, expectedServerKey *btcec.PublicKey) (*tls.Config, error) {
-	cert, err := generateSelfSignedCert(privKey)
+	cert, err := generateSelfSignedCert(privKey, defaultCertLifetime)
 	if err != nil {
 		return nil, err
 	}
