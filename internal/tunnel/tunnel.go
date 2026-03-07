@@ -338,6 +338,15 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 				return
 			}
 
+			// Cap session duration by provider limit if configured.
+			if cfg.MaxSessionDurationSecs > 0 {
+				maxExpiry := time.Now().Add(time.Duration(cfg.MaxSessionDurationSecs) * time.Second)
+				if maxExpiry.Before(expiration) {
+					expiration = maxExpiry
+					log.Printf("Session for client %s capped to %ds by provider policy", hex.EncodeToString(pk.SerializeCompressed()), cfg.MaxSessionDurationSecs)
+				}
+			}
+
 			sessionTimer := time.NewTimer(time.Until(expiration))
 			done := make(chan struct{})
 

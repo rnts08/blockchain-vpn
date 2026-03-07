@@ -61,7 +61,8 @@ type ProviderConfig struct {
 	BandwidthMonitorInterval string `json:"bandwidth_monitor_interval"`
 	TunIP                    string `json:"tun_ip"`
 	TunSubnet                string `json:"tun_subnet"`
-	MetricsListenAddr        string `json:"metrics_listen_addr"` // e.g. "127.0.0.1:9090"
+	MetricsListenAddr        string `json:"metrics_listen_addr"`       // e.g. "127.0.0.1:9090"
+	MaxSessionDurationSecs   int    `json:"max_session_duration_secs"` // 0 = no limit
 }
 
 type ClientConfig struct {
@@ -199,6 +200,7 @@ func GenerateDefaultConfig(path string) error {
 			TunIP:                    "10.10.0.1",
 			TunSubnet:                "24",
 			MetricsListenAddr:        "",
+			MaxSessionDurationSecs:   0,
 		},
 		Client: ClientConfig{
 			InterfaceName:              "bcvpn1",

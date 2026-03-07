@@ -36,6 +36,9 @@ func Validate(cfg *Config) error {
 	if cfg.Provider.MaxConsumers < 0 {
 		errs = append(errs, fmt.Errorf("provider.max_consumers must be >= 0"))
 	}
+	if cfg.Provider.MaxSessionDurationSecs < 0 {
+		errs = append(errs, fmt.Errorf("provider.max_session_duration_secs must be >= 0"))
+	}
 	if strings.TrimSpace(cfg.Provider.TunIP) == "" || net.ParseIP(strings.TrimSpace(cfg.Provider.TunIP)) == nil {
 		errs = append(errs, fmt.Errorf("provider.tun_ip must be a valid IP address"))
 	}
