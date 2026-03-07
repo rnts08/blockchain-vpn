@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25.x'
           cache: true
 
       - name: Install Dependencies
@@ -42,7 +42,7 @@ jobs:
           fi
 
       - name: Run Tests
-        run: go test -v ./...
+        run: make test
 
   build-and-release:
     needs: lint-and-test
@@ -56,7 +56,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25.x'
           cache: true
 
       - name: Install GUI Build Dependencies

@@ -1,8 +1,9 @@
 BINARY_NAME=bcvpn
 GUI_BINARY_NAME=bcvpn-gui
 GO=go
+VERSION=$(shell cat VERSION)
 
-.PHONY: all build build-gui build-cli-all build-linux build-darwin build-windows test fmt tidy clean
+.PHONY: all build build-gui build-cli-all build-linux build-darwin build-windows test test-functional fmt tidy clean release
 
 all: build
 
@@ -24,7 +25,10 @@ build-windows:
 build-cli-all: build-linux build-darwin build-windows
 
 test:
-	$(GO) test ./...
+	$(GO) test -short ./...
+
+test-functional:
+	$(GO) test -v -tags functional ./...
 
 fmt:
 	gofmt -w $$(rg --files -g'*.go')
@@ -37,3 +41,9 @@ clean:
 		$(BINARY_NAME)-linux-amd64 \
 		$(BINARY_NAME)-darwin-amd64 \
 		$(BINARY_NAME)-windows-amd64.exe
+
+release:
+	@echo "Creating release v$(VERSION)..."
+	git tag -a v$(VERSION) -m "Release v$(VERSION)"
+	git push origin v$(VERSION)
+

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-03-07
+
+### Tests & CI/CD
+- Split tests into unit and functional suites using build tags
+- Updated Makefile with `test-unit`, `test-functional`, and automated `release` targets
+- Synced GitHub CI/CD workflows to Go 1.25.x and improved build isolation
+
 ## [0.4.0] - 2026-03-07
 
 ### Security & Protocol
