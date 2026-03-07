@@ -13,7 +13,7 @@ This list is a new post-MVP backlog based on a full code and docs review.
 - [ ] Add graceful stop/wait lifecycle for provider goroutines (echo server, payment monitor, health checks, listener workers).
 - [ ] Add exponential backoff + jitter for provider listener accept errors and metrics server restart loops.
 - [ ] Add atomic write helpers for config/history/cleanup-marker updates to reduce corruption risk on crashes.
-- [ ] Add startup self-check command (`bcvpn doctor`) to verify TUN, routing tools, key storage backend, and config validity.
+- [x] Add startup self-check command (`bcvpn doctor`) to verify TUN, routing tools, key storage backend, and config validity.
 
 ## 3. Networking and Platform Quality
 - [ ] Add Linux nftables backend option for kill switch/NAT where iptables-legacy is unavailable.

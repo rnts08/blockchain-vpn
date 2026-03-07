@@ -293,6 +293,13 @@ To start selling bandwidth:
     ./bcvpn version --json
     ```
 
+10. **Runtime Doctor Checks**:
+    Run startup diagnostics for config, privileges, key storage backend, and platform tools:
+    ```bash
+    ./bcvpn doctor
+    ./bcvpn doctor --json
+    ```
+
 ## 5. Using Other Blockchains
 
 While designed for OrdexCoin, this software is compatible with most Bitcoin-derived blockchains (Bitcoin, Litecoin, Dogecoin, etc.) that support `OP_RETURN` and the standard RPC interface.

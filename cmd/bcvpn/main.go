@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -81,6 +82,7 @@ func main() {
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
 	configCmd := flag.NewFlagSet("config", flag.ExitOnError)
 	versionCmd := flag.NewFlagSet("version", flag.ExitOnError)
+	doctorCmd := flag.NewFlagSet("doctor", flag.ExitOnError)
 
 	// Scan specific flags
 	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
@@ -95,9 +97,10 @@ func main() {
 	statusJSON := statusCmd.Bool("json", false, "Output status in machine-readable JSON format")
 	configJSON := configCmd.Bool("json", false, "Output in machine-readable JSON format")
 	versionJSON := versionCmd.Bool("json", false, "Output version in machine-readable JSON format")
+	doctorJSON := doctorCmd.Bool("json", false, "Output doctor results in machine-readable JSON format")
 
 	if len(os.Args) < 2 {
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', or 'version' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', 'doctor', or 'version' subcommands")
 		os.Exit(1)
 	}
 
@@ -309,10 +312,147 @@ func main() {
 	case "version":
 		versionCmd.Parse(os.Args[2:])
 		handleVersion(*versionJSON)
+	case "doctor":
+		doctorCmd.Parse(os.Args[2:])
+		handleDoctor(cfg, *doctorJSON)
 
 	default:
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', or 'version' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', 'doctor', or 'version' subcommands")
 		os.Exit(1)
+	}
+}
+
+type doctorCheck struct {
+	Name    string `json:"name"`
+	OK      bool   `json:"ok"`
+	Detail  string `json:"detail,omitempty"`
+	Remedy  string `json:"remedy,omitempty"`
+	Warning bool   `json:"warning,omitempty"`
+}
+
+type doctorReport struct {
+	GeneratedAt string        `json:"generated_at"`
+	Version     string        `json:"version"`
+	Checks      []doctorCheck `json:"checks"`
+	OK          bool          `json:"ok"`
+}
+
+func handleDoctor(cfg *config.Config, jsonMode bool) {
+	report := doctorReport{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Version:     version.Version,
+	}
+	addCheck := func(c doctorCheck) {
+		report.Checks = append(report.Checks, c)
+	}
+
+	if err := config.Validate(cfg); err != nil {
+		addCheck(doctorCheck{
+			Name:   "config.validate",
+			OK:     false,
+			Detail: err.Error(),
+			Remedy: "Run `bcvpn config validate` and fix invalid fields.",
+		})
+	} else {
+		addCheck(doctorCheck{Name: "config.validate", OK: true})
+	}
+
+	resolved, supported, detail := crypto.KeyStorageStatus(cfg.Security.KeyStorageMode)
+	addCheck(doctorCheck{
+		Name:   "security.keystore",
+		OK:     supported,
+		Detail: fmt.Sprintf("requested=%s resolved=%s detail=%s", cfg.Security.KeyStorageMode, resolved, detail),
+		Remedy: "Set `security.key_storage_mode=file` or install backend prerequisites for chosen mode.",
+	})
+
+	if err := tunnel.EnsureElevatedPrivileges(); err != nil {
+		addCheck(doctorCheck{
+			Name:   "networking.privileges",
+			OK:     false,
+			Detail: err.Error(),
+			Remedy: "Run with elevated privileges (sudo/admin) for networking operations.",
+		})
+	} else {
+		addCheck(doctorCheck{Name: "networking.privileges", OK: true})
+	}
+
+	for _, tool := range requiredNetworkingTools(runtime.GOOS) {
+		if _, err := exec.LookPath(tool); err != nil {
+			addCheck(doctorCheck{
+				Name:   "tool." + tool,
+				OK:     false,
+				Detail: "not found in PATH",
+				Remedy: "Install required platform networking utility.",
+			})
+		} else {
+			addCheck(doctorCheck{Name: "tool." + tool, OK: true})
+		}
+	}
+
+	if strings.TrimSpace(cfg.Security.MetricsAuthToken) == "" && (strings.TrimSpace(cfg.Provider.MetricsListenAddr) != "" || strings.TrimSpace(cfg.Client.MetricsListenAddr) != "") {
+		addCheck(doctorCheck{
+			Name:    "security.metrics_auth",
+			OK:      true,
+			Warning: true,
+			Detail:  "metrics endpoint configured without auth token",
+			Remedy:  "Set `security.metrics_auth_token` or bind metrics endpoint to loopback only.",
+		})
+	} else {
+		addCheck(doctorCheck{Name: "security.metrics_auth", OK: true})
+	}
+
+	report.OK = true
+	for _, c := range report.Checks {
+		if !c.OK {
+			report.OK = false
+			break
+		}
+	}
+
+	if jsonMode {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(report); err != nil {
+			log.Fatalf("failed to encode doctor JSON: %v", err)
+		}
+		return
+	}
+
+	fmt.Printf("BlockchainVPN Doctor (%s)\n", report.GeneratedAt)
+	fmt.Printf("Version: %s\n", report.Version)
+	for _, c := range report.Checks {
+		state := "OK"
+		if !c.OK {
+			state = "FAIL"
+		} else if c.Warning {
+			state = "WARN"
+		}
+		fmt.Printf("- [%s] %s", state, c.Name)
+		if c.Detail != "" {
+			fmt.Printf(": %s", c.Detail)
+		}
+		fmt.Println()
+		if c.Remedy != "" && (!c.OK || c.Warning) {
+			fmt.Printf("  remedy: %s\n", c.Remedy)
+		}
+	}
+	if report.OK {
+		fmt.Println("Doctor result: healthy")
+	} else {
+		fmt.Println("Doctor result: issues detected")
+	}
+}
+
+func requiredNetworkingTools(goos string) []string {
+	switch goos {
+	case "linux":
+		return []string{"ip", "iptables"}
+	case "darwin":
+		return []string{"ifconfig", "route", "networksetup"}
+	case "windows":
+		return []string{"netsh", "route", "powershell"}
+	default:
+		return nil
 	}
 }
 
