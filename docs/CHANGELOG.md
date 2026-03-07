@@ -2,21 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.3.8] - 2026-03-07
+## [0.4.0] - 2026-03-07
 
-### Features
+### Security & Protocol
 - Add port conflict detection and auto-rotation for provider
 - Add auto-recharge credit system for client (pay-as-you-go)
 - Add certificate fingerprint to heartbeat for pinning
 - Add certificate rotation announcement on-chain
-
-### Bug Fixes
 - Add certificate fingerprint verification for known providers
 
-### Infrastructure
-- Version bump to 0.3.8
+### Features
+- Add CreditManager for automatic payment replenishment
+- Add port detection utilities (FindAvailablePort, CheckPortAvailable)
+- Add certificate fingerprint payload to on-chain announcements
+- Add client auto-recharge configuration options
 
-## [0.3.7] - 2026-03-07
+### Infrastructure
+- Version bump to 0.4.0
+
+## [0.3.8] - 2026-03-07
 
 ### Security
 - Add RPC security documentation in INSTALL.md
