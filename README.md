@@ -341,8 +341,8 @@ To adapt this for another chain:
 
 ### Gaps and Improvements
 
-- [ ] Expand Settings tab coverage to include all provider/client fields in one place.
-- [ ] Add route/DNS restore stress tests across supported OS backends.
+- [x] Expand Settings tab coverage to include provider/client/security runtime fields in the GUI.
+- [x] Add route/DNS restore stress tests across supported OS backends.
 
 See [docs/TODO.md](docs/TODO.md) for prioritized next steps.
 

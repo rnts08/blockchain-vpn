@@ -42,6 +42,34 @@ func TestDarwinConfigureClientNetworkSetupAndRestore(t *testing.T) {
 	expectContains(t, calls, "networksetup -setdnsservers Wi-Fi 8.8.8.8 1.1.1.1")
 }
 
+func TestDarwinConfigureClientNetworkRepeatedSetupCleanup(t *testing.T) {
+	orig := darwinRunCommand
+	defer func() { darwinRunCommand = orig }()
+
+	darwinRunCommand = func(name string, args ...string) (string, error) {
+		cmd := name + " " + strings.Join(args, " ")
+		switch cmd {
+		case "route -n get default":
+			return "gateway: 192.168.1.1\ninterface: en0\n", nil
+		case "networksetup -listnetworkserviceorder":
+			return "(1) Wi-Fi\n(Hardware Port: Wi-Fi, Device: en0)\n", nil
+		case "networksetup -getdnsservers Wi-Fi":
+			return "8.8.8.8\n1.1.1.1\n", nil
+		default:
+			return "", nil
+		}
+	}
+
+	const rounds = 5
+	for i := 0; i < rounds; i++ {
+		cleanup, err := configureClientNetwork("utun9", "1.2.3.4")
+		if err != nil {
+			t.Fatalf("round %d configureClientNetwork failed: %v", i, err)
+		}
+		cleanup()
+	}
+}
+
 func expectContains(t *testing.T, calls []string, want string) {
 	t.Helper()
 	for _, c := range calls {

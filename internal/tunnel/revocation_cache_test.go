@@ -50,6 +50,7 @@ func TestRevocationCache_IsRevoked(t *testing.T) {
 	}
 	cache.mu.Lock()
 	cache.lastLoad = time.Time{} // force refresh without waiting throttle interval
+	cache.lastMtime = time.Time{}
 	cache.mu.Unlock()
 
 	revoked, err = cache.IsRevoked(path, key2.PubKey())

@@ -101,3 +101,42 @@ func TestLinuxConfigureClientNetworkCleanupCallsRestore(t *testing.T) {
 		t.Fatal("expected restoreDNS to be called")
 	}
 }
+
+func TestLinuxConfigureClientNetworkRepeatedSetupCleanup(t *testing.T) {
+	origGetGW := linuxGetDefaultGateway
+	origSetupRouting := linuxSetupRouting
+	origRestoreRouting := linuxRestoreRouting
+	origSetupDNS := linuxSetupDNS
+	origRestoreDNS := linuxRestoreDNS
+	defer func() {
+		linuxGetDefaultGateway = origGetGW
+		linuxSetupRouting = origSetupRouting
+		linuxRestoreRouting = origRestoreRouting
+		linuxSetupDNS = origSetupDNS
+		linuxRestoreDNS = origRestoreDNS
+	}()
+
+	linuxGetDefaultGateway = func() (string, error) { return "192.168.1.1", nil }
+	linuxSetupRouting = func(ifaceName, providerHost, defaultGW string) error { return nil }
+	var routeRestores int
+	linuxRestoreRouting = func(ifaceName, providerHost string) { routeRestores++ }
+	linuxSetupDNS = func() error { return nil }
+	var dnsRestores int
+	linuxRestoreDNS = func() { dnsRestores++ }
+
+	const rounds = 5
+	for i := 0; i < rounds; i++ {
+		cleanup, err := configureClientNetwork("bcvpn1", "1.2.3.4")
+		if err != nil {
+			t.Fatalf("round %d configureClientNetwork failed: %v", i, err)
+		}
+		cleanup()
+	}
+
+	if routeRestores != rounds {
+		t.Fatalf("expected %d route restore calls, got %d", rounds, routeRestores)
+	}
+	if dnsRestores != rounds {
+		t.Fatalf("expected %d dns restore calls, got %d", rounds, dnsRestores)
+	}
+}
