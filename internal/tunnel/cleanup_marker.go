@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"blockchain-vpn/internal/config"
+	"blockchain-vpn/internal/util"
 )
 
 type networkCleanupMarker struct {
@@ -43,7 +44,7 @@ func writeCleanupMarker(m networkCleanupMarker) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, b, 0o644)
+	return util.WriteFileAtomic(p, b, 0o644)
 }
 
 func readCleanupMarker() (*networkCleanupMarker, error) {

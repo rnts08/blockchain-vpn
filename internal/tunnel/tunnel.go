@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"strings"
 	"sync"
@@ -184,6 +185,8 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 	// This reads packets from the TUN interface and routes them to the correct client connection.
 	go readTunLoop(iface, clients)
 
+	acceptBackoff := 100 * time.Millisecond
+	acceptRand := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -194,9 +197,19 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 			default:
 				recordRuntimeError(err)
 				log.Printf("Failed to accept connection: %v", err)
+				jitter := 0.8 + acceptRand.Float64()*0.4
+				sleep := time.Duration(float64(acceptBackoff) * jitter)
+				time.Sleep(sleep)
+				if acceptBackoff < 2*time.Second {
+					acceptBackoff *= 2
+					if acceptBackoff > 2*time.Second {
+						acceptBackoff = 2 * time.Second
+					}
+				}
 				continue
 			}
 		}
+		acceptBackoff = 100 * time.Millisecond
 
 		// The handshake is already complete from Accept().
 		// Now we verify the peer's certificate against our authorization list.

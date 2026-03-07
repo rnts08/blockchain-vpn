@@ -1,6 +1,7 @@
 package history
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"blockchain-vpn/internal/config"
+	"blockchain-vpn/internal/util"
 )
 
 const historyFileName = "history.json"
@@ -49,15 +51,13 @@ func SavePaymentRecord(record PaymentRecord) error {
 		return err
 	}
 
-	file, err := os.Create(path)
-	if err != nil {
+	var out bytes.Buffer
+	encoder := json.NewEncoder(&out)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(records); err != nil {
 		return err
 	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(records)
+	return util.WriteFileAtomic(path, out.Bytes(), 0o644)
 }
 
 func LoadHistory() ([]PaymentRecord, error) {

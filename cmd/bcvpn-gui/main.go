@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -83,6 +84,7 @@ type guiState struct {
 
 	providerRunning bool
 	providerCancel  context.CancelFunc
+	providerDone    chan struct{}
 
 	scanResults []*geoip.EnrichedVPNEndpoint
 	selectedIdx int
@@ -216,7 +218,7 @@ func markSetupCompleted() error {
 		return err
 	}
 	p := filepath.Join(dir, setupMarkerFile)
-	return os.WriteFile(p, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+	return util.WriteFileAtomic(p, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
 }
 
 func buildSetupWizard(w fyne.Window, s *guiState) fyne.CanvasObject {
@@ -1162,6 +1164,7 @@ func (s *guiState) startProvider(password string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.providerCancel = cancel
 	s.providerRunning = true
+	s.providerDone = make(chan struct{})
 
 	announceIP, announcePort, natCleanup, err := determineAnnounceDetails(ctx, &s.cfg.Provider)
 	if err != nil {
@@ -1175,6 +1178,7 @@ func (s *guiState) startProvider(password string) error {
 
 	go func() {
 		defer client.Shutdown()
+		defer close(s.providerDone)
 		defer func() {
 			s.mu.Lock()
 			s.providerRunning = false
@@ -1236,6 +1240,7 @@ func (s *guiState) startProvider(password string) error {
 
 func (s *guiState) stopProvider() {
 	s.mu.Lock()
+	done := s.providerDone
 	defer s.mu.Unlock()
 	if s.providerCancel != nil {
 		s.providerCancel()
@@ -1243,6 +1248,13 @@ func (s *guiState) stopProvider() {
 	}
 	s.providerRunning = false
 	s.appendLog("Provider stop requested.")
+	if done != nil {
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			s.appendLog("Provider shutdown timeout reached.")
+		}
+	}
 }
 
 func (s *guiState) rebroadcastService(password string) error {
@@ -1474,17 +1486,13 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 }
 
 func saveConfig(path string, cfg *config.Config) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	enc := json.NewEncoder(f)
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
 	enc.SetIndent("", "  ")
-	return enc.Encode(cfg)
+	if err := enc.Encode(cfg); err != nil {
+		return err
+	}
+	return util.WriteFileAtomic(path, out.Bytes(), 0o644)
 }
 
 func connectRPC(host, user, pass string) *rpcclient.Client {

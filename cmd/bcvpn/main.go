@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"blockchain-vpn/internal/auth"
@@ -147,7 +149,10 @@ func main() {
 
 		endpoint := buildProviderEndpoint(&cfg.Provider, announceIP, announcePort, providerKey)
 
+		var providerWG sync.WaitGroup
+		providerWG.Add(5)
 		go func() {
+			defer providerWG.Done()
 			ticker := time.NewTicker(24 * time.Hour)
 			defer ticker.Stop()
 			if err := blockchain.AnnounceService(client, endpoint); err != nil {
@@ -165,6 +170,7 @@ func main() {
 			}
 		}()
 		go func() {
+			defer providerWG.Done()
 			hbTicker := time.NewTicker(5 * time.Minute)
 			defer hbTicker.Stop()
 
@@ -182,15 +188,19 @@ func main() {
 				}
 			}
 		}()
-
-		go blockchain.MonitorPayments(ctx, client, authManager, cfg.Provider.Price)
 		go func() {
+			defer providerWG.Done()
+			blockchain.MonitorPayments(ctx, client, authManager, cfg.Provider.Price)
+		}()
+		go func() {
+			defer providerWG.Done()
 			if err := tunnel.StartProviderServer(ctx, &cfg.Provider, &cfg.Security, providerKey, authManager); err != nil {
 				log.Printf("Provider server exited with error: %v", err)
 				stop()
 			}
 		}()
 		go func() {
+			defer providerWG.Done()
 			if err := blockchain.StartEchoServer(ctx, cfg.Provider.ListenPort); err != nil {
 				log.Printf("Echo server exited with error: %v", err)
 				stop()
@@ -199,6 +209,16 @@ func main() {
 
 		<-ctx.Done()
 		log.Println("Shutting down provider...")
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			providerWG.Wait()
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			log.Printf("Provider shutdown timeout reached; forcing exit.")
+		}
 
 	case "rebroadcast":
 		rebroadcastCmd.Parse(os.Args[2:])
@@ -1345,17 +1365,13 @@ func setConfigField(cfg *config.Config, key string, value string) error {
 }
 
 func saveConfigFile(path string, cfg *config.Config) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	enc := json.NewEncoder(f)
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
 	enc.SetIndent("", "  ")
-	return enc.Encode(cfg)
+	if err := enc.Encode(cfg); err != nil {
+		return err
+	}
+	return util.WriteFileAtomic(path, out.Bytes(), 0o644)
 }
 
 func applyConfigDefaults(cfg *config.Config) {

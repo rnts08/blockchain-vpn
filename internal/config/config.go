@@ -1,11 +1,14 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"blockchain-vpn/internal/util"
 )
 
 type Config struct {
@@ -208,16 +211,11 @@ func GenerateDefaultConfig(path string) error {
 		},
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
+	var out bytes.Buffer
+	encoder := json.NewEncoder(&out)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(cfg)
+	if err := encoder.Encode(cfg); err != nil {
+		return err
+	}
+	return util.WriteFileAtomic(path, out.Bytes(), 0o644)
 }
