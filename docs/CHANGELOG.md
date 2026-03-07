@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
  
+## [0.4.4] - 2026-03-07
+
+### GUI/UX Improvements
+- **Item 5.1 Status Label Accuracy**: Implemented reactive data binding for provider status. Status now updates accurately across all tabs (Starting, Running, Stopping, Stopped) and automatically manages start/stop button availability.
+
 ## [0.4.3] - 2026-03-07
 
 ### Infrastructure

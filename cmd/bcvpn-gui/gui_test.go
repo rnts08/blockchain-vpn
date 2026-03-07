@@ -12,9 +12,11 @@ import (
 func TestGUICreation(t *testing.T) {
 	myApp := test.NewApp()
 	state := &guiState{
-		cfg:  &config.Config{},
-		logs: binding.NewString(),
+		cfg:            &config.Config{},
+		logs:           binding.NewString(),
+		providerStatus: binding.NewString(),
 	}
+	_ = state.providerStatus.Set("Stopped")
 	applyDefaultConfigValues(state.cfg)
 
 	w := myApp.NewWindow("Test")
@@ -28,9 +30,11 @@ func TestGUICreation(t *testing.T) {
 func TestSettingsTab(t *testing.T) {
 	myApp := test.NewApp()
 	state := &guiState{
-		cfg:  &config.Config{},
-		logs: binding.NewString(),
+		cfg:            &config.Config{},
+		logs:           binding.NewString(),
+		providerStatus: binding.NewString(),
 	}
+	_ = state.providerStatus.Set("Stopped")
 	applyDefaultConfigValues(state.cfg)
 
 	w := myApp.NewWindow("Settings Test")
@@ -43,9 +47,11 @@ func TestSettingsTab(t *testing.T) {
 
 func TestWalletTab(t *testing.T) {
 	state := &guiState{
-		cfg:  &config.Config{},
-		logs: binding.NewString(),
+		cfg:            &config.Config{},
+		logs:           binding.NewString(),
+		providerStatus: binding.NewString(),
 	}
+	_ = state.providerStatus.Set("Stopped")
 	wallet := buildWalletTab(state)
 	if wallet == nil {
 		t.Fatal("wallet tab is nil")

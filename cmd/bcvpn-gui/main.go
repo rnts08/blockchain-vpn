@@ -80,7 +80,8 @@ type guiState struct {
 	cfg      *config.Config
 	firstRun bool
 
-	logs binding.String
+	logs           binding.String
+	providerStatus binding.String
 
 	providerRunning  bool
 	providerStarting bool
@@ -163,15 +164,17 @@ func initState() (*guiState, error) {
 	}
 	logs := binding.NewString()
 	_ = logs.Set("GUI ready.\n")
-
-	return &guiState{
-		cfgPath:     cfgPath,
-		cfg:         cfg,
-		firstRun:    firstRun,
-		logs:        logs,
-		selectedIdx: -1,
-		clientMgr:   tunnel.NewMultiTunnelManager(),
-	}, nil
+	s := &guiState{
+		cfgPath:        cfgPath,
+		cfg:            cfg,
+		firstRun:       firstRun,
+		logs:           logs,
+		providerStatus: binding.NewString(),
+		selectedIdx:    -1,
+		clientMgr:      tunnel.NewMultiTunnelManager(),
+	}
+	_ = s.providerStatus.Set("Stopped")
+	return s, nil
 }
 
 func loadConfigWithFallback() (string, *config.Config, bool, error) {
@@ -423,7 +426,7 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	passwordEntry := widget.NewPasswordEntry()
 	passwordEntry.SetPlaceHolder("Provider key password (file mode only)")
 
-	statusLabel := widget.NewLabel("Status: stopped")
+	statusLabel := widget.NewLabelWithData(s.providerStatus)
 
 	saveBtn := widget.NewButton("Save Provider Config", func() {
 		s.mu.Lock()
@@ -508,7 +511,8 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.appendLog("Detected provider country: " + strings.ToUpper(loc.CountryCode))
 	})
 
-	startBtn := widget.NewButton("Start Provider", func() {
+	var startBtn *widget.Button
+	startBtn = widget.NewButton("Start Provider", func() {
 		pass := strings.TrimSpace(passwordEntry.Text)
 		if requiresPasswordForKeyStorage(s.cfg.Security.KeyStorageMode) && pass == "" {
 			dialog.ShowInformation("Password required", "Enter provider key password to start provider.", w)
@@ -518,18 +522,33 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 			dialog.ShowError(err, w)
 			return
 		}
-		statusLabel.SetText("Status: running")
 	})
+	s.providerStatus.AddListener(binding.NewDataListener(func() {
+		status, _ := s.providerStatus.Get()
+		if status == "Running" || status == "Starting..." || status == "Stopping..." {
+			startBtn.Disable()
+		} else {
+			startBtn.Enable()
+		}
+	}))
 
-	stopBtn := widget.NewButton("Stop Provider", func() {
+	var stopBtn *widget.Button
+	stopBtn = widget.NewButton("Stop Provider", func() {
 		dialog.ShowConfirm("Stop Provider", "Are you sure you want to stop the provider? All connected clients will be disconnected.", func(confirmed bool) {
 			if !confirmed {
 				return
 			}
 			s.stopProvider()
-			statusLabel.SetText("Status: stopped")
 		}, w)
 	})
+	s.providerStatus.AddListener(binding.NewDataListener(func() {
+		status, _ := s.providerStatus.Get()
+		if status == "Stopped" || status == "Stopping..." || status == "Starting..." {
+			stopBtn.Disable()
+		} else {
+			stopBtn.Enable()
+		}
+	}))
 	rebroadcastBtn := widget.NewButton("Rebroadcast Service", func() {
 		pass := strings.TrimSpace(passwordEntry.Text)
 		if requiresPasswordForKeyStorage(s.cfg.Security.KeyStorageMode) && pass == "" {
@@ -794,10 +813,7 @@ func buildStatusTab(s *guiState) fyne.CanvasObject {
 	}
 	privLabel := widget.NewLabel(privilegeStatus)
 
-	providerStatusLabel := widget.NewLabel("Provider: Stopped")
-	if s.providerRunning {
-		providerStatusLabel.Text = "Provider: Running"
-	}
+	providerStatusLabel := widget.NewLabelWithData(s.providerStatus)
 
 	clientStatusLabel := widget.NewLabel("Client: Disconnected")
 
@@ -1344,6 +1360,7 @@ func (s *guiState) startProvider(password string) error {
 		return fmt.Errorf("provider already running or starting")
 	}
 	s.providerStarting = true
+	_ = s.providerStatus.Set("Starting...")
 	s.mu.Unlock()
 
 	defer func() {
@@ -1367,6 +1384,7 @@ func (s *guiState) startProvider(password string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.providerCancel = cancel
 	s.providerRunning = true
+	_ = s.providerStatus.Set("Running")
 	s.providerDone = make(chan struct{})
 
 	announceIP, announcePort, natCleanup, err := determineAnnounceDetails(ctx, &s.cfg.Provider)
@@ -1391,6 +1409,7 @@ func (s *guiState) startProvider(password string) error {
 			if natCleanup != nil {
 				natCleanup()
 			}
+			_ = s.providerStatus.Set("Stopped")
 		}()
 		s.appendLog("Provider started.")
 
@@ -1465,6 +1484,7 @@ func (s *guiState) stopProvider() {
 		s.providerCancel = nil
 	}
 	s.providerRunning = false
+	_ = s.providerStatus.Set("Stopping...")
 	s.appendLog("Provider stop requested.")
 	if done != nil {
 		select {
