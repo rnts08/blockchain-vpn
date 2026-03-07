@@ -62,11 +62,13 @@ type ProviderConfig struct {
 }
 
 type ClientConfig struct {
-	InterfaceName     string `json:"interface_name"`
-	TunIP             string `json:"tun_ip"`
-	TunSubnet         string `json:"tun_subnet"`
-	EnableKillSwitch  bool   `json:"enable_kill_switch"`
-	MetricsListenAddr string `json:"metrics_listen_addr"` // e.g. "127.0.0.1:9091"
+	InterfaceName              string `json:"interface_name"`
+	TunIP                      string `json:"tun_ip"`
+	TunSubnet                  string `json:"tun_subnet"`
+	EnableKillSwitch           bool   `json:"enable_kill_switch"`
+	MetricsListenAddr          string `json:"metrics_listen_addr"` // e.g. "127.0.0.1:9091"
+	StrictVerification         bool   `json:"strict_verification"`
+	VerifyThroughputAfterSetup bool   `json:"verify_throughput_after_connect"`
 }
 
 const AppConfigDirName = "BlockchainVPN"
@@ -196,11 +198,13 @@ func GenerateDefaultConfig(path string) error {
 			MetricsListenAddr:        "",
 		},
 		Client: ClientConfig{
-			InterfaceName:     "bcvpn1",
-			TunIP:             "10.10.0.2",
-			TunSubnet:         "24",
-			EnableKillSwitch:  false,
-			MetricsListenAddr: "",
+			InterfaceName:              "bcvpn1",
+			TunIP:                      "10.10.0.2",
+			TunSubnet:                  "24",
+			EnableKillSwitch:           false,
+			MetricsListenAddr:          "",
+			StrictVerification:         false,
+			VerifyThroughputAfterSetup: true,
 		},
 	}
 

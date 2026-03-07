@@ -845,7 +845,18 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 	if dryRun {
 		fmt.Printf("[Dry Run] Simulation: Would create TUN interface %s and connect to %s.\n", clientCfg.InterfaceName, endpointAddr)
 	} else {
-		err := tunnel.ConnectToProvider(ctx, clientCfg, secCfg, localKey, peerPubKey, endpointAddr, selectedEndpoint.Country)
+		err := tunnel.ConnectToProvider(
+			ctx,
+			clientCfg,
+			secCfg,
+			localKey,
+			peerPubKey,
+			endpointAddr,
+			tunnel.ClientSecurityExpectations{
+				ExpectedCountry:     selectedEndpoint.Country,
+				ExpectedBandwidthKB: selectedEndpoint.AdvertisedBandwidthKB,
+			},
+		)
 		select {
 		case <-ctx.Done():
 			log.Println("Disconnecting...")
@@ -1176,6 +1187,10 @@ func getConfigField(cfg *config.Config, key string) (any, error) {
 		return cfg.Client.EnableKillSwitch, nil
 	case "client.metrics_listen_addr":
 		return cfg.Client.MetricsListenAddr, nil
+	case "client.strict_verification":
+		return cfg.Client.StrictVerification, nil
+	case "client.verify_throughput_after_connect":
+		return cfg.Client.VerifyThroughputAfterSetup, nil
 	case "logging.format":
 		return cfg.Logging.Format, nil
 	case "logging.level":
@@ -1295,6 +1310,18 @@ func setConfigField(cfg *config.Config, key string, value string) error {
 		cfg.Client.EnableKillSwitch = v
 	case "client.metrics_listen_addr":
 		cfg.Client.MetricsListenAddr = value
+	case "client.strict_verification":
+		v, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.Client.StrictVerification = v
+	case "client.verify_throughput_after_connect":
+		v, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.Client.VerifyThroughputAfterSetup = v
 	case "logging.format":
 		cfg.Logging.Format = value
 	case "logging.level":
@@ -1416,11 +1443,13 @@ type statusOutput struct {
 		MetricsListenAddr    string `json:"metrics_listen_addr"`
 	} `json:"provider"`
 	Client struct {
-		InterfaceName     string `json:"interface_name"`
-		TunIP             string `json:"tun_ip"`
-		TunSubnet         string `json:"tun_subnet"`
-		EnableKillSwitch  bool   `json:"enable_kill_switch"`
-		MetricsListenAddr string `json:"metrics_listen_addr"`
+		InterfaceName              string `json:"interface_name"`
+		TunIP                      string `json:"tun_ip"`
+		TunSubnet                  string `json:"tun_subnet"`
+		EnableKillSwitch           bool   `json:"enable_kill_switch"`
+		MetricsListenAddr          string `json:"metrics_listen_addr"`
+		StrictVerification         bool   `json:"strict_verification"`
+		VerifyThroughputAfterSetup bool   `json:"verify_throughput_after_connect"`
 	} `json:"client"`
 	History struct {
 		RecordCount int    `json:"record_count"`
@@ -1500,6 +1529,8 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	status.Client.TunSubnet = cfg.Client.TunSubnet
 	status.Client.EnableKillSwitch = cfg.Client.EnableKillSwitch
 	status.Client.MetricsListenAddr = cfg.Client.MetricsListenAddr
+	status.Client.StrictVerification = cfg.Client.StrictVerification
+	status.Client.VerifyThroughputAfterSetup = cfg.Client.VerifyThroughputAfterSetup
 
 	records, err := history.LoadHistory()
 	if err != nil {

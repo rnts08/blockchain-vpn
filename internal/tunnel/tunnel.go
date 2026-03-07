@@ -359,7 +359,7 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 }
 
 // ConnectToProvider connects to a provider and sets up the client-side tunnel.
-func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *config.SecurityConfig, localPrivKey *btcec.PrivateKey, serverPubKey *btcec.PublicKey, endpoint string, expectedCountry string) error {
+func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *config.SecurityConfig, localPrivKey *btcec.PrivateKey, serverPubKey *btcec.PublicKey, endpoint string, expected ClientSecurityExpectations) error {
 	if err := EnsureElevatedPrivileges(); err != nil {
 		recordRuntimeError(err)
 		return fmt.Errorf("client requires automatic networking privileges: %w", err)
@@ -459,8 +459,15 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *confi
 		log.Printf("Kill switch enabled for session on interface %s", iface.Name())
 	}
 
-	checkCtx, cancelChecks := context.WithTimeout(context.Background(), 12*time.Second)
-	runClientPostConnectChecks(checkCtx, providerHost, expectedCountry, preConnectIP)
+	expected.ProviderHost = providerHost
+	expected.StrictVerification = cfg.StrictVerification
+	expected.VerifyThroughputAfter = cfg.VerifyThroughputAfterSetup
+	checkCtx, cancelChecks := context.WithTimeout(context.Background(), 20*time.Second)
+	if err := runClientPostConnectChecks(checkCtx, expected, preConnectIP); err != nil {
+		cancelChecks()
+		recordRuntimeError(err)
+		return err
+	}
 	cancelChecks()
 
 	log.Printf("Successfully connected to %s. Tunnel is active.", endpoint)

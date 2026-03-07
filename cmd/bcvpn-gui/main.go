@@ -622,6 +622,10 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	clientMetricsAddrEntry.SetText(s.cfg.Client.MetricsListenAddr)
 	clientKillSwitch := widget.NewCheck("Enable Kill Switch", nil)
 	clientKillSwitch.SetChecked(s.cfg.Client.EnableKillSwitch)
+	clientStrictVerify := widget.NewCheck("Strict Verification", nil)
+	clientStrictVerify.SetChecked(s.cfg.Client.StrictVerification)
+	clientThroughputVerify := widget.NewCheck("Verify Throughput After Connect", nil)
+	clientThroughputVerify.SetChecked(s.cfg.Client.VerifyThroughputAfterSetup)
 	dryRun := widget.NewCheck("Dry run (no payment, no interface changes)", nil)
 
 	results := widget.NewList(
@@ -716,6 +720,8 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.Client.TunSubnet = strings.TrimSpace(clientTunSubnetEntry.Text)
 		s.cfg.Client.MetricsListenAddr = strings.TrimSpace(clientMetricsAddrEntry.Text)
 		s.cfg.Client.EnableKillSwitch = clientKillSwitch.Checked
+		s.cfg.Client.StrictVerification = clientStrictVerify.Checked
+		s.cfg.Client.VerifyThroughputAfterSetup = clientThroughputVerify.Checked
 		if err := saveConfig(s.cfgPath, s.cfg); err != nil {
 			dialog.ShowError(err, w)
 			return
@@ -749,10 +755,11 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		clientMetricsAddrEntry,
 	)
 	actionRow := container.NewGridWithColumns(5, scanBtn, connectBtn, saveClientBtn, clientKillSwitch, dryRun)
+	securityRow := container.NewGridWithColumns(2, clientStrictVerify, clientThroughputVerify)
 
 	return container.NewPadded(container.NewVBox(
 		title,
-		widget.NewCard("Filters", "Scan and choose the best provider", container.NewVBox(filterRow, settingsRow, actionRow)),
+		widget.NewCard("Filters", "Scan and choose the best provider", container.NewVBox(filterRow, settingsRow, actionRow, securityRow)),
 		widget.NewCard("Provider List", "Latency, price, and country-enriched endpoint table", results),
 		buildLogPanel(s),
 	))
@@ -1452,7 +1459,18 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 		s.appendLog("Dry-run connect completed.")
 		return nil
 	}
-	return tunnel.ConnectToProvider(context.Background(), &s.cfg.Client, &s.cfg.Security, localKey, selected.Endpoint.PublicKey, endpointAddr, selected.Country)
+	return tunnel.ConnectToProvider(
+		context.Background(),
+		&s.cfg.Client,
+		&s.cfg.Security,
+		localKey,
+		selected.Endpoint.PublicKey,
+		endpointAddr,
+		tunnel.ClientSecurityExpectations{
+			ExpectedCountry:     selected.Country,
+			ExpectedBandwidthKB: selected.AdvertisedBandwidthKB,
+		},
+	)
 }
 
 func saveConfig(path string, cfg *config.Config) error {
