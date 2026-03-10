@@ -13,6 +13,9 @@ build:
 build-gui:
 	$(GO) build -o $(GUI_BINARY_NAME) ./cmd/bcvpn-gui
 
+build-rpc-test:
+	$(GO) build -o rpc-test ./cmd/rpc-test
+
 build-linux:
 	GOOS=linux GOARCH=amd64 $(GO) build -o $(BINARY_NAME)-linux-amd64 ./cmd/bcvpn
 
