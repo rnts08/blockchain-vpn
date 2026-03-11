@@ -13,7 +13,7 @@ import (
 func TestGUICreation(t *testing.T) {
 	myApp := test.NewApp()
 	state := &guiState{
-		cfg:            &config.Config{},
+		cfg:            &config.Config{DemoMode: true},
 		logs:           binding.NewString(),
 		providerStatus: binding.NewString(),
 		isScanning:     binding.NewBool(),
@@ -42,7 +42,7 @@ func TestGUICreation(t *testing.T) {
 func TestSettingsTab(t *testing.T) {
 	myApp := test.NewApp()
 	state := &guiState{
-		cfg:            &config.Config{},
+		cfg:            &config.Config{DemoMode: true},
 		logs:           binding.NewString(),
 		providerStatus: binding.NewString(),
 		isScanning:     binding.NewBool(),
@@ -70,7 +70,7 @@ func TestSettingsTab(t *testing.T) {
 
 func TestWalletTab(t *testing.T) {
 	state := &guiState{
-		cfg:            &config.Config{},
+		cfg:            &config.Config{DemoMode: true},
 		logs:           binding.NewString(),
 		providerStatus: binding.NewString(),
 		isScanning:     binding.NewBool(),

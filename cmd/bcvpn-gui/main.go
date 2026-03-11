@@ -1530,6 +1530,15 @@ func (s *guiState) updateEvents() {
 }
 
 func (s *guiState) updateWalletBalance() {
+	s.mu.Lock()
+	demoMode := s.cfg.DemoMode
+	s.mu.Unlock()
+
+	if demoMode {
+		_ = s.walletBalance.Set("Balance: [DEMO] 100000 sats")
+		return
+	}
+
 	client := connectRPCWithConfig(s.cfg)
 	defer client.Shutdown()
 
@@ -1573,6 +1582,10 @@ func (s *guiState) refreshLogs() {
 }
 
 func (s *guiState) startProvider(password string) error {
+	if s.cfg.DemoMode {
+		s.appendLog("Provider mode not available in demo mode. Disable demo mode to run a provider.")
+		return nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.providerRunning || s.providerStarting {
@@ -1742,6 +1755,10 @@ func (s *guiState) stopProvider() {
 }
 
 func (s *guiState) rebroadcastService(password string) error {
+	if s.cfg.DemoMode {
+		s.appendLog("Rebroadcast not available in demo mode")
+		return nil
+	}
 	s.mu.Lock()
 	cfg := *s.cfg
 	s.mu.Unlock()
