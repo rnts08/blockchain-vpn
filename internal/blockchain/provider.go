@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -249,9 +250,18 @@ func StartEchoServer(ctx context.Context, port int) error {
 	}
 }
 
+// PaymentMonitorCfg holds configuration for the payment monitor to interpret payments.
+type PaymentMonitorCfg struct {
+	Price          uint64
+	PricingMethod  string
+	TimeUnitSecs   uint32
+	DataUnitBytes  uint32
+	MaxSessionSecs int
+}
+
 // MonitorPayments checks for incoming transactions to the wallet.
 // It polls the blockchain periodically for new payments.
-func MonitorPayments(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, servicePrice uint64, pollingInterval time.Duration) {
+func MonitorPayments(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, pmCfg PaymentMonitorCfg, pollingInterval time.Duration) {
 	// Start tracking from the current best block to avoid listing old transactions.
 	var lastBlockHash *chainhash.Hash
 	payments := newPaymentTracker()
@@ -266,11 +276,11 @@ func MonitorPayments(ctx context.Context, client *rpcclient.Client, authManager 
 	}
 
 	log.Println("Starting payment monitor (polling mode)...")
-	runPaymentMonitorPolling(ctx, client, authManager, servicePrice, lastBlockHash, payments, pollingInterval)
+	runPaymentMonitorPolling(ctx, client, authManager, pmCfg, lastBlockHash, payments, pollingInterval)
 }
 
 // runPaymentMonitorPolling is a fallback for when block notifications are not available.
-func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, servicePrice uint64, lastBlockHash *chainhash.Hash, payments *paymentTracker, interval time.Duration) {
+func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, pmCfg PaymentMonitorCfg, lastBlockHash *chainhash.Hash, payments *paymentTracker, interval time.Duration) {
 	if interval <= 0 {
 		interval = 1 * time.Minute
 	}
@@ -289,7 +299,7 @@ func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, aut
 				continue
 			}
 			for _, tx := range result.Transactions {
-				processTxForPayment(ctx, client, tx.TxID, tx.Amount, tx.Confirmations, authManager, servicePrice, payments)
+				processTxForPayment(ctx, client, tx.TxID, tx.Amount, tx.Confirmations, authManager, pmCfg, payments)
 			}
 			if hash, err := chainhash.NewHashFromStr(result.LastBlock); err == nil {
 				lastBlockHash = hash
@@ -299,7 +309,7 @@ func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, aut
 }
 
 // processBlockForPayments iterates through transactions in a block and processes them.
-func processBlockForPayments(ctx context.Context, client *rpcclient.Client, block *btcjson.GetBlockVerboseTxResult, authManager *auth.AuthManager, servicePrice uint64, payments *paymentTracker) {
+func processBlockForPayments(ctx context.Context, client *rpcclient.Client, block *btcjson.GetBlockVerboseTxResult, authManager *auth.AuthManager, pmCfg PaymentMonitorCfg, payments *paymentTracker) {
 	for _, tx := range block.Tx {
 		// We need to check if the transaction involves our wallet.
 		// GetRawTransactionVerbose doesn't tell us this directly.
@@ -312,7 +322,7 @@ func processBlockForPayments(ctx context.Context, client *rpcclient.Client, bloc
 		}
 		txDetails, err := client.GetTransaction(txHash)
 		if err == nil && txDetails.Amount > 0 { // A simple check for received payments
-			processTxForPayment(ctx, client, tx.Txid, txDetails.Amount, int64(txDetails.Confirmations), authManager, servicePrice, payments)
+			processTxForPayment(ctx, client, tx.Txid, txDetails.Amount, int64(txDetails.Confirmations), authManager, pmCfg, payments)
 		}
 	}
 }
@@ -343,8 +353,8 @@ func GetProviderAddresses(client *rpcclient.Client) ([]string, error) {
 
 // processTxForPayment checks a single transaction for a valid payment payload.
 // It verifies the actual amount paid to the provider's address (not just wallet balance change)
-// and ensures it meets or exceeds the service price.
-func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid string, amount float64, confirmations int64, authManager *auth.AuthManager, servicePrice uint64, payments *paymentTracker) {
+// and ensures it meets or exceeds the service price. It then authorizes the peer based on pricing model.
+func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid string, amount float64, confirmations int64, authManager *auth.AuthManager, pmCfg PaymentMonitorCfg, payments *paymentTracker) {
 	if confirmations < 0 {
 		payments.handleRemovedTx(txid, authManager)
 		return
@@ -394,15 +404,62 @@ func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid str
 		}
 	}
 
-	if totalToProvider < servicePrice {
-		log.Printf("Payment %s: received %d sats, expected at least %d sats - ignoring", txid, totalToProvider, servicePrice)
+	if totalToProvider < pmCfg.Price {
+		log.Printf("Payment %s: received %d sats, expected at least %d sats - ignoring", txid, totalToProvider, pmCfg.Price)
 		return
 	}
 
-	log.Printf("Payment %s: verified %d sats to provider (>= %d sats required)", txid, totalToProvider, servicePrice)
+	log.Printf("Payment %s: verified %d sats to provider (>= %d sats required)", txid, totalToProvider, pmCfg.Price)
 
-	if clientPubKey != nil {
-		authManager.AuthorizePeer(clientPubKey, 24*time.Hour)
-		payments.trackPayment(txid, clientPubKey)
+	if clientPubKey == nil {
+		return
 	}
+
+	// Compute authorization based on pricing method
+	var duration time.Duration
+	var dataQuota uint64
+
+	switch strings.ToLower(pmCfg.PricingMethod) {
+	case "session", "":
+		// Default: 24 hours, capped by max session duration if set
+		duration = 24 * time.Hour
+		if pmCfg.MaxSessionSecs > 0 {
+			maxDur := time.Duration(pmCfg.MaxSessionSecs) * time.Second
+			if maxDur < duration {
+				duration = maxDur
+			}
+		}
+	case "time":
+		// Payment amount buys time units
+		if pmCfg.Price == 0 {
+			log.Printf("Payment %s: price is zero, cannot calculate time units", txid)
+			return
+		}
+		units := totalToProvider / pmCfg.Price
+		secs := uint64(units) * uint64(pmCfg.TimeUnitSecs)
+		if pmCfg.MaxSessionSecs > 0 && int(secs) > pmCfg.MaxSessionSecs {
+			secs = uint64(pmCfg.MaxSessionSecs)
+		}
+		duration = time.Duration(secs) * time.Second
+	case "data":
+		// Payment amount buys data units
+		if pmCfg.Price == 0 {
+			log.Printf("Payment %s: price is zero, cannot calculate data units", txid)
+			return
+		}
+		units := totalToProvider / pmCfg.Price
+		dataQuota = units * uint64(pmCfg.DataUnitBytes)
+		// For data, we may still set a time limit (max session duration) or default 24h
+		if pmCfg.MaxSessionSecs > 0 {
+			duration = time.Duration(pmCfg.MaxSessionSecs) * time.Second
+		} else {
+			duration = 24 * time.Hour
+		}
+	default:
+		log.Printf("Payment %s: unknown pricing method %s, ignoring", txid, pmCfg.PricingMethod)
+		return
+	}
+
+	authManager.AuthorizePeer(clientPubKey, duration, dataQuota)
+	payments.trackPayment(txid, clientPubKey)
 }

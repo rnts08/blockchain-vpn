@@ -27,6 +27,11 @@ type ProviderAnnouncement struct {
 	ThroughputProbePort   uint16
 	LastHeartbeatSeen     bool
 	ReputationScore       int
+	// Pricing fields (populated from V3 endpoints)
+	PricingMethod      uint8
+	TimeUnitSecs       uint32
+	DataUnitBytes      uint32
+	SessionTimeoutSecs uint32
 }
 
 func (p *ProviderAnnouncement) AvailableSlots() int {
@@ -86,7 +91,28 @@ func ScanForVPNs(client *rpcclient.Client, startBlock int64, cache *ScanCache, r
 				}
 
 				if payload, err := protocol.ExtractScriptPayload(pkScript); err == nil {
-					// Try to decode as a v2 service announcement first.
+					// Try to decode as a v3 service announcement first (most feature-rich)
+					if endpoint, err := protocol.DecodePayloadV3(payload); err == nil {
+						pubKeyHex := hex.EncodeToString(endpoint.PublicKey.SerializeCompressed())
+						if _, exists := announcementByPubKey[pubKeyHex]; !exists {
+							announcementByPubKey[pubKeyHex] = &ProviderAnnouncement{
+								Endpoint:              endpoint,
+								TxID:                  tx.Txid,
+								MetadataVersion:       3,
+								AdvertisedBandwidthKB: endpoint.AdvertisedBandwidthKB,
+								MaxConsumers:          endpoint.MaxConsumers,
+								DeclaredCountry:       strings.ToUpper(endpoint.CountryCode),
+								AvailabilityFlags:     endpoint.AvailabilityFlags,
+								ThroughputProbePort:   endpoint.ThroughputProbePort,
+								PricingMethod:         endpoint.PricingMethod,
+								TimeUnitSecs:          endpoint.TimeUnitSecs,
+								DataUnitBytes:         endpoint.DataUnitBytes,
+								SessionTimeoutSecs:    endpoint.SessionTimeoutSecs,
+							}
+						}
+						continue
+					}
+					// Try to decode as a v2 service announcement.
 					if endpoint, err := protocol.DecodePayloadV2(payload); err == nil {
 						pubKeyHex := hex.EncodeToString(endpoint.PublicKey.SerializeCompressed())
 						if _, exists := announcementByPubKey[pubKeyHex]; !exists {

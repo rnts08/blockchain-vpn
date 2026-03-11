@@ -1,7 +1,59 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
- 
+  
+## [0.5.0] - 2026-03-11
+
+### Features: Flexible Pricing Models
+- Added support for multiple pricing methods: session-based, time-based (per minute/hour), and data-based (per MB/GB)
+- Extended on-chain protocol to V3 with new fields: pricing method, time/data units, session timeout
+- Provider can configure pricing method, billing units, and session timeouts in config
+- Client automatically interprets provider's pricing model and handles appropriate payment amounts
+
+### Features: Usage Metering and Incremental Payments
+- Implemented client-side usage meter to track time and data consumption
+- For time-based pricing: periodic payments based on elapsed time
+- For data-based pricing: tiered payments as data thresholds are crossed
+- Provider now grants authorization based on payment amount (duration or data quota)
+- Sessions can be extended automatically through continuous payments (auto-pay)
+
+### Features: Client Spending Limits and Controls
+- Added comprehensive spending management with configurable limits
+- Total daily spending cap with warning thresholds
+- Per-session spending maximums
+- Auto-disconnect on limit exhaustion
+- Prepaid credit balance system with auto-recharge
+- All spending tracked and persisted in history
+
+### Features: Multi-Blockchain and Network Support
+- Added configurable RPC network (mainnet, testnet, regtest, simnet, custom)
+- Token symbol and display unit configuration
+- Automatic network detection from blockchain info
+- Display amounts using correct token symbol (e.g., BTC, LTC, ORDEX)
+- Fee estimation works across supported networks
+
+### Features: Enhanced Filtering
+- Scan command now supports filtering by pricing method (`--pricing-method`)
+- Filters apply to all pricing models appropriately
+- GUI scan dialog updated with pricing method filter
+
+### Security and Bug Fixes
+- Provider authorization now supports data quotas and dynamic expiration based on pricing model
+- AuthManager extended to track remaining data quota per peer
+- Payment monitor computes authorization duration/data based on payment amount and provider's pricing
+- Client spending manager validates limits before payments
+- Graceful disconnect when spending limits are reached
+
+### Infrastructure
+- Added `internal/tunnel/usage.go` for usage metering
+- Renamed `CreditManager` to `SpendingManager` with expanded functionality
+- Extended protocol V3 in `internal/protocol/vpn_protocol.go`
+- Updated config validation for new fields
+- Updated scanner to decode V3 payloads and populate pricing fields
+- All tests passing; backward compatibility maintained for V1/V2 providers
+
+---
+
 ## [0.4.10] - 2026-03-07
 
 ### GUI/UX Improvements

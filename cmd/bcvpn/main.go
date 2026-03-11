@@ -96,7 +96,8 @@ func main() {
 	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
 	scanSortBy := scanCmd.String("sort", "latency", "Sort providers by 'price', 'country', 'latency', 'bandwidth', 'capacity', or 'score'")
 	scanCountry := scanCmd.String("country", "", "Filter providers by country code (e.g., US, DE)")
-	scanMaxPrice := scanCmd.Uint64("max-price", 0, "Filter providers with price <= this value in sats/session (0 disables)")
+	scanMaxPrice := scanCmd.Uint64("max-price", 0, "Filter providers with price <= this value (units depend on pricing method) (0 disables)")
+	scanPricingMethod := scanCmd.String("pricing-method", "", "Filter providers by pricing method: session, time, data")
 	scanMinBandwidthKB := scanCmd.Uint("min-bandwidth-kbps", 0, "Filter providers with advertised bandwidth >= this value in Kbps")
 	scanMaxLatencyMS := scanCmd.Int("max-latency-ms", 0, "Filter providers with latency <= this value in ms (0 disables)")
 	scanMinSlots := scanCmd.Int("min-available-slots", 0, "Filter providers with available slot capacity >= this value (0 disables)")
@@ -197,10 +198,38 @@ func main() {
 				}
 			}
 		}()
+		// Build payment monitor configuration from provider settings
+		pmCfg := blockchain.PaymentMonitorCfg{
+			Price:          cfg.Provider.Price,
+			PricingMethod:  strings.ToLower(strings.TrimSpace(cfg.Provider.PricingMethod)),
+			MaxSessionSecs: cfg.Provider.MaxSessionDurationSecs,
+		}
+		// Parse billing units based on pricing method
+		switch pmCfg.PricingMethod {
+		case "time":
+			switch strings.ToLower(strings.TrimSpace(cfg.Provider.BillingTimeUnit)) {
+			case "minute":
+				pmCfg.TimeUnitSecs = 60
+			case "hour":
+				pmCfg.TimeUnitSecs = 3600
+			default:
+				pmCfg.TimeUnitSecs = 60
+			}
+		case "data":
+			switch strings.ToLower(strings.TrimSpace(cfg.Provider.BillingDataUnit)) {
+			case "mb":
+				pmCfg.DataUnitBytes = 1_000_000
+			case "gb":
+				pmCfg.DataUnitBytes = 1_000_000_000
+			default:
+				pmCfg.DataUnitBytes = 1_000_000
+			}
+		}
+
 		go func() {
 			defer providerWG.Done()
 			pmInterval, _ := time.ParseDuration(cfg.Provider.PaymentMonitorInterval)
-			blockchain.MonitorPayments(ctx, client, authManager, cfg.Provider.Price, pmInterval)
+			blockchain.MonitorPayments(ctx, client, authManager, pmCfg, pmInterval)
 		}()
 		go func() {
 			defer providerWG.Done()
@@ -348,6 +377,7 @@ func main() {
 			uint32(*scanMinBandwidthKB),
 			time.Duration(*scanMaxLatencyMS)*time.Millisecond,
 			*scanMinSlots,
+			strings.TrimSpace(*scanPricingMethod),
 		)
 
 		if len(filteredEndpoints) == 0 {
@@ -866,6 +896,39 @@ func buildProviderEndpoint(providerCfg *config.ProviderConfig, announceIP net.IP
 	if providerCfg.MaxConsumers > 0 && providerCfg.MaxConsumers <= 65535 {
 		maxConsumers = uint16(providerCfg.MaxConsumers)
 	}
+
+	// Determine pricing method and units
+	var pricingMethod uint8 = protocol.PricingMethodSession
+	timeUnitSecs := uint32(0)
+	dataUnitBytes := uint32(0)
+
+	switch strings.ToLower(strings.TrimSpace(providerCfg.PricingMethod)) {
+	case "time":
+		pricingMethod = protocol.PricingMethodTime
+		// Parse time unit (minute, hour) to seconds
+		switch strings.ToLower(strings.TrimSpace(providerCfg.BillingTimeUnit)) {
+		case "minute":
+			timeUnitSecs = 60
+		case "hour":
+			timeUnitSecs = 3600
+		default:
+			timeUnitSecs = 60 // default to per-minute
+		}
+	case "data":
+		pricingMethod = protocol.PricingMethodData
+		// Parse data unit (MB, GB) to bytes
+		switch strings.ToLower(strings.TrimSpace(providerCfg.BillingDataUnit)) {
+		case "mb":
+			dataUnitBytes = 1_000_000
+		case "gb":
+			dataUnitBytes = 1_000_000_000
+		default:
+			dataUnitBytes = 1_000_000 // default to per-MB
+		}
+	default: // session
+		pricingMethod = protocol.PricingMethodSession
+	}
+
 	return &protocol.VPNEndpoint{
 		IP:                    announceIP,
 		Port:                  uint16(announcePort),
@@ -875,6 +938,10 @@ func buildProviderEndpoint(providerCfg *config.ProviderConfig, announceIP net.IP
 		MaxConsumers:          maxConsumers,
 		CountryCode:           strings.ToUpper(strings.TrimSpace(providerCfg.Country)),
 		AvailabilityFlags:     protocol.AvailabilityFlagAvailable,
+		PricingMethod:         pricingMethod,
+		TimeUnitSecs:          timeUnitSecs,
+		DataUnitBytes:         dataUnitBytes,
+		SessionTimeoutSecs:    uint32(providerCfg.MaxSessionDurationSecs),
 	}
 }
 
@@ -934,6 +1001,17 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 	fmt.Printf("Provider's payment address: %s\n", providerAddr.String())
 	fmt.Printf("Payment required: %d satoshis\n", selectedEndpoint.Endpoint.Price)
 
+	// Initialize spending manager if limits are enabled
+	var spendingMgr *tunnel.SpendingManager
+	if clientCfg.SpendingLimitEnabled || clientCfg.AutoRechargeEnabled {
+		spendingMgr = tunnel.NewSpendingManager(clientCfg, client, providerAddr, localKey, selectedEndpoint.Endpoint.PublicKey)
+		// Check if payment would exceed limits
+		paymentAmount := selectedEndpoint.Endpoint.Price
+		if err := spendingMgr.RecordPayment(paymentAmount); err != nil {
+			log.Fatalf("Spending limit would be exceeded: %v", err)
+		}
+	}
+
 	fmt.Print("Proceed with payment? (y/n): ")
 	if dryRun {
 		fmt.Print("(Dry Run) ")
@@ -961,6 +1039,9 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 		if err != nil {
 			log.Fatalf("Failed to send payment: %v", err)
 		}
+
+		// Record successful payment in spending manager (already did pre-check, now finalize)
+		spendingMgr.AddCredits(0) // trigger log if needed
 	}
 
 	peerPubKey := selectedEndpoint.Endpoint.PublicKey
@@ -985,6 +1066,7 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 			peerPubKey,
 			endpointAddr,
 			expected,
+			spendingMgr,
 		); err != nil {
 			log.Fatalf("Failed to add tunnel: %v", err)
 		}
@@ -1044,7 +1126,7 @@ func sortEndpoints(endpoints []*geoip.EnrichedVPNEndpoint, sortBy string) {
 	}
 }
 
-func filterEndpoints(endpoints []*geoip.EnrichedVPNEndpoint, country string, maxPrice uint64, minBandwidthKB uint32, maxLatency time.Duration, minSlots int) []*geoip.EnrichedVPNEndpoint {
+func filterEndpoints(endpoints []*geoip.EnrichedVPNEndpoint, country string, maxPrice uint64, minBandwidthKB uint32, maxLatency time.Duration, minSlots int, pricingMethod string) []*geoip.EnrichedVPNEndpoint {
 	var filtered []*geoip.EnrichedVPNEndpoint
 	for _, ep := range endpoints {
 		if country != "" && !strings.EqualFold(country, effectiveCountry(ep)) {
@@ -1052,6 +1134,12 @@ func filterEndpoints(endpoints []*geoip.EnrichedVPNEndpoint, country string, max
 		}
 		if maxPrice > 0 && ep.Endpoint.Price > maxPrice {
 			continue
+		}
+		if pricingMethod != "" {
+			epMethod := getPricingMethodString(ep.Endpoint)
+			if !strings.EqualFold(pricingMethod, epMethod) {
+				continue
+			}
 		}
 		if minBandwidthKB > 0 && ep.AdvertisedBandwidthKB < minBandwidthKB {
 			continue
@@ -1065,6 +1153,18 @@ func filterEndpoints(endpoints []*geoip.EnrichedVPNEndpoint, country string, max
 		filtered = append(filtered, ep)
 	}
 	return filtered
+}
+
+// getPricingMethodString returns the pricing method as a string from the endpoint.
+func getPricingMethodString(ep *protocol.VPNEndpoint) string {
+	switch ep.PricingMethod {
+	case protocol.PricingMethodTime:
+		return "time"
+	case protocol.PricingMethodData:
+		return "data"
+	default:
+		return "session"
+	}
 }
 
 func effectiveCountry(ep *geoip.EnrichedVPNEndpoint) string {

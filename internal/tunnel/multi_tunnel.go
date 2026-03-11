@@ -44,6 +44,7 @@ func (m *MultiTunnelManager) Add(
 	peerPubKey *btcec.PublicKey,
 	endpointAddr string,
 	expectations ClientSecurityExpectations,
+	spendingMgr *SpendingManager, // optional, can be nil
 ) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -84,6 +85,7 @@ func (m *MultiTunnelManager) Add(
 			peerPubKey,
 			endpointAddr,
 			expectations,
+			spendingMgr,
 		)
 		if tunnel.err != nil {
 			log.Printf("[MultiTunnel] Tunnel %s stopped with error: %v", id, tunnel.err)

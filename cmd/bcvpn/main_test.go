@@ -15,7 +15,7 @@ func TestFilterEndpoints(t *testing.T) {
 		mkEndpoint("US", 1000, 50000, 10, 20*time.Millisecond),
 		mkEndpoint("DE", 3000, 10000, 2, 120*time.Millisecond),
 	}
-	filtered := filterEndpoints(endpoints, "US", 1500, 20000, 50*time.Millisecond, 5)
+	filtered := filterEndpoints(endpoints, "US", 1500, 20000, 50*time.Millisecond, 5, "")
 	if len(filtered) != 1 {
 		t.Fatalf("expected 1 filtered endpoint, got %d", len(filtered))
 	}
@@ -47,9 +47,13 @@ func mkEndpoint(country string, price uint64, bw uint32, cap uint16, latency tim
 	return &geoip.EnrichedVPNEndpoint{
 		ProviderAnnouncement: &blockchain.ProviderAnnouncement{
 			Endpoint: &protocol.VPNEndpoint{
-				IP:    net.ParseIP("198.51.100.1"),
-				Port:  51820,
-				Price: price,
+				IP:                 net.ParseIP("198.51.100.1"),
+				Port:               51820,
+				Price:              price,
+				PricingMethod:      protocol.PricingMethodSession,
+				TimeUnitSecs:       60,
+				DataUnitBytes:      1_000_000,
+				SessionTimeoutSecs: 0,
 			},
 			DeclaredCountry:       country,
 			AdvertisedBandwidthKB: bw,

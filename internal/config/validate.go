@@ -56,6 +56,26 @@ func Validate(cfg *Config) error {
 		}
 	}
 
+	// Validate provider pricing method configuration
+	pricingMethod := strings.ToLower(strings.TrimSpace(cfg.Provider.PricingMethod))
+	switch pricingMethod {
+	case "", "session", "time", "data":
+		// valid
+	default:
+		errs = append(errs, fmt.Errorf("provider.pricing_method must be one of: session, time, data"))
+	}
+
+	if pricingMethod == "time" {
+		if strings.TrimSpace(cfg.Provider.BillingTimeUnit) == "" {
+			errs = append(errs, fmt.Errorf("provider.billing_time_unit required when pricing_method=time"))
+		}
+	}
+	if pricingMethod == "data" {
+		if strings.TrimSpace(cfg.Provider.BillingDataUnit) == "" {
+			errs = append(errs, fmt.Errorf("provider.billing_data_unit required when pricing_method=data"))
+		}
+	}
+
 	switch strings.ToLower(strings.TrimSpace(cfg.Provider.IsolationMode)) {
 	case "", "none", "sandbox":
 	default:
@@ -75,6 +95,19 @@ func Validate(cfg *Config) error {
 		if _, err := net.ResolveTCPAddr("tcp", strings.TrimSpace(cfg.Client.MetricsListenAddr)); err != nil {
 			errs = append(errs, fmt.Errorf("client.metrics_listen_addr is invalid: %w", err))
 		}
+	}
+
+	// Validate client spending limits
+	if cfg.Client.SpendingLimitEnabled {
+		if cfg.Client.SpendingLimitSats == 0 {
+			errs = append(errs, fmt.Errorf("client.spending_limit_sats must be > 0 when spending_limit_enabled=true"))
+		}
+		if cfg.Client.SpendingWarningPercent > 100 {
+			errs = append(errs, fmt.Errorf("client.spending_warning_percent must be 0-100"))
+		}
+	}
+	if cfg.Client.AutoDisconnectOnLimit && !cfg.Client.SpendingLimitEnabled {
+		errs = append(errs, fmt.Errorf("auto_disconnect_on_limit requires spending_limit_enabled=true"))
 	}
 
 	switch strings.ToLower(strings.TrimSpace(cfg.Logging.Format)) {

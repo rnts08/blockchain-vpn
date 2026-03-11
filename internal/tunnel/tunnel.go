@@ -486,7 +486,8 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 }
 
 // ConnectToProvider connects to a provider and sets up the client-side tunnel.
-func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *config.SecurityConfig, localPrivKey *btcec.PrivateKey, serverPubKey *btcec.PublicKey, endpoint string, expected ClientSecurityExpectations) error {
+// If spendingMgr is provided, it will be used for spending limit checks and auto-recharge.
+func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *config.SecurityConfig, localPrivKey *btcec.PrivateKey, serverPubKey *btcec.PublicKey, endpoint string, expected ClientSecurityExpectations, spendingMgr *SpendingManager) error {
 	if err := EnsureElevatedPrivileges(); err != nil {
 		recordRuntimeError(err)
 		return fmt.Errorf("client requires automatic networking privileges: %w", err)

@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -14,14 +15,26 @@ import (
 	"github.com/btcsuite/btcd/rpcclient"
 )
 
-type CreditManager struct {
+// SpendingManager tracks client spending, enforces limits, and handles auto-recharge.
+type SpendingManager struct {
 	mu sync.Mutex
 
-	balance           uint64
-	minBalance        uint64
-	rechargeAmount    uint64
+	// Spending limits
+	totalLimit        uint64
+	spentToday        uint64
+	limitEnabled      bool
+	warningPercent    uint32
+	warningIssued     bool
+	autoDisconnect    bool
+	maxSessionSpend   uint64
+	sessionStartSpent uint64 // snapshot at session start
+
+	// Auto-recharge (prepaid credit)
+	rechargeEnabled   bool
 	rechargeThreshold uint64
-	enabled           bool
+	rechargeAmount    uint64
+	minBalance        uint64
+	balance           uint64 // current prepaid balance
 
 	lastRecharge     time.Time
 	rechargeInterval time.Duration
@@ -33,119 +46,194 @@ type CreditManager struct {
 	stopped        chan struct{}
 }
 
-func NewCreditManager(cfg *config.ClientConfig, client *rpcclient.Client, providerAddr btcutil.Address, localKey *btcec.PrivateKey, providerPubKey *btcec.PublicKey) *CreditManager {
-	cm := &CreditManager{
+// NewSpendingManager creates a SpendingManager from client config.
+func NewSpendingManager(cfg *config.ClientConfig, client *rpcclient.Client, providerAddr btcutil.Address, localKey *btcec.PrivateKey, providerPubKey *btcec.PublicKey) *SpendingManager {
+	sm := &SpendingManager{
 		balance:           0,
 		minBalance:        cfg.AutoRechargeMinBalance,
 		rechargeAmount:    cfg.AutoRechargeAmount,
 		rechargeThreshold: cfg.AutoRechargeThreshold,
-		enabled:           cfg.AutoRechargeEnabled,
+		rechargeEnabled:   cfg.AutoRechargeEnabled,
 		client:            client,
 		providerAddr:      providerAddr,
 		localKey:          localKey,
 		providerPubKey:    providerPubKey,
 		rechargeInterval:  30 * time.Second,
 		stopped:           make(chan struct{}),
+
+		// Spending limits
+		totalLimit:      cfg.SpendingLimitSats,
+		limitEnabled:    cfg.SpendingLimitEnabled,
+		warningPercent:  cfg.SpendingWarningPercent,
+		autoDisconnect:  cfg.AutoDisconnectOnLimit,
+		maxSessionSpend: cfg.MaxSessionSpendingSats,
 	}
 
-	if cm.minBalance == 0 {
-		cm.minBalance = 100 // Default minimum balance
+	if sm.minBalance == 0 {
+		sm.minBalance = 100
 	}
-	if cm.rechargeAmount == 0 {
-		cm.rechargeAmount = 1000 // Default recharge amount
+	if sm.rechargeAmount == 0 {
+		sm.rechargeAmount = 1000
 	}
-	if cm.rechargeThreshold == 0 {
-		cm.rechargeThreshold = 500 // Default threshold
+	if sm.rechargeThreshold == 0 {
+		sm.rechargeThreshold = 500
 	}
 
-	return cm
+	return sm
 }
 
-func (cm *CreditManager) Start(ctx context.Context) {
-	if !cm.enabled {
-		log.Println("Credit manager: auto-recharge disabled")
+// Start begins the auto-recharge background loop if enabled.
+func (sm *SpendingManager) Start(ctx context.Context) {
+	if !sm.rechargeEnabled {
+		log.Println("Spending manager: auto-recharge disabled")
 		return
 	}
 
-	log.Printf("Credit manager: started (threshold: %d sats, recharge: %d sats, min: %d sats)",
-		cm.rechargeThreshold, cm.rechargeAmount, cm.minBalance)
+	log.Printf("Spending manager: started (recharge threshold: %d sats, amount: %d sats, min: %d sats, spending limit: %s)",
+		sm.rechargeThreshold, sm.rechargeAmount, sm.minBalance,
+		func() string {
+			if sm.limitEnabled {
+				return fmt.Sprintf("%d sats", sm.totalLimit)
+			}
+			return "unlimited"
+		}(),
+	)
 
-	go cm.run(ctx)
+	go sm.run(ctx)
 }
 
-func (cm *CreditManager) run(ctx context.Context) {
-	ticker := time.NewTicker(cm.rechargeInterval)
+func (sm *SpendingManager) run(ctx context.Context) {
+	ticker := time.NewTicker(sm.rechargeInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Credit manager: stopped")
+			log.Println("Spending manager: stopped")
 			return
 		case <-ticker.C:
-			cm.checkAndRecharge(ctx)
+			sm.checkAndRecharge(ctx)
 		}
 	}
 }
 
-func (cm *CreditManager) checkAndRecharge(ctx context.Context) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
+func (sm *SpendingManager) checkAndRecharge(ctx context.Context) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 
-	if cm.balance >= cm.rechargeThreshold {
-		return
+	if sm.balance < sm.rechargeThreshold {
+		log.Printf("Spending manager: balance %d sats below threshold %d sats, recharging...",
+			sm.balance, sm.rechargeThreshold)
+
+		txHash, err := blockchain.SendPayment(sm.client, sm.providerAddr, sm.rechargeAmount, sm.localKey.PubKey())
+		if err != nil {
+			log.Printf("Spending manager: failed to send recharge payment: %v", err)
+			return
+		}
+
+		sm.balance += sm.rechargeAmount
+		sm.lastRecharge = time.Now()
+
+		// Also record this as spending (it's a payment to provider)
+		sm.spentToday += sm.rechargeAmount
+
+		log.Printf("Spending manager: recharged %d sats, new balance: %d sats (tx: %s)",
+			sm.rechargeAmount, sm.balance, txHash.String())
+	}
+}
+
+// RecordPayment adds a payment amount to the spending total.
+// Returns an error if the payment would exceed limits.
+func (sm *SpendingManager) RecordPayment(amount uint64) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	// Check total spending limit
+	if sm.limitEnabled && sm.spentToday+amount > sm.totalLimit {
+		return fmt.Errorf("spending limit exceeded: %d+%d > %d", sm.spentToday, amount, sm.totalLimit)
 	}
 
-	log.Printf("Credit manager: balance %d sats below threshold %d sats, recharging...",
-		cm.balance, cm.rechargeThreshold)
-
-	txHash, err := blockchain.SendPayment(cm.client, cm.providerAddr, cm.rechargeAmount, cm.localKey.PubKey())
-	if err != nil {
-		log.Printf("Credit manager: failed to send payment: %v", err)
-		return
+	// Check session spending limit
+	if sm.maxSessionSpend > 0 && (sm.sessionStartSpent+amount) > sm.maxSessionSpend {
+		return fmt.Errorf("session spending limit exceeded: %d+%d > %d", sm.sessionStartSpent, amount, sm.maxSessionSpend)
 	}
 
-	cm.balance += cm.rechargeAmount
-	cm.lastRecharge = time.Now()
+	// Deduct from balance if using prepaid model
+	if sm.balance < amount {
+		return fmt.Errorf("insufficient balance: have %d, need %d", sm.balance, amount)
+	}
+	sm.balance -= amount
+	sm.spentToday += amount
 
-	log.Printf("Credit manager: recharged %d sats, new balance: %d sats (tx: %s)",
-		cm.rechargeAmount, cm.balance, txHash.String())
-}
-
-func (cm *CreditManager) AddCredits(amount uint64) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	cm.balance += amount
-	log.Printf("Credit manager: added %d sats, balance now: %d sats", amount, cm.balance)
-}
-
-func (cm *CreditManager) GetBalance() uint64 {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	return cm.balance
-}
-
-func (cm *CreditManager) UseCredits(amount uint64) bool {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	if cm.balance < amount {
-		log.Printf("Credit manager: insufficient balance %d sats for %d sats charge", cm.balance, amount)
-		return false
+	// Check warning threshold
+	if !sm.warningIssued && sm.limitEnabled {
+		percent := uint32(float64(sm.spentToday) / float64(sm.totalLimit) * 100)
+		if percent >= sm.warningPercent {
+			log.Printf("WARNING: Spending at %d%% of limit (%d/%d sats)", percent, sm.spentToday, sm.totalLimit)
+			sm.warningIssued = true
+		}
 	}
 
-	cm.balance -= amount
-	log.Printf("Credit manager: used %d sats, balance now: %d sats", amount, cm.balance)
-	return true
+	log.Printf("Spending manager: recorded payment of %d sats, balance now: %d, spent today: %d",
+		amount, sm.balance, sm.spentToday)
+	return nil
 }
 
-func (cm *CreditManager) Stop() {
-	close(cm.stopped)
-	log.Println("Credit manager: stopped")
+// ShouldDisconnect returns true if the session should be terminated due to spending limits.
+func (sm *SpendingManager) ShouldDisconnect() bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.autoDisconnect && sm.limitEnabled && sm.spentToday >= sm.totalLimit {
+		return true
+	}
+	return false
 }
 
-func (cm *CreditManager) IsEnabled() bool {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	return cm.enabled
+// GetRemainingBudget returns the remaining spending limit for today.
+func (sm *SpendingManager) GetRemainingBudget() uint64 {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if !sm.limitEnabled {
+		return ^uint64(0) // unlimited
+	}
+	if sm.spentToday >= sm.totalLimit {
+		return 0
+	}
+	return sm.totalLimit - sm.spentToday
+}
+
+// GetBalance returns the current prepaid balance.
+func (sm *SpendingManager) GetBalance() uint64 {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	return sm.balance
+}
+
+// SetSessionStart captures the current spending to enforce per-session limits.
+func (sm *SpendingManager) SetSessionStart() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.sessionStartSpent = sm.spentToday
+	sm.warningIssued = false // reset warning for new session
+}
+
+// AddCredits adds to the prepaid balance (e.g., from external top-up).
+func (sm *SpendingManager) AddCredits(amount uint64) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.balance += amount
+	log.Printf("Spending manager: added %d sats, balance now: %d", amount, sm.balance)
+}
+
+// Stop gracefully shuts down the spending manager.
+func (sm *SpendingManager) Stop() {
+	close(sm.stopped)
+	log.Println("Spending manager: stopped")
+}
+
+// IsEnabled returns true if auto-recharge is enabled.
+func (sm *SpendingManager) IsEnabled() bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	return sm.rechargeEnabled
 }

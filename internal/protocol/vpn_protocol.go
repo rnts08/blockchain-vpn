@@ -13,15 +13,23 @@ import (
 
 const MagicBytes = 0x56504E01                // "VPN" + Version 1
 const MagicBytesV2 = 0x56504E02              // "VPN" + Version 2 (metadata)
+const MagicBytesV3 = 0x56504E03              // "VPN" + Version 3 (flexible pricing)
 const PriceUpdateMagicBytes = 0x50524943     // "PRIC"
 const PaymentMagicBytes = 0x50415901         // "PAY" + Version 1
 const HeartbeatMagicBytes = 0x56484254       // "VHBT"
 const CertFingerprintMagicBytes = 0x43455254 // "CERT" - for certificate fingerprint announcements
 
+// Pricing method types
+const (
+	PricingMethodSession = 0 // Flat fee per session
+	PricingMethodTime    = 1 // Price per time unit
+	PricingMethodData    = 2 // Price per data unit
+)
+
 type VPNEndpoint struct {
 	IP                    net.IP
 	Port                  uint16
-	Price                 uint64           // Satoshis per session
+	Price                 uint64           // Satoshis per session (v1/v2) or per billing unit (v3)
 	PublicKey             *btcec.PublicKey // 33 bytes for compressed secp256k1
 	AdvertisedBandwidthKB uint32           // optional metadata (v2 payload)
 	MaxConsumers          uint16           // optional metadata (v2 payload), 0 = unknown/unlimited
@@ -29,6 +37,12 @@ type VPNEndpoint struct {
 	AvailabilityFlags     uint8            // optional metadata (v2 payload), bit0=available
 	ThroughputProbePort   uint16           // optional metadata (v2 payload)
 	CertFingerprint       []byte           // SHA256 hash of current TLS certificate (33 bytes prefix)
+
+	// New fields for V3 (flexible pricing)
+	PricingMethod      uint8  // 0=session, 1=time, 2=data
+	TimeUnitSecs       uint32 // For time-based: seconds per billing cycle (e.g., 60 for per-minute)
+	DataUnitBytes      uint32 // For data-based: bytes per billing cycle (e.g., 1_000_000 for MB)
+	SessionTimeoutSecs uint32 // Max session duration in seconds (0 = unlimited)
 }
 
 const AvailabilityFlagAvailable = 0x01
@@ -278,6 +292,175 @@ func DecodePayloadV2(data []byte) (*VPNEndpoint, error) {
 		CountryCode:           normalizeCountryCode(string(country)),
 		AvailabilityFlags:     flags,
 		ThroughputProbePort:   probePort,
+	}, nil
+}
+
+// EncodePayloadV3 creates the OP_RETURN data for the v3 announcement payload
+// with flexible pricing support.
+func (v *VPNEndpoint) EncodePayloadV3() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	if err := binary.Write(buf, binary.BigEndian, uint32(MagicBytesV3)); err != nil {
+		return nil, err
+	}
+
+	ip4 := v.IP.To4()
+	if ip4 != nil {
+		buf.WriteByte(0x04)
+		buf.Write(ip4)
+	} else {
+		ip16 := v.IP.To16()
+		if ip16 == nil {
+			return nil, fmt.Errorf("invalid IP address format: not IPv4 or IPv6")
+		}
+		buf.WriteByte(0x06)
+		buf.Write(ip16)
+	}
+
+	if err := binary.Write(buf, binary.BigEndian, v.Port); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.BigEndian, v.Price); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.BigEndian, v.AdvertisedBandwidthKB); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.BigEndian, v.MaxConsumers); err != nil {
+		return nil, err
+	}
+
+	country := normalizeCountryCode(v.CountryCode)
+	buf.WriteString(country)
+	buf.WriteByte(v.AvailabilityFlags)
+	if err := binary.Write(buf, binary.BigEndian, v.ThroughputProbePort); err != nil {
+		return nil, err
+	}
+
+	// New V3 fields
+	buf.WriteByte(v.PricingMethod)
+	if err := binary.Write(buf, binary.BigEndian, v.TimeUnitSecs); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.BigEndian, v.DataUnitBytes); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.BigEndian, v.SessionTimeoutSecs); err != nil {
+		return nil, err
+	}
+
+	if v.PublicKey == nil {
+		return nil, fmt.Errorf("public key cannot be nil")
+	}
+	buf.Write(v.PublicKey.SerializeCompressed())
+	return buf.Bytes(), nil
+}
+
+// DecodePayloadV3 parses the OP_RETURN data from a v3 service announcement.
+func DecodePayloadV3(data []byte) (*VPNEndpoint, error) {
+	buf := bytes.NewReader(data)
+	var magic uint32
+	if err := binary.Read(buf, binary.BigEndian, &magic); err != nil {
+		return nil, fmt.Errorf("could not read magic bytes: %w", err)
+	}
+	if magic != MagicBytesV3 {
+		return nil, fmt.Errorf("invalid v3 magic bytes")
+	}
+
+	ipType, err := buf.ReadByte()
+	if err != nil {
+		return nil, fmt.Errorf("could not read ip type: %w", err)
+	}
+	var ip net.IP
+	switch ipType {
+	case 0x04:
+		ipBytes := make([]byte, 4)
+		if _, err := buf.Read(ipBytes); err != nil {
+			return nil, fmt.Errorf("could not read ipv4 address: %w", err)
+		}
+		ip = net.IP(ipBytes)
+	case 0x06:
+		ipBytes := make([]byte, 16)
+		if _, err := buf.Read(ipBytes); err != nil {
+			return nil, fmt.Errorf("could not read ipv6 address: %w", err)
+		}
+		ip = net.IP(ipBytes)
+	default:
+		return nil, fmt.Errorf("unknown ip type: %d", ipType)
+	}
+
+	var port uint16
+	if err := binary.Read(buf, binary.BigEndian, &port); err != nil {
+		return nil, fmt.Errorf("could not read port: %w", err)
+	}
+	var price uint64
+	if err := binary.Read(buf, binary.BigEndian, &price); err != nil {
+		return nil, fmt.Errorf("could not read price: %w", err)
+	}
+	var bandwidthKB uint32
+	if err := binary.Read(buf, binary.BigEndian, &bandwidthKB); err != nil {
+		return nil, fmt.Errorf("could not read bandwidth: %w", err)
+	}
+	var maxConsumers uint16
+	if err := binary.Read(buf, binary.BigEndian, &maxConsumers); err != nil {
+		return nil, fmt.Errorf("could not read max consumers: %w", err)
+	}
+	country := make([]byte, 2)
+	if _, err := buf.Read(country); err != nil {
+		return nil, fmt.Errorf("could not read country code: %w", err)
+	}
+	flags, err := buf.ReadByte()
+	if err != nil {
+		return nil, fmt.Errorf("could not read availability flags: %w", err)
+	}
+	var probePort uint16
+	if err := binary.Read(buf, binary.BigEndian, &probePort); err != nil {
+		return nil, fmt.Errorf("could not read throughput probe port: %w", err)
+	}
+
+	// V3 specific fields
+	pricingMethod, err := buf.ReadByte()
+	if err != nil {
+		return nil, fmt.Errorf("could not read pricing method: %w", err)
+	}
+	var timeUnitSecs uint32
+	if err := binary.Read(buf, binary.BigEndian, &timeUnitSecs); err != nil {
+		return nil, fmt.Errorf("could not read time unit: %w", err)
+	}
+	var dataUnitBytes uint32
+	if err := binary.Read(buf, binary.BigEndian, &dataUnitBytes); err != nil {
+		return nil, fmt.Errorf("could not read data unit: %w", err)
+	}
+	var sessionTimeoutSecs uint32
+	if err := binary.Read(buf, binary.BigEndian, &sessionTimeoutSecs); err != nil {
+		return nil, fmt.Errorf("could not read session timeout: %w", err)
+	}
+
+	if buf.Len() != btcec.PubKeyBytesLenCompressed {
+		return nil, fmt.Errorf("incorrect remaining payload length for public key, expected %d, got %d", btcec.PubKeyBytesLenCompressed, buf.Len())
+	}
+	pubKeyBytes := make([]byte, btcec.PubKeyBytesLenCompressed)
+	if _, err := buf.Read(pubKeyBytes); err != nil {
+		return nil, fmt.Errorf("could not read public key: %w", err)
+	}
+	pubKey, err := btcec.ParsePubKey(pubKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid public key in payload: %w", err)
+	}
+
+	return &VPNEndpoint{
+		IP:                    ip,
+		Port:                  port,
+		Price:                 price,
+		PublicKey:             pubKey,
+		AdvertisedBandwidthKB: bandwidthKB,
+		MaxConsumers:          maxConsumers,
+		CountryCode:           normalizeCountryCode(string(country)),
+		AvailabilityFlags:     flags,
+		ThroughputProbePort:   probePort,
+		PricingMethod:         pricingMethod,
+		TimeUnitSecs:          timeUnitSecs,
+		DataUnitBytes:         dataUnitBytes,
+		SessionTimeoutSecs:    sessionTimeoutSecs,
 	}, nil
 }
 

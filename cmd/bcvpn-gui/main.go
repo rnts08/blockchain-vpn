@@ -1590,7 +1590,34 @@ func (s *guiState) startProvider(password string) error {
 
 		go func() {
 			pmInterval, _ := time.ParseDuration(s.cfg.Provider.PaymentMonitorInterval)
-			blockchain.MonitorPayments(ctx, client, authManager, s.cfg.Provider.Price, pmInterval)
+			// Build payment monitor configuration
+			pmCfg := blockchain.PaymentMonitorCfg{
+				Price:          s.cfg.Provider.Price,
+				PricingMethod:  strings.ToLower(strings.TrimSpace(s.cfg.Provider.PricingMethod)),
+				MaxSessionSecs: s.cfg.Provider.MaxSessionDurationSecs,
+			}
+			// Parse billing units based on pricing method
+			switch pmCfg.PricingMethod {
+			case "time":
+				switch strings.ToLower(strings.TrimSpace(s.cfg.Provider.BillingTimeUnit)) {
+				case "minute":
+					pmCfg.TimeUnitSecs = 60
+				case "hour":
+					pmCfg.TimeUnitSecs = 3600
+				default:
+					pmCfg.TimeUnitSecs = 60
+				}
+			case "data":
+				switch strings.ToLower(strings.TrimSpace(s.cfg.Provider.BillingDataUnit)) {
+				case "mb":
+					pmCfg.DataUnitBytes = 1_000_000
+				case "gb":
+					pmCfg.DataUnitBytes = 1_000_000_000
+				default:
+					pmCfg.DataUnitBytes = 1_000_000
+				}
+			}
+			blockchain.MonitorPayments(ctx, client, authManager, pmCfg, pmInterval)
 		}()
 		go func() {
 			if err := blockchain.StartEchoServer(ctx, s.cfg.Provider.ListenPort); err != nil {
@@ -1941,6 +1968,17 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 		mgr = tunnel.NewMultiTunnelManager()
 		s.clientMgr = mgr
 	}
+
+	// Create spending manager if limits or auto-recharge are enabled
+	var spendingMgr *tunnel.SpendingManager
+	if s.cfg.Client.SpendingLimitEnabled || s.cfg.Client.AutoRechargeEnabled {
+		spendingMgr = tunnel.NewSpendingManager(&s.cfg.Client, client, providerAddr, localKey, selected.Endpoint.PublicKey)
+		// Pre-record the initial payment to start tracking spending
+		if err := spendingMgr.RecordPayment(selected.Endpoint.Price); err != nil {
+			return fmt.Errorf("spending limit check failed: %w", err)
+		}
+	}
+
 	peerPubKey := selected.Endpoint.PublicKey
 	expected := tunnel.ClientSecurityExpectations{
 		ExpectedCountry:     effectiveCountryGUI(selected),
@@ -1956,6 +1994,7 @@ func (s *guiState) connectSelectedProvider(dryRun bool) error {
 		peerPubKey,
 		endpointAddr,
 		expected,
+		spendingMgr,
 	)
 }
 

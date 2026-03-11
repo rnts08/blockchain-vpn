@@ -20,10 +20,12 @@ type Config struct {
 }
 
 type RPCConfig struct {
-	Host      string `json:"host"`
-	User      string `json:"user"`
-	Pass      string `json:"pass"`
-	EnableTLS bool   `json:"enable_tls"` // Enable TLS for RPC connections (recommended for production)
+	Host        string `json:"host"`
+	User        string `json:"user"`
+	Pass        string `json:"pass"`
+	EnableTLS   bool   `json:"enable_tls"`   // Enable TLS for RPC connections (recommended for production)
+	Network     string `json:"network"`      // "mainnet", "testnet", "regtest", "simnet", or "auto"
+	TokenSymbol string `json:"token_symbol"` // Display symbol for amounts (e.g., "BTC", "LTC", "ORDEX")
 }
 
 type LoggingConfig struct {
@@ -71,6 +73,11 @@ type ProviderConfig struct {
 	WebSocketFallbackPort       int    `json:"websocket_fallback_port"`
 	HeartbeatInterval           string `json:"heartbeat_interval"`       // e.g. "5m"
 	PaymentMonitorInterval      string `json:"payment_monitor_interval"` // e.g. "1m"
+
+	// New fields for flexible pricing
+	PricingMethod   string `json:"pricing_method"`    // "session", "time", "data"
+	BillingTimeUnit string `json:"billing_time_unit"` // "minute", "hour"
+	BillingDataUnit string `json:"billing_data_unit"` // "MB", "GB"
 }
 
 type ClientConfig struct {
@@ -83,10 +90,19 @@ type ClientConfig struct {
 	VerifyThroughputAfterSetup bool   `json:"verify_throughput_after_connect"`
 	MaxParallelTunnels         int    `json:"max_parallel_tunnels"`
 	EnableWebSocketFallback    bool   `json:"enable_websocket_fallback"`
-	AutoRechargeEnabled        bool   `json:"auto_recharge_enabled"`     // Enable automatic recharge when credits run low
-	AutoRechargeThreshold      uint64 `json:"auto_recharge_threshold"`   // Sats remaining before auto-recharge triggers
-	AutoRechargeAmount         uint64 `json:"auto_recharge_amount"`      // Sats to add on auto-recharge
-	AutoRechargeMinBalance     uint64 `json:"auto_recharge_min_balance"` // Minimum balance to maintain
+
+	// Spending limits
+	SpendingLimitEnabled   bool   `json:"spending_limit_enabled"`    // Enable total spending limit
+	SpendingLimitSats      uint64 `json:"spending_limit_sats"`       // Total spending cap in satoshis
+	SpendingWarningPercent uint32 `json:"spending_warning_percent"`  // Warning threshold (0-100)
+	AutoDisconnectOnLimit  bool   `json:"auto_disconnect_on_limit"`  // Auto-disconnect when limit reached
+	MaxSessionSpendingSats uint64 `json:"max_session_spending_sats"` // Max spend per session (0 = unlimited)
+
+	// Auto-recharge (prepaid credit)
+	AutoRechargeEnabled    bool   `json:"auto_recharge_enabled"`     // Enable automatic recharge when credits run low
+	AutoRechargeThreshold  uint64 `json:"auto_recharge_threshold"`   // Sats remaining before auto-recharge triggers
+	AutoRechargeAmount     uint64 `json:"auto_recharge_amount"`      // Sats to add on auto-recharge
+	AutoRechargeMinBalance uint64 `json:"auto_recharge_min_balance"` // Minimum balance to maintain
 }
 
 const AppConfigDirName = "BlockchainVPN"
@@ -221,6 +237,10 @@ func GenerateDefaultConfig(path string) error {
 			WebSocketFallbackPort:       0, // Disabled by default
 			HeartbeatInterval:           "5m",
 			PaymentMonitorInterval:      "30s",
+			// New flexible pricing fields (default to session-based)
+			PricingMethod:   "session",
+			BillingTimeUnit: "minute",
+			BillingDataUnit: "GB",
 		},
 		Client: ClientConfig{
 			InterfaceName:              "bcvpn1",
@@ -232,6 +252,17 @@ func GenerateDefaultConfig(path string) error {
 			VerifyThroughputAfterSetup: true,
 			MaxParallelTunnels:         1,
 			EnableWebSocketFallback:    false,
+			// Spending limits
+			SpendingLimitEnabled:   false,
+			SpendingLimitSats:      0,
+			SpendingWarningPercent: 80,
+			AutoDisconnectOnLimit:  false,
+			MaxSessionSpendingSats: 0,
+			// Auto-recharge
+			AutoRechargeEnabled:    false,
+			AutoRechargeThreshold:  500,
+			AutoRechargeAmount:     1000,
+			AutoRechargeMinBalance: 100,
 		},
 	}
 
