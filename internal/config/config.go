@@ -27,6 +27,7 @@ type RPCConfig struct {
 	EnableTLS   bool   `json:"enable_tls"`   // Enable TLS for RPC connections (recommended for production)
 	Network     string `json:"network"`      // "mainnet", "testnet", "regtest", "simnet", or "auto"
 	TokenSymbol string `json:"token_symbol"` // Display symbol for amounts (e.g., "BTC", "LTC", "ORDEX")
+	CookieFile  string `json:"cookie_file"`  // Path to RPC cookie file (optional, auto-detected if empty)
 }
 
 type LoggingConfig struct {
@@ -196,10 +197,13 @@ func GenerateDefaultConfig(path string) error {
 
 	cfg := Config{
 		RPC: RPCConfig{
-			Host:      "localhost:25173",
-			User:      "rpcuser",
-			Pass:      "",
-			EnableTLS: false,
+			Host:        "localhost:25173",
+			User:        "rpcuser",
+			Pass:        "",
+			EnableTLS:   false,
+			Network:     "mainnet",
+			TokenSymbol: "ORDEX",
+			CookieFile:  "",
 		},
 		Logging: LoggingConfig{
 			Format: "text",

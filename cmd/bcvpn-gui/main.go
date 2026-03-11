@@ -1267,6 +1267,12 @@ func applyDefaultConfigValues(cfg *config.Config) {
 	if strings.TrimSpace(cfg.RPC.Host) == "" {
 		cfg.RPC.Host = "localhost:25173"
 	}
+	if strings.TrimSpace(cfg.RPC.Network) == "" {
+		cfg.RPC.Network = "mainnet"
+	}
+	if strings.TrimSpace(cfg.RPC.TokenSymbol) == "" {
+		cfg.RPC.TokenSymbol = "ORDEX"
+	}
 	if strings.TrimSpace(cfg.RPC.Pass) == "" && (strings.HasPrefix(cfg.RPC.Host, "localhost") || strings.HasPrefix(cfg.RPC.Host, "127.0.0.1")) {
 		cfg.RPC.EnableTLS = false
 	}
@@ -2067,10 +2073,25 @@ func saveConfig(path string, cfg *config.Config) error {
 }
 
 func connectRPCWithConfig(cfg *config.Config) *rpcclient.Client {
+	// Determine RPC host from config or network defaults
+	rpcHost := cfg.RPC.Host
+	if strings.TrimSpace(rpcHost) == "" {
+		rpcHost = getDefaultRPCHost(cfg.RPC.Network)
+	}
+
+	// Determine credentials: prefer cookie file if available, fall back to User/Pass
+	user, pass := cfg.RPC.User, cfg.RPC.Pass
+	if cookieUser, cookiePass, err := readRPCCookie(cfg); err == nil && cookieUser != "" {
+		log.Printf("Using RPC cookie authentication (user: %s)", cookieUser)
+		user, pass = cookieUser, cookiePass
+	} else if err != nil && !os.IsNotExist(err) {
+		log.Printf("Warning: failed to read RPC cookie: %v (using configured credentials)", err)
+	}
+
 	connCfg := &rpcclient.ConnConfig{
-		Host:         cfg.RPC.Host,
-		User:         cfg.RPC.User,
-		Pass:         cfg.RPC.Pass,
+		Host:         rpcHost,
+		User:         user,
+		Pass:         pass,
 		HTTPPostMode: true,
 		DisableTLS:   !cfg.RPC.EnableTLS,
 	}
@@ -2078,7 +2099,93 @@ func connectRPCWithConfig(cfg *config.Config) *rpcclient.Client {
 	if err != nil {
 		log.Fatalf("RPC connection failed: %v", err)
 	}
+
+	// Wait for server to be ready (handle warmup)
+	if err := waitForServerReady(context.Background(), client); err != nil {
+		log.Fatalf("RPC server not ready: %v", err)
+	}
+
 	return client
+}
+
+// getDefaultRPCHost returns the default RPC host:port for the given network.
+func getDefaultRPCHost(network string) string {
+	network = strings.ToLower(strings.TrimSpace(network))
+	switch network {
+	case "testnet", "testnet3":
+		return "localhost:35173"
+	case "signet":
+		return "localhost:325173"
+	case "regtest", "regression":
+		return "localhost:18443"
+	default: // mainnet, main, or unknown
+		return "localhost:25173"
+	}
+}
+
+// readRPCCookie attempts to read the RPC cookie file and extract credentials.
+func readRPCCookie(cfg *config.Config) (string, string, error) {
+	cookiePath := strings.TrimSpace(cfg.RPC.CookieFile)
+	if cookiePath == "" {
+		home, _ := os.UserHomeDir()
+		commonPaths := []string{
+			filepath.Join(home, ".ordexcoin", ".cookie"),
+			filepath.Join(home, ".ordexcoin", "regtest", ".cookie"),
+			filepath.Join(home, ".ordexcoin", "testnet3", ".cookie"),
+			filepath.Join(home, ".ordexcoin", "signet", ".cookie"),
+			"/var/lib/ordexcoin/.cookie",
+			"C:\\ProgramData\\OrdExcoin\\.cookie",
+		}
+		for _, p := range commonPaths {
+			if _, err := os.Stat(p); err == nil {
+				cookiePath = p
+				break
+			}
+		}
+		if cookiePath == "" {
+			return "", "", os.ErrNotExist
+		}
+	}
+	data, err := os.ReadFile(cookiePath)
+	if err != nil {
+		return "", "", err
+	}
+	line := strings.TrimSpace(string(data))
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid cookie format")
+	}
+	return parts[0], "", nil // username, empty password
+}
+
+// waitForServerReady polls the RPC server until it's ready or timeout.
+func waitForServerReady(ctx context.Context, client *rpcclient.Client) error {
+	timeout := 30 * time.Second
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	deadline := time.Now().Add(timeout)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return fmt.Errorf("timeout waiting for RPC server to be ready")
+			}
+			_, err := client.RawRequest("getrpcinfo", nil)
+			if err == nil {
+				return nil
+			}
+			if strings.Contains(err.Error(), "warmup") || strings.Contains(err.Error(), "not ready") {
+				continue
+			}
+			if strings.Contains(err.Error(), "connection refused") ||
+				strings.Contains(err.Error(), "no route") ||
+				strings.Contains(err.Error(), "dial tcp") {
+				continue
+			}
+		}
+	}
 }
 
 func getOrCreateProviderKey(cfg *config.Config, keyPath, password string) (*btcec.PrivateKey, error) {

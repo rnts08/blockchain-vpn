@@ -662,11 +662,29 @@ func handleVersion(jsonMode bool) {
 	}
 }
 
+// connectRPCWithConfig creates an RPC client using the provided configuration.
+// It supports cookie-based authentication by reading the .cookie file if present.
+// It also handles server warmup by checking getrpcinfo before first use.
 func connectRPCWithConfig(cfg *config.Config) *rpcclient.Client {
+	// Determine RPC host from config or network defaults
+	rpcHost := cfg.RPC.Host
+	if strings.TrimSpace(rpcHost) == "" {
+		rpcHost = getDefaultRPCHost(cfg.RPC.Network)
+	}
+
+	// Determine credentials: prefer cookie file if available, fall back to User/Pass
+	user, pass := cfg.RPC.User, cfg.RPC.Pass
+	if cookieUser, cookiePass, err := readRPCCookie(cfg); err == nil && cookieUser != "" {
+		log.Printf("Using RPC cookie authentication (user: %s)", cookieUser)
+		user, pass = cookieUser, cookiePass
+	} else if err != nil && !os.IsNotExist(err) {
+		log.Printf("Warning: failed to read RPC cookie: %v (using configured credentials)", err)
+	}
+
 	connCfg := &rpcclient.ConnConfig{
-		Host:         cfg.RPC.Host,
-		User:         cfg.RPC.User,
-		Pass:         cfg.RPC.Pass,
+		Host:         rpcHost,
+		User:         user,
+		Pass:         pass,
 		HTTPPostMode: true,
 		DisableTLS:   !cfg.RPC.EnableTLS,
 	}
@@ -674,7 +692,110 @@ func connectRPCWithConfig(cfg *config.Config) *rpcclient.Client {
 	if err != nil {
 		log.Fatalf("Error creating new RPC client: %v", err)
 	}
+
+	// Check server warmup status if needed
+	if err := waitForServerReady(context.Background(), client); err != nil {
+		log.Fatalf("RPC server not ready: %v", err)
+	}
+
 	return client
+}
+
+// getDefaultRPCHost returns the default RPC host:port for the given network.
+func getDefaultRPCHost(network string) string {
+	network = strings.ToLower(strings.TrimSpace(network))
+	switch network {
+	case "testnet", "testnet3":
+		return "localhost:35173"
+	case "signet":
+		return "localhost:325173"
+	case "regtest", "regression":
+		return "localhost:18443"
+	default: // mainnet, main, or unknown
+		return "localhost:25173" // Ordexcoin default mainnet RPC port
+	}
+}
+
+// readRPCCookie attempts to read the RPC cookie file and extract credentials.
+// It returns username and password (or empty string if cookie not found/invalid).
+func readRPCCookie(cfg *config.Config) (string, string, error) {
+	// Determine cookie path: use configured cookie file or default location
+	cookiePath := strings.TrimSpace(cfg.RPC.CookieFile)
+	if cookiePath == "" {
+		// Try to derive from RPC host's data directory, or use common defaults
+		// For simplicity, check standard locations based on OS and network
+		home, _ := os.UserHomeDir()
+
+		commonPaths := []string{
+			filepath.Join(home, ".ordexcoin", ".cookie"),
+			filepath.Join(home, ".ordexcoin", "regtest", ".cookie"),
+			filepath.Join(home, ".ordexcoin", "testnet3", ".cookie"),
+			filepath.Join(home, ".ordexcoin", "signet", ".cookie"),
+			"/var/lib/ordexcoin/.cookie",
+			"C:\\ProgramData\\OrdExcoin\\.cookie",
+		}
+		for _, p := range commonPaths {
+			if _, err := os.Stat(p); err == nil {
+				cookiePath = p
+				break
+			}
+		}
+		if cookiePath == "" {
+			return "", "", os.ErrNotExist
+		}
+	}
+
+	data, err := os.ReadFile(cookiePath)
+	if err != nil {
+		return "", "", err
+	}
+	// Cookie format: username:hex(sessionid)
+	line := strings.TrimSpace(string(data))
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid cookie format")
+	}
+	username := parts[0]
+	// Password is empty for cookie auth; the session ID is not used as password in standard Bitcoin Core RPC
+	password := ""
+	return username, password, nil
+}
+
+// waitForServerReady polls the RPC server until it's out of warmup or timeout.
+func waitForServerReady(ctx context.Context, client *rpcclient.Client) error {
+	// Try getrpcinfo to check warmup status
+	timeout := 30 * time.Second
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	deadline := time.Now().Add(timeout)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return fmt.Errorf("timeout waiting for RPC server to be ready")
+			}
+			// Use client.RawRequest to call getrpcinfo
+			_, err := client.RawRequest("getrpcinfo", nil)
+			if err == nil {
+				// Server responded, assume it's ready
+				return nil
+			}
+			// Check if error indicates warmup or not ready
+			if strings.Contains(err.Error(), "warmup") || strings.Contains(err.Error(), "not ready") {
+				continue // keep waiting
+			}
+			// Connection errors: keep trying
+			if strings.Contains(err.Error(), "connection refused") || 
+			   strings.Contains(err.Error(), "no route") ||
+			   strings.Contains(err.Error(), "dial tcp") {
+				continue
+			}
+			// Unknown error; assume not ready yet and keep trying
+	}
+}
 }
 
 func getProviderKey(cfg *config.Config, passwordEnv string) (*btcec.PrivateKey, error) {
