@@ -1116,6 +1116,9 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	pmInterval := widget.NewEntry()
 	pmInterval.SetText(s.cfg.Provider.PaymentMonitorInterval)
 
+	demoModeCheck := widget.NewCheck("Enable Demo Mode (simulate blockchain, no backend needed)", nil)
+	demoModeCheck.SetChecked(s.cfg.DemoMode)
+
 	statusOut := widget.NewMultiLineEntry()
 	statusOut.Disable()
 	statusOut.SetMinRowsVisible(6)
@@ -1138,6 +1141,7 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.cfg.Logging.Level = strings.TrimSpace(logLevel.Selected)
 		s.cfg.Provider.HeartbeatInterval = strings.TrimSpace(hbInterval.Text)
 		s.cfg.Provider.PaymentMonitorInterval = strings.TrimSpace(pmInterval.Text)
+		s.cfg.DemoMode = demoModeCheck.Checked
 
 		metricsAddrConfigured := strings.TrimSpace(s.cfg.Provider.MetricsListenAddr) != "" || strings.TrimSpace(s.cfg.Client.MetricsListenAddr) != ""
 		metricsAuthConfigured := strings.TrimSpace(s.cfg.Security.MetricsAuthToken) != ""
@@ -1243,6 +1247,7 @@ func buildSettingsTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewFormItem("Log Level", logLevel),
 		widget.NewFormItem("Heartbeat Interval", hbInterval),
 		widget.NewFormItem("Payment Monitor Interval", pmInterval),
+		widget.NewFormItem("", demoModeCheck), // Demo mode toggle
 	)
 	buttons := container.NewGridWithColumns(3, saveBtn, validateBtn, defaultsBtn)
 	profileRow := container.NewGridWithColumns(3, widget.NewLabel("Profile Path"), profilePath, container.NewGridWithColumns(2, exportBtn, importBtn))
@@ -1723,20 +1728,67 @@ func (s *guiState) broadcastPriceUpdate(password string) error {
 func (s *guiState) scanProviders(sortBy, country string, maxPrice uint64, minBandwidthKB uint32, maxLatency time.Duration, minSlots int) error {
 	_ = s.isScanning.Set(true)
 	defer s.isScanning.Set(false)
-	client := connectRPCWithConfig(s.cfg)
-	defer client.Shutdown()
 
-	repPath, _ := blockchain.DefaultReputationStorePath()
-	var repStore *blockchain.ReputationStore
-	if repPath != "" {
-		repStore, _ = blockchain.NewReputationStore(repPath)
-	}
+	s.mu.Lock()
+	demoMode := s.cfg.DemoMode
+	s.mu.Unlock()
 
-	results, _, err := blockchain.ScanForVPNs(client, 0, nil, repStore)
-	if err != nil {
-		return err
+	var enriched []*geoip.EnrichedVPNEndpoint
+
+	if demoMode {
+		// Create a simple mock provider for demo purposes (session pricing)
+		privKey, err := btcec.NewPrivateKey()
+		if err != nil {
+			s.appendLog("[DEMO MODE] Failed to generate key: " + err.Error())
+			return err
+		}
+		endpoint := &protocol.VPNEndpoint{
+			IP:                    net.ParseIP("198.51.100.1").To4(),
+			Port:                  51820,
+			Price:                 1000,
+			PublicKey:             privKey.PubKey(),
+			AdvertisedBandwidthKB: 10000,
+			MaxConsumers:          0,
+			CountryCode:           "US",
+			AvailabilityFlags:     protocol.AvailabilityFlagAvailable,
+			ThroughputProbePort:   51821,
+			PricingMethod:         protocol.PricingMethodSession,
+			TimeUnitSecs:          0,
+			DataUnitBytes:         0,
+			SessionTimeoutSecs:    0,
+		}
+		ann := &blockchain.ProviderAnnouncement{
+			Endpoint:              endpoint,
+			TxID:                  "demo_txid_000000",
+			MetadataVersion:       3,
+			AdvertisedBandwidthKB: 10000,
+			MaxConsumers:          0,
+			DeclaredCountry:       "US",
+			AvailabilityFlags:     protocol.AvailabilityFlagAvailable,
+			ThroughputProbePort:   51821,
+			PricingMethod:         protocol.PricingMethodSession,
+			TimeUnitSecs:          0,
+			DataUnitBytes:         0,
+			SessionTimeoutSecs:    0,
+		}
+		enriched = geoip.EnrichEndpoints([]*blockchain.ProviderAnnouncement{ann})
+		s.appendLog("[DEMO MODE] Using simulated provider data (no blockchain connection required)")
+	} else {
+		client := connectRPCWithConfig(s.cfg)
+		defer client.Shutdown()
+
+		repPath, _ := blockchain.DefaultReputationStorePath()
+		var repStore *blockchain.ReputationStore
+		if repPath != "" {
+			repStore, _ = blockchain.NewReputationStore(repPath)
+		}
+
+		results, _, err := blockchain.ScanForVPNs(client, 0, nil, repStore)
+		if err != nil {
+			return err
+		}
+		enriched = geoip.EnrichEndpoints(results)
 	}
-	enriched := geoip.EnrichEndpoints(results)
 
 	// Update country dropdown options with discovered countries
 	if s.countryEntry != nil {

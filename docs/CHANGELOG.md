@@ -37,6 +37,12 @@ All notable changes to this project will be documented in this file.
 - Filters apply to all pricing models appropriately
 - GUI scan dialog updated with pricing method filter
 
+### Features: Demo/Simulation Mode (GUI)
+- Added `demo_mode` configuration option to bypass backend requirements
+- Generates mock provider data for UI/UX testing without blockchain daemon
+- Enables quick testing of scanning, connection flow, and provider selection
+- Toggle in settings tab; when enabled, skip RPC connections and use simulated data
+
 ### Security and Bug Fixes
 - Provider authorization now supports data quotas and dynamic expiration based on pricing model
 - AuthManager extended to track remaining data quota per peer

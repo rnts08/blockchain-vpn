@@ -15,8 +15,9 @@ type Config struct {
 	RPC      RPCConfig      `json:"rpc"`
 	Provider ProviderConfig `json:"provider"`
 	Client   ClientConfig   `json:"client"`
-	Logging  LoggingConfig  `json:"logging"`
 	Security SecurityConfig `json:"security"`
+	Logging  LoggingConfig  `json:"logging"`
+	DemoMode bool           `json:"demo_mode"` // Enable simulation mode for GUI testing without backend
 }
 
 type RPCConfig struct {
