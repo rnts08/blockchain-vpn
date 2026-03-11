@@ -4,6 +4,19 @@ BlockchainVPN is a peer-to-peer VPN marketplace built on top of the OrdexCoin bl
 
 Current version: `0.4.9`
 
+## 0. Support the development
+
+BTC: bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta
+ETH/ERC-20: bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta
+LTC: bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta
+SOL: HB2o6q6vsW5796U5y7NxNqA7vYZW1vuQjpAHDo7FAMG8
+XRP: rUW7Q64vR4PwDM3F27etd6ipxK8MtuxsFs
+
+OXC: oxc1q3psft0hvlslddyp8ktr3s737req7q8hrl0rkly
+OXG: oxg1q34apjkn2yc6rsvuua98432ctqdrjh9hdkhpx0t
+
+All donations will be direclty used to develop and maintain the blockchain VPN package and system, as well as expand to support multiple chains and connection methods such as native Bitcoin and Socks5 proxy vpns.
+
 ## 1. Architecture Overview
 
 The system utilizes the blockchain as an immutable, censorship-resistant bulletin board for service discovery and a settlement layer for payments.
