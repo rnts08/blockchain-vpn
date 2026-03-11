@@ -788,14 +788,14 @@ func waitForServerReady(ctx context.Context, client *rpcclient.Client) error {
 				continue // keep waiting
 			}
 			// Connection errors: keep trying
-			if strings.Contains(err.Error(), "connection refused") || 
-			   strings.Contains(err.Error(), "no route") ||
-			   strings.Contains(err.Error(), "dial tcp") {
+			if strings.Contains(err.Error(), "connection refused") ||
+				strings.Contains(err.Error(), "no route") ||
+				strings.Contains(err.Error(), "dial tcp") {
 				continue
 			}
 			// Unknown error; assume not ready yet and keep trying
+		}
 	}
-}
 }
 
 func getProviderKey(cfg *config.Config, passwordEnv string) (*btcec.PrivateKey, error) {
