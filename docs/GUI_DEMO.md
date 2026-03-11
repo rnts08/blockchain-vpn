@@ -19,9 +19,34 @@ When demo mode is enabled:
 - **Connection flow** is simulated up to the point where actual networking would begin
 - **All UI features** work normally (filtering, sorting, selection, etc.)
 
-## Enabling Demo Mode
+## Quick Start: Bypass Setup Wizard
 
-### First Time Setup
+For rapid QA/UX testing, you can skip the initial setup wizard entirely:
+
+```bash
+./bcvpn-gui -demo
+```
+
+or
+
+```bash
+./bcvpn-gui --demo
+```
+
+This command-line flag:
+- Forces demo mode ON automatically
+- Skips the first-run setup wizard
+- Launches directly into the main UI with tabs visible
+- Uses the default demo configuration (no config file needed)
+
+**Prerequisites**: None! The GUI will run in demo mode without any blockchain node, RPC credentials, or prior configuration. This is ideal for:
+- Quick UI inspections
+- Demonstrating the interface to designers/stakeholders
+- Testing layout and interactions without backend dependencies
+
+## Enabling Demo Mode (GUI Method)
+
+If you want to persist demo mode to the config file:
 
 1. Launch the BlockchainVPN GUI
 2. Navigate to the **Settings** tab
@@ -33,7 +58,7 @@ When demo mode is enabled:
 
 > **Note:** You can also manually edit your `config.json` and set `"demo_mode": true`
 
-### Verifying Demo Mode
+## Verifying Demo Mode
 
 After enabling demo mode:
 
@@ -88,6 +113,7 @@ When you select and connect to the mock provider:
 ✅ Spending limit warnings (if configured)  
 ✅ All logging and event display  
 ✅ Metrics and status panels  
+✅ All tabs and navigation (Provider, Client, Status, Settings, Wallet)
 
 ## What Doesn't Work in Demo Mode
 
@@ -108,16 +134,17 @@ When you select and connect to the mock provider:
 
 ## Tips for Demo/Testing
 
-1. **Combine with a real RPC config** - You can have demo mode enabled but also configure RPC for wallet balance display
-2. **Test spending limits** - Enable spending limits in Client config and watch the warnings during connection
-3. **Test different pricing methods** - The mock provider uses session pricing, but you can test the UI's ability to display different pricing models by manually editing config to use time/data methods
-4. **Quick iteration** - Toggle demo mode off/on to reset to real scanning behavior
+1. **Fastest workflow for QA**: Use `./bcvpn-gui -demo` to launch instantly without any setup
+2. **Combine with a real RPC config** - You can have demo mode enabled but also configure RPC for wallet balance display
+3. **Test spending limits** - Enable spending limits in Client config and watch the warnings during connection
+4. **Test different pricing methods** - The mock provider uses session pricing, but you can test the UI's ability to display different pricing models by manually editing config to use time/data methods
+5. **Quick iteration** - Toggle demo mode off/on to reset to real scanning behavior
 
 ## Transitioning to Real Mode
 
 When you're ready to use real providers:
 
-1. Disable the **Demo Mode** checkbox in Settings
+1. Disable the **Demo Mode** checkbox in Settings (or remove `-demo` flag)
 2. Configure your RPC connection (host, user, password, TLS)
 3. Ensure your blockchain daemon is running and RPC accessible
 4. Click **Save + Validate**
@@ -141,6 +168,11 @@ When you're ready to use real providers:
 ### Settings not persisting
 - Ensure you clicked **Save + Validate** after changing settings
 - Check the Log panel for validation errors
+
+### Using -demo flag still shows setup wizard
+- Make sure you're using the latest compiled version
+- The `-demo` flag must be passed as a command-line argument, not as an environment variable
+- Check that no config file exists that might override the flag (the flag should force `firstRun=false`)
 
 ## Sample Config for Demo
 
@@ -198,6 +230,30 @@ To test the UI's handling of time/data pricing:
    - Billing Time Unit: `minute` (for time) or Billing Data Unit: `MB` (for data)
 2. Save and validate
 3. Scan in demo mode - the mock provider will still show as session-based in the results, but the **Pricing Method** dropdown in the provider creation UI will reflect your setting
+
+## Command-Line Usage
+
+```
+bcvpn-gui [flags]
+
+Flags:
+  -demo, --demo    Enable demo mode and skip setup wizard (for QA/UX testing)
+  -version, -v     Show version and exit
+  -help, -h        Show this help message
+```
+
+### Examples
+
+```bash
+# Quick launch for UI testing (no setup required)
+./bcvpn-gui -demo
+
+# Normal launch with config
+./bcvpn-gui
+
+# Show version
+./bcvpn-gui -version
+```
 
 ## Feedback
 

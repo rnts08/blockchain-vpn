@@ -128,13 +128,25 @@ func buildMainTabs(w fyne.Window, state *guiState) fyne.CanvasObject {
 }
 
 func main() {
-	// Parse command-line flags
+	// Simple command-line flag parsing
 	demoMode := false
+	showVersion := false
+
 	for _, arg := range os.Args[1:] {
-		if arg == "-demo" || arg == "--demo" {
+		switch arg {
+		case "-demo", "--demo":
 			demoMode = true
-			break
+		case "-version", "-v", "--version":
+			showVersion = true
+		case "-help", "-h", "--help":
+			printHelp()
+			os.Exit(0)
 		}
+	}
+
+	if showVersion {
+		fmt.Printf("BlockchainVPN GUI %s\n", version.Version)
+		os.Exit(0)
 	}
 
 	a := app.NewWithID("com.blockchainvpn.gui")
@@ -166,12 +178,7 @@ func main() {
 	obs.ConfigureLogging(logFormat, logLevel, "bcvpn-gui")
 	_ = tunnel.RecoverPendingNetworkState()
 
-	// Determine which UI to show
-	if demoMode {
-		// Demo mode: skip setup wizard and go directly to main tabs with demo mode enabled
-		state.cfg.DemoMode = true
-		w.SetContent(buildMainTabs(w, state))
-	} else if state.firstRun {
+	if state.firstRun {
 		w.SetContent(buildSetupWizard(w, state))
 	} else {
 		w.SetContent(buildMainTabs(w, state))
@@ -183,6 +190,29 @@ func main() {
 	})
 
 	w.ShowAndRun()
+}
+
+func printHelp() {
+	fmt.Println(`BlockchainVPN GUI - Usage:
+
+  bcvpn-gui [flags]
+
+Flags:
+  -demo, --demo       Enable demo mode and skip setup wizard (for QA/UX testing)
+  -version, -v        Show version information and exit
+  -help, -h           Show this help message and exit
+
+Examples:
+  bcvpn-gui -demo              # Launch in demo mode (no backend needed)
+  bcvpn-gui --demo             # Same as above
+  bcvpn-gui -version           # Print version and exit
+  bcvpn-gui                    # Normal launch with configuration
+
+Demo Mode:
+  In demo mode, the GUI bypasses the initial setup wizard and uses
+  simulated provider data for testing UI/UX without a blockchain node.
+  See docs/GUI_DEMO.md for detailed documentation.
+`)
 }
 
 func initState() (*guiState, error) {
