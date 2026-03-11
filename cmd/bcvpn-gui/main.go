@@ -128,6 +128,15 @@ func buildMainTabs(w fyne.Window, state *guiState) fyne.CanvasObject {
 }
 
 func main() {
+	// Parse command-line flags
+	demoMode := false
+	for _, arg := range os.Args[1:] {
+		if arg == "-demo" || arg == "--demo" {
+			demoMode = true
+			break
+		}
+	}
+
 	a := app.NewWithID("com.blockchainvpn.gui")
 	a.Settings().SetTheme(&guiTheme{})
 
@@ -139,6 +148,13 @@ func main() {
 		dialog.ShowError(fmt.Errorf("initialization failed: %w", err), w)
 		return
 	}
+
+	// If -demo flag is set, force demo mode and skip setup wizard
+	if demoMode {
+		state.cfg.DemoMode = true
+		state.firstRun = false // Skip the setup wizard
+	}
+
 	logFormat := strings.TrimSpace(state.cfg.Logging.Format)
 	logLevel := strings.TrimSpace(state.cfg.Logging.Level)
 	if env := strings.TrimSpace(os.Getenv("BCVPN_LOG_FORMAT")); env != "" {
@@ -150,7 +166,12 @@ func main() {
 	obs.ConfigureLogging(logFormat, logLevel, "bcvpn-gui")
 	_ = tunnel.RecoverPendingNetworkState()
 
-	if state.firstRun {
+	// Determine which UI to show
+	if demoMode {
+		// Demo mode: skip setup wizard and go directly to main tabs with demo mode enabled
+		state.cfg.DemoMode = true
+		w.SetContent(buildMainTabs(w, state))
+	} else if state.firstRun {
 		w.SetContent(buildSetupWizard(w, state))
 	} else {
 		w.SetContent(buildMainTabs(w, state))
