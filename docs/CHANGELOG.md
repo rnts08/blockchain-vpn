@@ -42,6 +42,14 @@ All notable changes to this project will be documented in this file.
 - Generates mock provider data for UI/UX testing without blockchain daemon
 - Enables quick testing of scanning, connection flow, and provider selection
 - Toggle in settings tab; when enabled, skip RPC connections and use simulated data
+- New `-demo` command-line flag to launch directly in demo mode and skip setup wizard
+
+### Command Line and RPC Improvements
+- GUI now supports `-demo` / `--demo` flag for QA/UX testing without a backend
+- RPC client now supports cookie-based authentication automatically
+- Improved RPC connection warmup handling with `waitForServerReady`
+- Default RPC ports configured per network (mainnet/testnet/signet/regtest)
+- Configurable RPC network selection and token symbol display
 
 ### Security and Bug Fixes
 - Provider authorization now supports data quotas and dynamic expiration based on pricing model

@@ -211,8 +211,7 @@ Examples:
 Demo Mode:
   In demo mode, the GUI bypasses the initial setup wizard and uses
   simulated provider data for testing UI/UX without a blockchain node.
-  See docs/GUI_DEMO.md for detailed documentation.
-`)
+  See docs/GUI_DEMO.md for detailed documentation.`)
 }
 
 func initState() (*guiState, error) {
@@ -1786,6 +1785,14 @@ func (s *guiState) rebroadcastService(password string) error {
 
 func (s *guiState) broadcastPriceUpdate(password string) error {
 	s.mu.Lock()
+	demoMode := s.cfg.DemoMode
+	s.mu.Unlock()
+	if demoMode {
+		s.appendLog("Price broadcast not available in demo mode")
+		return nil
+	}
+
+	s.mu.Lock()
 	cfg := *s.cfg
 	s.mu.Unlock()
 
@@ -2016,6 +2023,15 @@ func computeProviderScoreGUI(ep *geoip.EnrichedVPNEndpoint) float64 {
 }
 
 func (s *guiState) connectSelectedProvider(dryRun bool) error {
+	// Demo mode: skip RPC operations
+	s.mu.Lock()
+	demoMode := s.cfg.DemoMode
+	s.mu.Unlock()
+	if demoMode {
+		s.appendLog("Connect not available in demo mode (skipped RPC)")
+		return nil
+	}
+
 	_ = s.isConnecting.Set(true)
 	defer s.isConnecting.Set(false)
 	s.mu.Lock()
