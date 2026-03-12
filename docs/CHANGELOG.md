@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.2] - 2026-03-12
+## [0.5.3] - 2026-03-12
 
 ### Configuration & Validation Improvements
 - Added minimum/maximum bounds validation for duration fields:
@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Added configurable `provider.dns_servers` and `client.dns_servers` arrays
 - Default config now generates secure random RPC password instead of empty
 - Added `GenerateRandomRPCPassword()` function for secure credential generation
+- Added configurable `provider.shutdown_timeout` (default: 10s)
 
 ### Error Handling & Logging
 - Added debug logging for scanner hex.Decode failures
@@ -23,6 +24,13 @@ All notable changes to this project will be documented in this file.
 - Added retry attempt logging in blockchain operations
 - Added error handling for chainhash.NewHashFromStr in payment.go
 - Added validation for btcec.PrivKeyFromBytes result in crypto.go
+
+### Goroutine & Resource Management
+- Added 30-second connection timeout to `MultiTunnelManager.Add()` to prevent indefinite blocking
+- Provider shutdown timeout now configurable via `provider.shutdown_timeout` config field
+
+### CLI Improvements
+- Added `handleError` and `handleErrorFn` helper functions for consistent error handling in command handlers
 
 ### Tests
 - Added comprehensive unit tests for retry logic
@@ -33,7 +41,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [0.5.1] - 2026-03-12
+## [0.5.2] - 2026-03-12
 
 ### Testing & Reliability
 - Added comprehensive unit tests for `UsageMeter` (time/data billing metering)

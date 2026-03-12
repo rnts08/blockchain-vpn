@@ -75,6 +75,16 @@ func Validate(cfg *Config) error {
 			errs = append(errs, fmt.Errorf("provider.announcement_interval must be at most 7d"))
 		}
 	}
+	if strings.TrimSpace(cfg.Provider.ShutdownTimeout) != "" {
+		d, err := time.ParseDuration(strings.TrimSpace(cfg.Provider.ShutdownTimeout))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("provider.shutdown_timeout is invalid: %w", err))
+		} else if d < time.Second {
+			errs = append(errs, fmt.Errorf("provider.shutdown_timeout must be at least 1s"))
+		} else if d > 60*time.Second {
+			errs = append(errs, fmt.Errorf("provider.shutdown_timeout must be at most 60s"))
+		}
+	}
 	if strings.TrimSpace(cfg.Provider.MetricsListenAddr) != "" {
 		if _, err := net.ResolveTCPAddr("tcp", strings.TrimSpace(cfg.Provider.MetricsListenAddr)); err != nil {
 			errs = append(errs, fmt.Errorf("provider.metrics_listen_addr is invalid: %w", err))

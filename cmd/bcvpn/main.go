@@ -41,6 +41,21 @@ import (
 	"github.com/btcsuite/btcd/rpcclient"
 )
 
+// handleError logs the error and exits with code 1.
+// This function is designed to replace direct log.Fatalf calls in command handlers,
+// making them testable while maintaining the same behavior for CLI users.
+func handleError(err error) {
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+}
+
+// handleErrorFn calls the function and handles any error returned.
+// This pattern allows command handlers to return errors for testability.
+func handleErrorFn(fn func() error) {
+	handleError(fn())
+}
+
 func main() {
 	defaultConfigPath, err := config.DefaultConfigPath()
 	if err != nil {
@@ -262,9 +277,16 @@ func main() {
 			defer close(done)
 			providerWG.Wait()
 		}()
+
+		shutdownTimeout := 10 * time.Second
+		if cfg.Provider.ShutdownTimeout != "" {
+			if parsed, err := time.ParseDuration(cfg.Provider.ShutdownTimeout); err == nil {
+				shutdownTimeout = parsed
+			}
+		}
 		select {
 		case <-done:
-		case <-time.After(5 * time.Second):
+		case <-time.After(shutdownTimeout):
 			log.Printf("Provider shutdown timeout reached; forcing exit.")
 		}
 
@@ -358,9 +380,7 @@ func main() {
 
 		fmt.Println("Scanning for VPN providers and price updates...")
 		endpoints, priceUpdates, err := blockchain.ScanForVPNs(client, *scanStartBlock, cache, repStore)
-		if err != nil {
-			log.Fatalf("Failed to scan for VPNs: %v", err)
-		}
+		handleError(err)
 
 		if len(endpoints) == 0 {
 			fmt.Println("No VPN endpoints found.")

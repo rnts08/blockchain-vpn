@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 
@@ -34,7 +35,10 @@ func NewMultiTunnelManager() *MultiTunnelManager {
 	}
 }
 
+const defaultConnectTimeout = 30 * time.Second
+
 // Add starts a new tunnel connection in a separate goroutine and tracks it.
+// The connection attempt has a 30-second timeout to prevent indefinite blocking.
 func (m *MultiTunnelManager) Add(
 	id string,
 	interfaceName string,
@@ -53,7 +57,7 @@ func (m *MultiTunnelManager) Add(
 		return fmt.Errorf("tunnel with ID %s already running", id)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), defaultConnectTimeout)
 	tunnel := &ActiveTunnel{
 		ID:        id,
 		ctx:       ctx,

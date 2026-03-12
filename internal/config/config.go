@@ -79,6 +79,7 @@ type ProviderConfig struct {
 	WebSocketFallbackPort       int      `json:"websocket_fallback_port"`
 	HeartbeatInterval           string   `json:"heartbeat_interval"`       // e.g. "5m"
 	PaymentMonitorInterval      string   `json:"payment_monitor_interval"` // e.g. "1m"
+	ShutdownTimeout             string   `json:"shutdown_timeout"`         // e.g. "10s"
 
 	// New fields for flexible pricing
 	PricingMethod   string `json:"pricing_method"`    // "session", "time", "data"
@@ -209,6 +210,9 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.Provider.AnnouncementInterval == "" {
 		cfg.Provider.AnnouncementInterval = "24h"
 	}
+	if cfg.Provider.ShutdownTimeout == "" {
+		cfg.Provider.ShutdownTimeout = "10s"
+	}
 	if len(cfg.Provider.DNSServers) == 0 {
 		cfg.Provider.DNSServers = []string{"1.1.1.1", "8.8.8.8"}
 	}
@@ -287,6 +291,7 @@ func GenerateDefaultConfig(path string) error {
 			WebSocketFallbackPort:       0, // Disabled by default
 			HeartbeatInterval:           "5m",
 			PaymentMonitorInterval:      "30s",
+			ShutdownTimeout:             "10s",
 			// New flexible pricing fields (default to session-based)
 			PricingMethod:   "session",
 			BillingTimeUnit: "minute",
