@@ -39,11 +39,11 @@ OS-dependent code with risks. Requires testing on multiple platforms.
 
 ## Group 9: Security (Medium)
 
-- [ ] **10.1 Metrics Auth Token Validation**: Require at least 16 chars with mixed character classes, or generate a secure token if left empty and metrics are enabled. Current minimum is 12 chars with no entropy check.
+- [x] **10.1 Metrics Auth Token Validation**: Require at least 16 chars with mixed character classes. Current minimum is 12 chars with no entropy check.
 
-- [ ] **10.2 TLS Cipher Suite Agility**: The `tls_policy.go` cipher suite list for "compat" profile is static. Add a way to override via config without code change.
+- [x] **10.2 TLS Cipher Suite Agility**: The `tls_policy.go` cipher suite list for "compat" profile is now configurable via `security.tls_custom_cipher_suites` config field.
 
-- [ ] **10.3 Provider Key Rotation Audit**: Document what happens to old subscriptions when rotating provider key. Add explicit revocation of old key if needed.
+- [x] **10.3 Provider Key Rotation Audit**: Documented what happens to old subscriptions when rotating provider key in README.
 
 ---
 

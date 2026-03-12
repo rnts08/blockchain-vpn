@@ -312,6 +312,8 @@ export BCVPN_KEY_PASSWORD='your-password'
     ./bcvpn rotate-provider-key --old-password-env BCVPN_OLD_PASS --new-password-env BCVPN_NEW_PASS
     ```
 
+    **Important**: Rotating the provider key creates a **new blockchain identity**. Any existing subscriptions or payments made to your old provider address will no longer work. Clients will need to re-authorize with your new provider key. Consider this operation carefully if you have active subscribers.
+
 5.  **Status (Human or JSON)**:
     Inspect current config/runtime readiness for automation or diagnostics (including networking privilege readiness).
     ```bash

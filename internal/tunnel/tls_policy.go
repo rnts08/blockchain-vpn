@@ -14,7 +14,7 @@ type TLSPolicy struct {
 	CipherNames     []string
 }
 
-func ResolveTLSPolicy(minVersion, profile string) (TLSPolicy, error) {
+func ResolveTLSPolicy(minVersion, profile string, customCiphers []string) (TLSPolicy, error) {
 	p := strings.ToLower(strings.TrimSpace(profile))
 	if p == "" {
 		p = "modern"
@@ -46,15 +46,24 @@ func ResolveTLSPolicy(minVersion, profile string) (TLSPolicy, error) {
 		return TLSPolicy{}, fmt.Errorf("invalid tls min version %q", minVersion)
 	}
 
-	if p == "compat" && out.MinVersion <= tls.VersionTLS12 {
+	if len(customCiphers) > 0 {
+		ids, names, err := resolveCipherNames(customCiphers)
+		if err != nil {
+			return TLSPolicy{}, err
+		}
+		out.CipherSuites = ids
+		out.CipherNames = names
+	} else if p == "compat" && out.MinVersion <= tls.VersionTLS12 {
 		out.CipherSuites = []uint16{
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 		}
+		out.CipherNames = cipherNames(out.CipherSuites)
+	} else {
+		out.CipherNames = []string{"tls13-default"}
 	}
-	out.CipherNames = cipherNames(out.CipherSuites)
 	return out, nil
 }
 
@@ -75,4 +84,35 @@ func cipherNames(ids []uint16) []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+func resolveCipherNames(names []string) ([]uint16, []string, error) {
+	if len(names) == 0 {
+		return nil, nil, nil
+	}
+
+	all := tls.CipherSuites()
+	idMap := make(map[string]uint16)
+	for _, suite := range all {
+		idMap[strings.ToUpper(suite.Name)] = suite.ID
+		idMap[fmt.Sprintf("0x%04x", suite.ID)] = suite.ID
+	}
+
+	ids := make([]uint16, 0, len(names))
+	outNames := make([]string, 0, len(names))
+	for _, name := range names {
+		upper := strings.ToUpper(strings.TrimSpace(name))
+		if id, ok := idMap[upper]; ok {
+			ids = append(ids, id)
+			for _, suite := range all {
+				if suite.ID == id {
+					outNames = append(outNames, suite.Name)
+					break
+				}
+			}
+		} else {
+			return nil, nil, fmt.Errorf("unknown cipher suite: %s", name)
+		}
+	}
+	return ids, outNames, nil
 }

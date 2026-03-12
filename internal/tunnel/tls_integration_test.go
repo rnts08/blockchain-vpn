@@ -19,7 +19,7 @@ func TestTLSHandshakeWithOnChainIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	policy, err := ResolveTLSPolicy("", "")
+	policy, err := ResolveTLSPolicy("", "", nil)
 	if err != nil {
 		t.Fatalf("resolve tls policy: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestTLSHandshakeRejectsWrongServerIdentity(t *testing.T) {
 	clientKey, _ := btcec.NewPrivateKey()
 	wrongExpectedKey, _ := btcec.NewPrivateKey()
 
-	policy, err := ResolveTLSPolicy("", "")
+	policy, err := ResolveTLSPolicy("", "", nil)
 	if err != nil {
 		t.Fatalf("resolve tls policy: %v", err)
 	}

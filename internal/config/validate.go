@@ -188,8 +188,31 @@ func Validate(cfg *Config) error {
 	default:
 		errs = append(errs, fmt.Errorf("security.tls_profile must be one of: modern, compat"))
 	}
-	if tok := strings.TrimSpace(cfg.Security.MetricsAuthToken); tok != "" && len(tok) < 12 {
-		errs = append(errs, fmt.Errorf("security.metrics_auth_token must be at least 12 characters when set"))
+	if len(cfg.Security.TlsCustomCipherSuites) > 0 {
+		validCiphers := map[string]bool{
+			"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256":         true,
+			"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384":         true,
+			"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256":       true,
+			"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384":       true,
+			"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256":   true,
+			"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256": true,
+			"TLS_AES_128_GCM_SHA256":                        true,
+			"TLS_AES_256_GCM_SHA384":                        true,
+			"TLS_CHACHA20_POLY1305_SHA256":                  true,
+		}
+		for _, c := range cfg.Security.TlsCustomCipherSuites {
+			if !validCiphers[strings.TrimSpace(c)] {
+				errs = append(errs, fmt.Errorf("security.tls_custom_cipher_suites: unknown cipher %q", c))
+			}
+		}
+	}
+	if tok := strings.TrimSpace(cfg.Security.MetricsAuthToken); tok != "" {
+		if len(tok) < 16 {
+			errs = append(errs, fmt.Errorf("security.metrics_auth_token must be at least 16 characters when set"))
+		}
+		if !hasMixedCharClasses(tok) {
+			errs = append(errs, fmt.Errorf("security.metrics_auth_token must contain at least 3 of: uppercase, lowercase, digits, special characters"))
+		}
 	}
 
 	// Cross-field: detect subnet overlap between provider and client TUN.
@@ -274,4 +297,34 @@ func isISOAlpha2(v string) bool {
 		}
 	}
 	return true
+}
+
+func hasMixedCharClasses(s string) bool {
+	var hasUpper, hasLower, hasDigit, hasSpecial bool
+	for _, r := range s {
+		switch {
+		case unicode.IsUpper(r):
+			hasUpper = true
+		case unicode.IsLower(r):
+			hasLower = true
+		case unicode.IsDigit(r):
+			hasDigit = true
+		case unicode.IsPunct(r) || unicode.IsSymbol(r):
+			hasSpecial = true
+		}
+	}
+	count := 0
+	if hasUpper {
+		count++
+	}
+	if hasLower {
+		count++
+	}
+	if hasDigit {
+		count++
+	}
+	if hasSpecial {
+		count++
+	}
+	return count >= 3
 }

@@ -153,14 +153,18 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 	certRotateBefore := time.Duration(cfg.CertRotateBeforeHours) * time.Hour
 	tlsPolicy := TLSPolicy{}
 	var err error
+	var customCiphers []string
 	if sec != nil {
-		tlsPolicy, err = ResolveTLSPolicy(sec.TLSMinVersion, sec.TLSProfile)
+		customCiphers = sec.TlsCustomCipherSuites
+	}
+	if sec != nil {
+		tlsPolicy, err = ResolveTLSPolicy(sec.TLSMinVersion, sec.TLSProfile, customCiphers)
 		if err != nil {
 			recordRuntimeError(err)
 			return fmt.Errorf("failed to resolve TLS policy: %w", err)
 		}
 	} else {
-		tlsPolicy, _ = ResolveTLSPolicy("", "")
+		tlsPolicy, _ = ResolveTLSPolicy("", "", nil)
 	}
 	tlsConfig, err := buildRotatingServerTLSConfig(ctx, privKey, certLifetime, certRotateBefore, tlsPolicy)
 	if err != nil {
@@ -502,13 +506,17 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *confi
 
 	tlsPolicy := TLSPolicy{}
 	var err error
+	var customCiphers []string
 	if sec != nil {
-		tlsPolicy, err = ResolveTLSPolicy(sec.TLSMinVersion, sec.TLSProfile)
+		customCiphers = sec.TlsCustomCipherSuites
+	}
+	if sec != nil {
+		tlsPolicy, err = ResolveTLSPolicy(sec.TLSMinVersion, sec.TLSProfile, customCiphers)
 		if err != nil {
 			return fmt.Errorf("failed to resolve TLS policy: %w", err)
 		}
 	} else {
-		tlsPolicy, _ = ResolveTLSPolicy("", "")
+		tlsPolicy, _ = ResolveTLSPolicy("", "", nil)
 	}
 
 	if sec != nil && strings.TrimSpace(sec.RevocationCacheFile) != "" {

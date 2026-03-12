@@ -1702,7 +1702,7 @@ func handleStatus(cfg *config.Config, configPath string, jsonMode bool) {
 	status.Security.TLSMinVersion = cfg.Security.TLSMinVersion
 	status.Security.TLSProfile = cfg.Security.TLSProfile
 	status.Security.MetricsAuthEnabled = strings.TrimSpace(cfg.Security.MetricsAuthToken) != ""
-	if tlsPolicy, err := tunnel.ResolveTLSPolicy(cfg.Security.TLSMinVersion, cfg.Security.TLSProfile); err == nil {
+	if tlsPolicy, err := tunnel.ResolveTLSPolicy(cfg.Security.TLSMinVersion, cfg.Security.TLSProfile, cfg.Security.TlsCustomCipherSuites); err == nil {
 		status.Security.TLSMinVersion = tlsPolicy.MinVersionLabel
 		status.Security.TLSProfile = tlsPolicy.Profile
 		status.Security.TLSCipherProfile = tlsPolicy.CipherNames

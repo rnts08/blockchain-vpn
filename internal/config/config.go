@@ -38,12 +38,13 @@ type LoggingConfig struct {
 }
 
 type SecurityConfig struct {
-	KeyStorageMode      string `json:"key_storage_mode"`      // "file", "keychain", "libsecret", "dpapi", or "auto"
-	KeyStorageService   string `json:"key_storage_service"`   // service/namespace for secure store records
-	RevocationCacheFile string `json:"revocation_cache_file"` // optional file containing revoked pubkeys (hex, one per line)
-	TLSMinVersion       string `json:"tls_min_version"`       // "1.2" or "1.3"
-	TLSProfile          string `json:"tls_profile"`           // "modern" or "compat"
-	MetricsAuthToken    string `json:"metrics_auth_token"`    // optional token required by /metrics.json
+	KeyStorageMode        string   `json:"key_storage_mode"`         // "file", "keychain", "libsecret", "dpapi", or "auto"
+	KeyStorageService     string   `json:"key_storage_service"`      // service/namespace for secure store records
+	RevocationCacheFile   string   `json:"revocation_cache_file"`    // optional file containing revoked pubkeys (hex, one per line)
+	TLSMinVersion         string   `json:"tls_min_version"`          // "1.2" or "1.3"
+	TLSProfile            string   `json:"tls_profile"`              // "modern" or "compat"
+	TlsCustomCipherSuites []string `json:"tls_custom_cipher_suites"` // custom cipher suite names (e.g., ["ECDHE-RSA-AES128-GCM-SHA256"])
+	MetricsAuthToken      string   `json:"metrics_auth_token"`       // optional token required by /metrics.json
 }
 
 type ProviderConfig struct {
