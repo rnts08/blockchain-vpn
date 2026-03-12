@@ -4,16 +4,6 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 ---
 
-## Group 5: Observability & Diagnostics (Medium-Hard)
-
-Metrics and monitoring improvements.
-
-- [ ] **9.1 Retry Operation Metrics**: Instrument `retry.go` to expose retry count, backoff durations, and failure reasons via the metrics endpoint (`/metrics.json`). Helps diagnose connectivity issues in production.
-
-- [ ] **9.2 Goroutine Leak Detection**: Add runtime goroutine count monitoring to `providerStatus` output. Alert if goroutine count grows unexpectedly over time (indicative of leaks in multi_tunnel or rotation loops).
-
----
-
 ## Group 6: Platform-Specific (Hard)
 
 OS-dependent code with risks. Requires testing on multiple platforms.
@@ -74,6 +64,10 @@ OS-dependent code with risks. Requires testing on multiple platforms.
 ---
 
 ## Completed Groups
+
+### Group 5: Observability & Diagnostics (Done)
+- **9.1 Retry Operation Metrics**: Added retry metrics to /metrics.json (total_retries, total_failures, last_retry_op, retries_by_operation)
+- **9.2 Goroutine Leak Detection**: Added goroutine count to /metrics.json endpoint
 
 ### Group 4: Code Quality & Abstraction (Done)
 - **5.3 Config Get/Set Refactoring**: Create reflection-based config registry (5.3)
