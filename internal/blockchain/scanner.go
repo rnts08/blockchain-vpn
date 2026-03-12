@@ -87,89 +87,94 @@ func ScanForVPNs(client *rpcclient.Client, startBlock int64, cache *ScanCache, r
 			for _, vout := range tx.Vout {
 				pkScript, err := hex.DecodeString(vout.ScriptPubKey.Hex)
 				if err != nil {
+					log.Printf("[scanner] Failed to decode hex script for tx %s vout %d: %v", tx.Txid, vout.N, err)
 					continue
 				}
 
-				if payload, err := protocol.ExtractScriptPayload(pkScript); err == nil {
-					// Try to decode as a v3 service announcement first (most feature-rich)
-					if endpoint, err := protocol.DecodePayloadV3(payload); err == nil {
-						pubKeyHex := hex.EncodeToString(endpoint.PublicKey.SerializeCompressed())
-						if _, exists := announcementByPubKey[pubKeyHex]; !exists {
-							announcementByPubKey[pubKeyHex] = &ProviderAnnouncement{
-								Endpoint:              endpoint,
-								TxID:                  tx.Txid,
-								MetadataVersion:       3,
-								AdvertisedBandwidthKB: endpoint.AdvertisedBandwidthKB,
-								MaxConsumers:          endpoint.MaxConsumers,
-								DeclaredCountry:       strings.ToUpper(endpoint.CountryCode),
-								AvailabilityFlags:     endpoint.AvailabilityFlags,
-								ThroughputProbePort:   endpoint.ThroughputProbePort,
-								PricingMethod:         endpoint.PricingMethod,
-								TimeUnitSecs:          endpoint.TimeUnitSecs,
-								DataUnitBytes:         endpoint.DataUnitBytes,
-								SessionTimeoutSecs:    endpoint.SessionTimeoutSecs,
-							}
-						}
-						continue
-					}
-					// Try to decode as a v2 service announcement.
-					if endpoint, err := protocol.DecodePayloadV2(payload); err == nil {
-						pubKeyHex := hex.EncodeToString(endpoint.PublicKey.SerializeCompressed())
-						if _, exists := announcementByPubKey[pubKeyHex]; !exists {
-							announcementByPubKey[pubKeyHex] = &ProviderAnnouncement{
-								Endpoint:              endpoint,
-								TxID:                  tx.Txid,
-								MetadataVersion:       2,
-								AdvertisedBandwidthKB: endpoint.AdvertisedBandwidthKB,
-								MaxConsumers:          endpoint.MaxConsumers,
-								DeclaredCountry:       strings.ToUpper(endpoint.CountryCode),
-								AvailabilityFlags:     endpoint.AvailabilityFlags,
-								ThroughputProbePort:   endpoint.ThroughputProbePort,
-							}
-						}
-						continue
-					}
+				payload, err := protocol.ExtractScriptPayload(pkScript)
+				if err != nil {
+					log.Printf("[scanner] No valid VPN payload in tx %s vout %d: %v", tx.Txid, vout.N, err)
+					continue
+				}
 
-					// Try to decode as a v1 service announcement.
-					if endpoint, err := protocol.DecodePayload(payload); err == nil {
-						pubKeyHex := hex.EncodeToString(endpoint.PublicKey.SerializeCompressed())
-						if _, exists := announcementByPubKey[pubKeyHex]; !exists {
-							announcementByPubKey[pubKeyHex] = &ProviderAnnouncement{
-								Endpoint:        endpoint,
-								TxID:            tx.Txid,
-								MetadataVersion: 1,
-							}
+				// Try to decode as a v3 service announcement first (most feature-rich)
+				if endpoint, err := protocol.DecodePayloadV3(payload); err == nil {
+					pubKeyHex := hex.EncodeToString(endpoint.PublicKey.SerializeCompressed())
+					if _, exists := announcementByPubKey[pubKeyHex]; !exists {
+						announcementByPubKey[pubKeyHex] = &ProviderAnnouncement{
+							Endpoint:              endpoint,
+							TxID:                  tx.Txid,
+							MetadataVersion:       3,
+							AdvertisedBandwidthKB: endpoint.AdvertisedBandwidthKB,
+							MaxConsumers:          endpoint.MaxConsumers,
+							DeclaredCountry:       strings.ToUpper(endpoint.CountryCode),
+							AvailabilityFlags:     endpoint.AvailabilityFlags,
+							ThroughputProbePort:   endpoint.ThroughputProbePort,
+							PricingMethod:         endpoint.PricingMethod,
+							TimeUnitSecs:          endpoint.TimeUnitSecs,
+							DataUnitBytes:         endpoint.DataUnitBytes,
+							SessionTimeoutSecs:    endpoint.SessionTimeoutSecs,
 						}
-						continue // Move to next vout
 					}
-
-					// Try to decode as a price update
-					if priceUpdate, err := protocol.DecodePriceUpdatePayload(payload); err == nil {
-						pubKeyHex := hex.EncodeToString(priceUpdate.PublicKey.SerializeCompressed())
-						// Since we are scanning backwards, the first price update we see is the most recent.
-						// So we only add it if it's not already in the map.
-						if _, exists := priceUpdates[pubKeyHex]; !exists {
-							priceUpdates[pubKeyHex] = priceUpdate.NewPrice
+					continue
+				}
+				// Try to decode as a v2 service announcement.
+				if endpoint, err := protocol.DecodePayloadV2(payload); err == nil {
+					pubKeyHex := hex.EncodeToString(endpoint.PublicKey.SerializeCompressed())
+					if _, exists := announcementByPubKey[pubKeyHex]; !exists {
+						announcementByPubKey[pubKeyHex] = &ProviderAnnouncement{
+							Endpoint:              endpoint,
+							TxID:                  tx.Txid,
+							MetadataVersion:       2,
+							AdvertisedBandwidthKB: endpoint.AdvertisedBandwidthKB,
+							MaxConsumers:          endpoint.MaxConsumers,
+							DeclaredCountry:       strings.ToUpper(endpoint.CountryCode),
+							AvailabilityFlags:     endpoint.AvailabilityFlags,
+							ThroughputProbePort:   endpoint.ThroughputProbePort,
 						}
-						continue
 					}
+					continue
+				}
 
-					// Try to decode heartbeat availability update.
-					if hb, err := protocol.DecodeHeartbeatPayload(payload); err == nil {
-						pubKeyHex := hex.EncodeToString(hb.PublicKey.SerializeCompressed())
-						if _, exists := heartbeats[pubKeyHex]; !exists {
-							heartbeats[pubKeyHex] = heartbeatState{flags: hb.Flags}
+				// Try to decode as a v1 service announcement.
+				if endpoint, err := protocol.DecodePayload(payload); err == nil {
+					pubKeyHex := hex.EncodeToString(endpoint.PublicKey.SerializeCompressed())
+					if _, exists := announcementByPubKey[pubKeyHex]; !exists {
+						announcementByPubKey[pubKeyHex] = &ProviderAnnouncement{
+							Endpoint:        endpoint,
+							TxID:            tx.Txid,
+							MetadataVersion: 1,
 						}
-						continue
 					}
+					continue // Move to next vout
+				}
 
-					// Try to decode reputation update.
-					if repStore != nil {
-						if rep, err := protocol.DecodeReputationPayload(payload); err == nil {
-							// For simplicity, we just save the most recent score as a simple record.
-							// In a full implementation, the logic might weight or aggregate multiple signatures.
-							_ = repStore.Record(rep.HexPubKey(), int(rep.Score), rep.Source)
-						}
+				// Try to decode as a price update
+				if priceUpdate, err := protocol.DecodePriceUpdatePayload(payload); err == nil {
+					pubKeyHex := hex.EncodeToString(priceUpdate.PublicKey.SerializeCompressed())
+					// Since we are scanning backwards, the first price update we see is the most recent.
+					// So we only add it if it's not already in the map.
+					if _, exists := priceUpdates[pubKeyHex]; !exists {
+						priceUpdates[pubKeyHex] = priceUpdate.NewPrice
+					}
+					continue
+				}
+
+				// Try to decode heartbeat availability update.
+				if hb, err := protocol.DecodeHeartbeatPayload(payload); err == nil {
+					pubKeyHex := hex.EncodeToString(hb.PublicKey.SerializeCompressed())
+					if _, exists := heartbeats[pubKeyHex]; !exists {
+						heartbeats[pubKeyHex] = heartbeatState{flags: hb.Flags}
+					}
+					continue
+				}
+
+				// Try to decode reputation update.
+				if repStore != nil {
+					if rep, err := protocol.DecodeReputationPayload(payload); err == nil {
+						// For simplicity, we just save the most recent score as a simple record.
+						// In a full implementation, the logic might weight or aggregate multiple signatures.
+						_ = repStore.Record(rep.HexPubKey(), int(rep.Score), rep.Source)
 					}
 				}
 			}

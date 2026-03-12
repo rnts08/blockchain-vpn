@@ -3,6 +3,7 @@ package blockchain
 import (
 	"context"
 	"fmt"
+	"log"
 	"math/rand"
 	"sync"
 	"time"
@@ -37,6 +38,7 @@ func withRetry[T any](ctx context.Context, op string, attempts int, initialBacko
 		// +/-20% jitter to avoid sync retry storms.
 		jitter := retryJitter()
 		sleep := time.Duration(float64(backoff) * jitter)
+		log.Printf("[retry] Retry %d/%d for %s after %vms (error: %v)", i+1, attempts, op, sleep.Milliseconds(), err)
 		select {
 		case <-ctx.Done():
 			return zero, fmt.Errorf("%s canceled: %w", op, ctx.Err())

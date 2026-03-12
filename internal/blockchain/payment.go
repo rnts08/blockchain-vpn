@@ -207,7 +207,10 @@ func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amou
 	// 5. Create Transaction Inputs
 	tx := wire.NewMsgTx(wire.TxVersion)
 	for _, utxo := range utxos {
-		txHash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		txHash, err := chainhash.NewHashFromStr(utxo.TxID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid txid %s: %w", utxo.TxID, err)
+		}
 		outPoint := wire.NewOutPoint(txHash, utxo.Vout)
 		txIn := wire.NewTxIn(outPoint, nil, nil)
 		tx.AddTxIn(txIn)
