@@ -49,17 +49,17 @@ OS-dependent code with risks. Requires testing on multiple platforms.
 
 ## Group 10: General (Long-term)
 
-- [ ] **1.1 Update the readme** with the latest release, and include the latest changes from the changelog in the feature list.
+- [x] **1.1 Update the readme** with the latest release, and include the latest changes from the changelog in the feature list.
 
-- [ ] **1.2 Add the donation/support addresses** and text to the help/about sections of both the cli and gui.
+- [x] **1.2 Add the donation/support addresses** and text to the help/about sections of both the cli and gui.
 
 - [ ] **1.3 Start planning a TUI** that has the same functionality as the cli but is run in a terminal with real-time information much like the GUI.
 
-- [ ] **1.4 Update docs/TEST_COVERAGE.md** continuously while adding tests for all relevant code paths.
+- [x] **1.4 Update docs/TEST_COVERAGE.md** continuously while adding tests for all relevant code paths.
 
 - [ ] **1.5 Create a mock rpc server** so that e2e tests can be run as a utility, similar to the rpc-test utility.
 
-- [ ] **1.6 Document the rpc-test utility**, add an option to the makefile to compile it, add a help section to it so that it can be used to verify RPC functionality according to the RPC spec.
+- [x] **1.6 Document the rpc-test utility**, add an option to the makefile to compile it, add a help section to it so that it can be used to verify RPC functionality according to the RPC spec.
 
 ---
 

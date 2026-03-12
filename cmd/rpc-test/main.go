@@ -20,14 +20,56 @@ func vlog(format string, args ...interface{}) {
 	}
 }
 
+func usage() {
+	fmt.Println(`Usage: rpc-test [options] [args...]
+
+A utility for testing RPC connectivity to bitcoind-compatible nodes.
+
+Options:
+  -host string
+    	RPC server host:port (default "localhost:25174")
+  -user string
+    	RPC username (required)
+  -pass string
+    	RPC password (required)
+  -tls
+    	Enable TLS for RPC connection
+  -cmd string
+    	RPC command to execute (default "getblockcount")
+  -v	Enable verbose output
+  -h	Show this help message
+
+Supported shortcut commands:
+  getblockcount    - Get current block count
+  getnetworkinfo   - Get network information
+  getrawmempool    - Get current mempool transactions
+
+Additional arguments are passed as parameters to the RPC command.
+For complex parameters (objects/arrays), use JSON format.
+
+Examples:
+  rpc-test -user=rpcuser -pass=rpcpass
+  rpc-test -user=rpcuser -pass=rpcpass -cmd=getblockcount
+  rpc-test -user=rpcuser -pass=rpcpass -cmd=getblockhash -v 100
+  rpc-test -user=rpcuser -pass=rpcpass -cmd=getrawmempool -v
+  rpc-test -user=rpcuser -pass=rpcpass -cmd=createrawtransaction -v '[]' '{"data":"0000..."}'`)
+}
+
 func main() {
+	helpFlag := flag.Bool("h", false, "Show help")
 	host := flag.String("host", "localhost:25174", "RPC server host:port")
 	user := flag.String("user", "", "RPC username (required)")
 	pass := flag.String("pass", "", "RPC password (required)")
 	enableTLS := flag.Bool("tls", false, "Enable TLS for RPC connection")
 	cmd := flag.String("cmd", "getblockcount", "RPC command to execute")
 	verboseFlag := flag.Bool("v", false, "Enable ultra verbose output (logs all actions and raw responses)")
+	flag.Usage = usage
 	flag.Parse()
+
+	if *helpFlag {
+		usage()
+		os.Exit(0)
+	}
 
 	verbose = *verboseFlag
 

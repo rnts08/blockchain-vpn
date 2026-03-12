@@ -103,6 +103,7 @@ func main() {
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
 	configCmd := flag.NewFlagSet("config", flag.ExitOnError)
 	versionCmd := flag.NewFlagSet("version", flag.ExitOnError)
+	aboutCmd := flag.NewFlagSet("about", flag.ExitOnError)
 	doctorCmd := flag.NewFlagSet("doctor", flag.ExitOnError)
 	eventsCmd := flag.NewFlagSet("events", flag.ExitOnError)
 	diagCmd := flag.NewFlagSet("diagnostics", flag.ExitOnError)
@@ -136,7 +137,7 @@ func main() {
 	diagOut := diagCmd.String("out", "", "Output path for diagnostics JSON bundle (default: app config dir)")
 
 	if len(os.Args) < 2 {
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', 'doctor', 'events', 'diagnostics', or 'version' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', 'doctor', 'events', 'diagnostics', 'version', or 'about' subcommands")
 		os.Exit(1)
 	}
 
@@ -465,6 +466,9 @@ func main() {
 	case "version":
 		versionCmd.Parse(os.Args[2:])
 		handleVersion(*versionJSON)
+	case "about":
+		aboutCmd.Parse(os.Args[2:])
+		handleAbout(*versionJSON)
 	case "doctor":
 		doctorCmd.Parse(os.Args[2:])
 		handleDoctor(cfg, *doctorJSON)
@@ -479,7 +483,7 @@ func main() {
 		log.Printf("Diagnostics bundle written.")
 
 	default:
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', 'doctor', 'events', 'diagnostics', or 'version' subcommands")
+		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', 'doctor', 'events', 'diagnostics', 'version', or 'about' subcommands")
 		os.Exit(1)
 	}
 }
@@ -680,6 +684,60 @@ func handleVersion(jsonMode bool) {
 	if err := enc.Encode(payload); err != nil {
 		log.Fatalf("failed to encode version JSON: %v", err)
 	}
+}
+
+func handleAbout(jsonMode bool) {
+	about := `BlockchainVPN - Decentralized VPN Marketplace
+
+Version: ` + version.String() + `
+Built: ` + version.BuildDate + `
+
+A peer-to-peer VPN marketplace built on the OrdexCoin blockchain.
+
+## Support Development
+
+This project is done in my spare time and will be available for free.
+Your donations help me finish and polish it to a working, stable state.
+
+Donation Addresses:
+  BTC:  bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta
+  ETH:  bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta
+  LTC:  bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta
+  SOL:  HB2o6q6vsW5796U5y7NxNqA7vYZW1vuQjpAHDo7FAMG8
+  XRP:  rUW7Q64vR4PwDM3F27etd6ipxK8MtuxsFs
+  OXC:  oxc1q3psft0hvlslddyp8ktr3s737req7q8hrl0rkly
+  OXG:  oxg1q34apjkn2yc6rsvuua98432ctqdrjh9hdkhpx0t
+
+For more information, visit the project at:
+https://github.com/anomalyco/blockchain-vpn
+`
+
+	if jsonMode {
+		payload := map[string]interface{}{
+			"name":        "BlockchainVPN",
+			"version":     version.Version,
+			"commit":      version.GitCommit,
+			"built":       version.BuildDate,
+			"description": "Decentralized VPN marketplace on OrdexCoin",
+			"donations": map[string]string{
+				"BTC": "bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta",
+				"ETH": "bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta",
+				"LTC": "bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta",
+				"SOL": "HB2o6q6vsW5796U5y7NxNqA7vYZW1vuQjpAHDo7FAMG8",
+				"XRP": "rUW7Q64vR4PwDM3F27etd6ipxK8MtuxsFs",
+				"OXC": "oxc1q3psft0hvlslddyp8ktr3s737req7q8hrl0rkly",
+				"OXG": "oxg1q34apjkn2yc6rsvuua98432ctqdrjh9hdkhpx0t",
+			},
+			"url": "https://github.com/anomalyco/blockchain-vpn",
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(payload); err != nil {
+			log.Fatalf("failed to encode about JSON: %v", err)
+		}
+		return
+	}
+	fmt.Print(about)
 }
 
 // connectRPCWithConfig creates an RPC client using the provided configuration.
