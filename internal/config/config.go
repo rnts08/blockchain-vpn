@@ -2,6 +2,8 @@ package config
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -45,36 +47,38 @@ type SecurityConfig struct {
 }
 
 type ProviderConfig struct {
-	InterfaceName               string `json:"interface_name"`
-	ListenPort                  int    `json:"listen_port"`
-	AutoRotatePort              bool   `json:"auto_rotate_port"` // Automatically rotate to unprivileged port if bind fails
-	AnnounceIP                  string `json:"announce_ip"`
-	Country                     string `json:"country"` // 2-letter country code (e.g., "US"). Leave empty to auto-detect.
-	Price                       uint64 `json:"price_sats_per_session"`
-	MaxConsumers                int    `json:"max_consumers"` // 0 means unlimited
-	PrivateKeyFile              string `json:"private_key_file"`
-	BandwidthLimit              string `json:"bandwidth_limit"` // e.g. "10mbit"
-	EnableNAT                   bool   `json:"enable_nat"`
-	EnableEgressNAT             bool   `json:"enable_egress_nat"`
-	NATOutboundInterface        string `json:"nat_outbound_interface"`
-	IsolationMode               string `json:"isolation_mode"` // "none" or "sandbox"
-	AllowlistFile               string `json:"allowlist_file"`
-	DenylistFile                string `json:"denylist_file"`
-	CertLifetimeHours           int    `json:"cert_lifetime_hours"`
-	CertRotateBeforeHours       int    `json:"cert_rotate_before_hours"`
-	HealthCheckEnabled          bool   `json:"health_check_enabled"`
-	HealthCheckInterval         string `json:"health_check_interval"` // e.g. "30s"
-	BandwidthMonitorInterval    string `json:"bandwidth_monitor_interval"`
-	TunIP                       string `json:"tun_ip"`
-	TunSubnet                   string `json:"tun_subnet"`
-	MetricsListenAddr           string `json:"metrics_listen_addr"`       // e.g. "127.0.0.1:9090"
-	MaxSessionDurationSecs      int    `json:"max_session_duration_secs"` // 0 = no limit
-	AnnouncementFeeTargetBlocks int    `json:"announcement_fee_target_blocks"`
-	AnnouncementFeeMode         string `json:"announcement_fee_mode"` // "conservative" or "economical"
-	ThroughputProbePort         int    `json:"throughput_probe_port"` // 0 = disable provider-assisted probes
-	WebSocketFallbackPort       int    `json:"websocket_fallback_port"`
-	HeartbeatInterval           string `json:"heartbeat_interval"`       // e.g. "5m"
-	PaymentMonitorInterval      string `json:"payment_monitor_interval"` // e.g. "1m"
+	InterfaceName               string   `json:"interface_name"`
+	ListenPort                  int      `json:"listen_port"`
+	AutoRotatePort              bool     `json:"auto_rotate_port"` // Automatically rotate to unprivileged port if bind fails
+	AnnounceIP                  string   `json:"announce_ip"`
+	Country                     string   `json:"country"` // 2-letter country code (e.g., "US"). Leave empty to auto-detect.
+	Price                       uint64   `json:"price_sats_per_session"`
+	MaxConsumers                int      `json:"max_consumers"` // 0 means unlimited
+	PrivateKeyFile              string   `json:"private_key_file"`
+	BandwidthLimit              string   `json:"bandwidth_limit"` // e.g. "10mbit"
+	DNSServers                  []string `json:"dns_servers"`     // Custom DNS servers (e.g., ["1.1.1.1", "8.8.8.8"])
+	EnableNAT                   bool     `json:"enable_nat"`
+	EnableEgressNAT             bool     `json:"enable_egress_nat"`
+	NATOutboundInterface        string   `json:"nat_outbound_interface"`
+	IsolationMode               string   `json:"isolation_mode"` // "none" or "sandbox"
+	AllowlistFile               string   `json:"allowlist_file"`
+	DenylistFile                string   `json:"denylist_file"`
+	CertLifetimeHours           int      `json:"cert_lifetime_hours"`
+	CertRotateBeforeHours       int      `json:"cert_rotate_before_hours"`
+	HealthCheckEnabled          bool     `json:"health_check_enabled"`
+	HealthCheckInterval         string   `json:"health_check_interval"` // e.g. "30s"
+	BandwidthMonitorInterval    string   `json:"bandwidth_monitor_interval"`
+	AnnouncementInterval        string   `json:"announcement_interval"` // e.g. "24h"
+	TunIP                       string   `json:"tun_ip"`
+	TunSubnet                   string   `json:"tun_subnet"`
+	MetricsListenAddr           string   `json:"metrics_listen_addr"`       // e.g. "127.0.0.1:9090"
+	MaxSessionDurationSecs      int      `json:"max_session_duration_secs"` // 0 = no limit
+	AnnouncementFeeTargetBlocks int      `json:"announcement_fee_target_blocks"`
+	AnnouncementFeeMode         string   `json:"announcement_fee_mode"` // "conservative" or "economical"
+	ThroughputProbePort         int      `json:"throughput_probe_port"` // 0 = disable provider-assisted probes
+	WebSocketFallbackPort       int      `json:"websocket_fallback_port"`
+	HeartbeatInterval           string   `json:"heartbeat_interval"`       // e.g. "5m"
+	PaymentMonitorInterval      string   `json:"payment_monitor_interval"` // e.g. "1m"
 
 	// New fields for flexible pricing
 	PricingMethod   string `json:"pricing_method"`    // "session", "time", "data"
@@ -83,15 +87,16 @@ type ProviderConfig struct {
 }
 
 type ClientConfig struct {
-	InterfaceName              string `json:"interface_name"`
-	TunIP                      string `json:"tun_ip"`
-	TunSubnet                  string `json:"tun_subnet"`
-	EnableKillSwitch           bool   `json:"enable_kill_switch"`
-	MetricsListenAddr          string `json:"metrics_listen_addr"` // e.g. "127.0.0.1:9091"
-	StrictVerification         bool   `json:"strict_verification"`
-	VerifyThroughputAfterSetup bool   `json:"verify_throughput_after_connect"`
-	MaxParallelTunnels         int    `json:"max_parallel_tunnels"`
-	EnableWebSocketFallback    bool   `json:"enable_websocket_fallback"`
+	InterfaceName              string   `json:"interface_name"`
+	TunIP                      string   `json:"tun_ip"`
+	TunSubnet                  string   `json:"tun_subnet"`
+	DNSServers                 []string `json:"dns_servers"` // Custom DNS servers (e.g., ["1.1.1.1", "8.8.8.8"])
+	EnableKillSwitch           bool     `json:"enable_kill_switch"`
+	MetricsListenAddr          string   `json:"metrics_listen_addr"` // e.g. "127.0.0.1:9091"
+	StrictVerification         bool     `json:"strict_verification"`
+	VerifyThroughputAfterSetup bool     `json:"verify_throughput_after_connect"`
+	MaxParallelTunnels         int      `json:"max_parallel_tunnels"`
+	EnableWebSocketFallback    bool     `json:"enable_websocket_fallback"`
 
 	// Spending limits
 	SpendingLimitEnabled   bool   `json:"spending_limit_enabled"`    // Enable total spending limit
@@ -162,6 +167,15 @@ func ResolveProviderKeyPath(cfg *Config, cfgPath string) error {
 	return nil
 }
 
+// GenerateRandomRPCPassword generates a secure random password for RPC authentication.
+func GenerateRandomRPCPassword() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("failed to generate random password: %w", err)
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
 func LoadConfig(path string) (*Config, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -174,11 +188,33 @@ func LoadConfig(path string) (*Config, error) {
 	if err := decoder.Decode(cfg); err != nil {
 		return nil, err
 	}
+
+	applyConfigDefaults(cfg)
+
+	return cfg, nil
+}
+
+// applyConfigDefaults applies default values to all config fields that need them.
+func applyConfigDefaults(cfg *Config) {
 	if cfg.Client.MaxParallelTunnels <= 0 {
 		cfg.Client.MaxParallelTunnels = 1
 	}
 
-	return cfg, nil
+	if cfg.Provider.HealthCheckInterval == "" {
+		cfg.Provider.HealthCheckInterval = "30s"
+	}
+	if cfg.Provider.BandwidthMonitorInterval == "" {
+		cfg.Provider.BandwidthMonitorInterval = "30s"
+	}
+	if cfg.Provider.AnnouncementInterval == "" {
+		cfg.Provider.AnnouncementInterval = "24h"
+	}
+	if len(cfg.Provider.DNSServers) == 0 {
+		cfg.Provider.DNSServers = []string{"1.1.1.1", "8.8.8.8"}
+	}
+	if len(cfg.Client.DNSServers) == 0 {
+		cfg.Client.DNSServers = []string{"1.1.1.1", "8.8.8.8"}
+	}
 }
 
 func GenerateDefaultConfig(path string) error {
@@ -195,11 +231,16 @@ func GenerateDefaultConfig(path string) error {
 		return err
 	}
 
+	rpcPass, err := GenerateRandomRPCPassword()
+	if err != nil {
+		return err
+	}
+
 	cfg := Config{
 		RPC: RPCConfig{
 			Host:        "localhost:25173",
 			User:        "rpcuser",
-			Pass:        "",
+			Pass:        rpcPass,
 			EnableTLS:   false,
 			Network:     "mainnet",
 			TokenSymbol: "ORDEX",
@@ -226,6 +267,7 @@ func GenerateDefaultConfig(path string) error {
 			MaxConsumers:                0,
 			PrivateKeyFile:              keyPath,
 			BandwidthLimit:              "10mbit",
+			DNSServers:                  []string{"1.1.1.1", "8.8.8.8"},
 			EnableNAT:                   true,
 			EnableEgressNAT:             false,
 			NATOutboundInterface:        "",
@@ -235,6 +277,9 @@ func GenerateDefaultConfig(path string) error {
 			CertLifetimeHours:           720,
 			CertRotateBeforeHours:       24,
 			HealthCheckEnabled:          true,
+			HealthCheckInterval:         "30s",
+			BandwidthMonitorInterval:    "30s",
+			AnnouncementInterval:        "24h",
 			MaxSessionDurationSecs:      0,
 			AnnouncementFeeTargetBlocks: 6,
 			AnnouncementFeeMode:         "conservative",
@@ -251,6 +296,7 @@ func GenerateDefaultConfig(path string) error {
 			InterfaceName:              "bcvpn1",
 			TunIP:                      "10.10.0.2",
 			TunSubnet:                  "24",
+			DNSServers:                 []string{"1.1.1.1", "8.8.8.8"},
 			EnableKillSwitch:           false,
 			MetricsListenAddr:          "",
 			StrictVerification:         false,

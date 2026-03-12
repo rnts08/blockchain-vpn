@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.2] - 2026-03-12
+
+### Configuration & Validation Improvements
+- Added minimum/maximum bounds validation for duration fields:
+  - `provider.health_check_interval` (minimum 1s, maximum 24h)
+  - `provider.bandwidth_monitor_interval` (minimum 1s, maximum 24h)
+  - `provider.announcement_interval` (minimum 1h, maximum 7d)
+- Added cross-field validation: `cert_lifetime_hours` > `cert_rotate_before_hours`
+- Added cross-field validation: `max_session_duration_secs` <= `cert_lifetime_hours`
+- Added `applyConfigDefaults()` to ensure all config defaults are applied consistently
+- Added configurable `provider.announcement_interval` (default: 24h)
+- Added configurable `provider.dns_servers` and `client.dns_servers` arrays
+- Default config now generates secure random RPC password instead of empty
+- Added `GenerateRandomRPCPassword()` function for secure credential generation
+
+### Error Handling & Logging
+- Added debug logging for scanner hex.Decode failures
+- Added debug logging for protocol.ExtractScriptPayload errors
+- Added retry attempt logging in blockchain operations
+- Added error handling for chainhash.NewHashFromStr in payment.go
+- Added validation for btcec.PrivKeyFromBytes result in crypto.go
+
+### Tests
+- Added comprehensive unit tests for retry logic
+- Added unit tests for crypto error paths
+- Added unit tests for config validation bounds
+- Added unit tests for cross-field validation
+- Added unit tests for applyConfigDefaults
+
+---
+
 ## [0.5.1] - 2026-03-12
 
 ### Testing & Reliability

@@ -46,8 +46,33 @@ func Validate(cfg *Config) error {
 		errs = append(errs, fmt.Errorf("provider.tun_subnet must be a valid IPv4 prefix length"))
 	}
 	if strings.TrimSpace(cfg.Provider.HealthCheckInterval) != "" {
-		if _, err := time.ParseDuration(strings.TrimSpace(cfg.Provider.HealthCheckInterval)); err != nil {
+		d, err := time.ParseDuration(strings.TrimSpace(cfg.Provider.HealthCheckInterval))
+		if err != nil {
 			errs = append(errs, fmt.Errorf("provider.health_check_interval is invalid: %w", err))
+		} else if d < time.Second {
+			errs = append(errs, fmt.Errorf("provider.health_check_interval must be at least 1s"))
+		} else if d > 24*time.Hour {
+			errs = append(errs, fmt.Errorf("provider.health_check_interval must be at most 24h"))
+		}
+	}
+	if strings.TrimSpace(cfg.Provider.BandwidthMonitorInterval) != "" {
+		d, err := time.ParseDuration(strings.TrimSpace(cfg.Provider.BandwidthMonitorInterval))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("provider.bandwidth_monitor_interval is invalid: %w", err))
+		} else if d < time.Second {
+			errs = append(errs, fmt.Errorf("provider.bandwidth_monitor_interval must be at least 1s"))
+		} else if d > 24*time.Hour {
+			errs = append(errs, fmt.Errorf("provider.bandwidth_monitor_interval must be at most 24h"))
+		}
+	}
+	if strings.TrimSpace(cfg.Provider.AnnouncementInterval) != "" {
+		d, err := time.ParseDuration(strings.TrimSpace(cfg.Provider.AnnouncementInterval))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("provider.announcement_interval is invalid: %w", err))
+		} else if d < time.Hour {
+			errs = append(errs, fmt.Errorf("provider.announcement_interval must be at least 1h"))
+		} else if d > 7*24*time.Hour {
+			errs = append(errs, fmt.Errorf("provider.announcement_interval must be at most 7d"))
 		}
 	}
 	if strings.TrimSpace(cfg.Provider.MetricsListenAddr) != "" {
@@ -80,6 +105,23 @@ func Validate(cfg *Config) error {
 	case "", "none", "sandbox":
 	default:
 		errs = append(errs, fmt.Errorf("provider.isolation_mode must be one of: none, sandbox"))
+	}
+
+	// Cross-field: cert lifetime vs rotation window
+	if cfg.Provider.CertLifetimeHours > 0 && cfg.Provider.CertRotateBeforeHours > 0 {
+		if cfg.Provider.CertRotateBeforeHours >= cfg.Provider.CertLifetimeHours {
+			errs = append(errs, fmt.Errorf("provider.cert_rotate_before_hours (%d) must be less than provider.cert_lifetime_hours (%d)",
+				cfg.Provider.CertRotateBeforeHours, cfg.Provider.CertLifetimeHours))
+		}
+	}
+
+	// Cross-field: max session duration vs cert lifetime
+	if cfg.Provider.MaxSessionDurationSecs > 0 && cfg.Provider.CertLifetimeHours > 0 {
+		maxSessionHours := cfg.Provider.MaxSessionDurationSecs / 3600
+		if int(maxSessionHours) >= cfg.Provider.CertLifetimeHours {
+			errs = append(errs, fmt.Errorf("provider.max_session_duration_secs (%d) must be less than provider.cert_lifetime_hours (%d hours)",
+				cfg.Provider.MaxSessionDurationSecs, cfg.Provider.CertLifetimeHours))
+		}
 	}
 
 	if strings.TrimSpace(cfg.Client.InterfaceName) == "" {
