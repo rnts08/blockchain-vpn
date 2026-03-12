@@ -6,13 +6,54 @@ import (
 	"log"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 var (
 	retryRandMu sync.Mutex
 	retryRand   = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	retryMetrics = &retryMetricsState{}
 )
+
+type retryMetricsState struct {
+	totalRetries   atomic.Int64
+	totalFailures  atomic.Int64
+	lastRetryOp    atomic.Value // string
+	retryLastError atomic.Value // string
+	retryCountByOp sync.Map     // map[string]*atomic.Int64
+}
+
+func recordRetryMetrics(operation, errorMsg string) {
+	retryMetrics.totalRetries.Add(1)
+
+	// Track per-operation retries
+	val, _ := retryMetrics.retryCountByOp.LoadOrStore(operation, &atomic.Int64{})
+	val.(*atomic.Int64).Add(1)
+
+	retryMetrics.lastRetryOp.Store(operation)
+	retryMetrics.retryLastError.Store(errorMsg)
+}
+
+func GetRetryMetricsSnapshot() map[string]any {
+	retryOps := make(map[string]int64)
+	retryMetrics.retryCountByOp.Range(func(key, value any) bool {
+		retryOps[key.(string)] = value.(*atomic.Int64).Load()
+		return true
+	})
+
+	lastOp, _ := retryMetrics.lastRetryOp.Load().(string)
+	lastErr, _ := retryMetrics.retryLastError.Load().(string)
+
+	return map[string]any{
+		"total_retries":        retryMetrics.totalRetries.Load(),
+		"total_failures":       retryMetrics.totalFailures.Load(),
+		"last_retry_op":        lastOp,
+		"last_error":           lastErr,
+		"retries_by_operation": retryOps,
+	}
+}
 
 func withRetry[T any](ctx context.Context, op string, attempts int, initialBackoff time.Duration, fn func() (T, error)) (T, error) {
 	var zero T
@@ -31,6 +72,10 @@ func withRetry[T any](ctx context.Context, op string, attempts int, initialBacko
 			return v, nil
 		}
 		lastErr = err
+
+		// Record retry metrics
+		recordRetryMetrics(op, err.Error())
+
 		if i == attempts-1 {
 			break
 		}

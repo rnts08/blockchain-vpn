@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +19,15 @@ type runtimeMetricsState struct {
 	totalDownBytes  atomic.Int64
 	errorCount      atomic.Int64
 
+	// Goroutine tracking
+	goroutineCount atomic.Int64
+
+	// Retry metrics
+	totalRetries   atomic.Int64
+	totalFailures  atomic.Int64
+	lastRetryOp    atomic.Value // string
+	retryLastError atomic.Value // string
+
 	healthMu        sync.RWMutex
 	lastTunOK       bool
 	lastTunCheck    time.Time
@@ -28,6 +38,19 @@ type runtimeMetricsState struct {
 
 var runtimeMetrics = &runtimeMetricsState{}
 var metricsServers sync.Map // key=addr
+
+// RecordRetryAttempt records a retry attempt for metrics.
+// This function can be called by the blockchain package to track retries.
+func RecordRetryAttempt(operation string) {
+	runtimeMetrics.totalRetries.Add(1)
+	runtimeMetrics.lastRetryOp.Store(operation)
+}
+
+// RecordRetryFailure records a retry failure for metrics.
+func RecordRetryFailure(operation, errorMsg string) {
+	runtimeMetrics.totalFailures.Add(1)
+	runtimeMetrics.retryLastError.Store(errorMsg)
+}
 
 func startMetricsServer(addr, token string) {
 	addr = strings.TrimSpace(addr)
@@ -51,7 +74,15 @@ func startMetricsServer(addr, token string) {
 				return
 			}
 		}
+
+		// Update goroutine count
+		runtimeMetrics.goroutineCount.Store(int64(runtime.NumGoroutine()))
+
 		runtimeMetrics.healthMu.RLock()
+
+		lastRetryOp, _ := runtimeMetrics.lastRetryOp.Load().(string)
+		retryLastErr, _ := runtimeMetrics.retryLastError.Load().(string)
+
 		payload := map[string]any{
 			"provider_running": runtimeMetrics.providerRunning.Load(),
 			"client_connected": runtimeMetrics.clientConnected.Load(),
@@ -59,6 +90,13 @@ func startMetricsServer(addr, token string) {
 			"total_up_bytes":   runtimeMetrics.totalUpBytes.Load(),
 			"total_down_bytes": runtimeMetrics.totalDownBytes.Load(),
 			"error_count":      runtimeMetrics.errorCount.Load(),
+			"goroutine_count":  runtimeMetrics.goroutineCount.Load(),
+			"retry_metrics": map[string]any{
+				"total_retries":  runtimeMetrics.totalRetries.Load(),
+				"total_failures": runtimeMetrics.totalFailures.Load(),
+				"last_retry_op":  lastRetryOp,
+				"last_error":     retryLastErr,
+			},
 			"health": map[string]any{
 				"tun_ok":              runtimeMetrics.lastTunOK,
 				"tun_checked_at":      runtimeMetrics.lastTunCheck.UTC().Format(time.RFC3339),
@@ -129,6 +167,10 @@ func recordHealthStatus(tunOK, listenerOK bool) {
 func GetRuntimeMetricsSnapshot() map[string]any {
 	runtimeMetrics.healthMu.RLock()
 	defer runtimeMetrics.healthMu.RUnlock()
+
+	lastRetryOp, _ := runtimeMetrics.lastRetryOp.Load().(string)
+	retryLastErr, _ := runtimeMetrics.retryLastError.Load().(string)
+
 	return map[string]any{
 		"provider_running": runtimeMetrics.providerRunning.Load(),
 		"client_connected": runtimeMetrics.clientConnected.Load(),
@@ -136,6 +178,13 @@ func GetRuntimeMetricsSnapshot() map[string]any {
 		"total_up_bytes":   runtimeMetrics.totalUpBytes.Load(),
 		"total_down_bytes": runtimeMetrics.totalDownBytes.Load(),
 		"error_count":      runtimeMetrics.errorCount.Load(),
+		"goroutine_count":  runtimeMetrics.goroutineCount.Load(),
+		"retry_metrics": map[string]any{
+			"total_retries":  runtimeMetrics.totalRetries.Load(),
+			"total_failures": runtimeMetrics.totalFailures.Load(),
+			"last_retry_op":  lastRetryOp,
+			"last_error":     retryLastErr,
+		},
 		"health": map[string]any{
 			"tun_ok":              runtimeMetrics.lastTunOK,
 			"tun_checked_at":      runtimeMetrics.lastTunCheck.UTC().Format(time.RFC3339),

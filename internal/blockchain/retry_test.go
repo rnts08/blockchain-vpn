@@ -117,3 +117,47 @@ func TestRetryJitter(t *testing.T) {
 		}
 	}
 }
+
+func TestRetryMetricsRecording(t *testing.T) {
+	t.Parallel()
+
+	// Get initial metrics
+	initial := GetRetryMetricsSnapshot()
+	initialRetries := initial["total_retries"].(int64)
+
+	// Trigger a retry
+	_, _ = withRetry(context.Background(), "MetricsTestOp", 2, 10*time.Millisecond, func() (int, error) {
+		return 0, errors.New("test error for metrics")
+	})
+
+	// Check metrics were recorded
+	after := GetRetryMetricsSnapshot()
+	afterRetries := after["total_retries"].(int64)
+
+	if afterRetries <= initialRetries {
+		t.Errorf("expected retries to increase, was %d now %d", initialRetries, afterRetries)
+	}
+
+	// Check operation is tracked
+	byOp := after["retries_by_operation"].(map[string]int64)
+	if count, ok := byOp["MetricsTestOp"]; !ok || count == 0 {
+		t.Errorf("expected MetricsTestOp in retries_by_operation, got %v", byOp)
+	}
+}
+
+func TestGetRetryMetricsSnapshot(t *testing.T) {
+	t.Parallel()
+
+	// Test that snapshot returns expected structure
+	snapshot := GetRetryMetricsSnapshot()
+
+	if _, ok := snapshot["total_retries"]; !ok {
+		t.Error("expected total_retries in snapshot")
+	}
+	if _, ok := snapshot["total_failures"]; !ok {
+		t.Error("expected total_failures in snapshot")
+	}
+	if _, ok := snapshot["retries_by_operation"]; !ok {
+		t.Error("expected retries_by_operation in snapshot")
+	}
+}

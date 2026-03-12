@@ -2,7 +2,7 @@
 
 BlockchainVPN is a peer-to-peer VPN marketplace built on top of the OrdexCoin blockchain. It allows anyone to become a VPN provider by announcing their service on-chain, and allows clients to discover, pay for, and connect to these services in a decentralized, permissionless manner.
 
-Current version: `0.5.5`
+Current version: `0.5.6`
 
 ## 0. Support the development
 

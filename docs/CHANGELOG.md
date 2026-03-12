@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.4] - 2026-03-12
+## [0.5.5] - 2026-03-12
 
 ### Configuration & Validation Improvements
 - Added minimum/maximum bounds validation for duration fields:
@@ -35,6 +35,10 @@ All notable changes to this project will be documented in this file.
 ### Code Quality
 - **Config Get/Set Refactoring**: Replaced massive 200+ line switch statements with reflection-based field registry in `internal/config/config_registry.go`. Reduces maintenance burden when adding new config fields. File reduced by ~200 lines.
 
+### Observability & Diagnostics
+- Added retry operation metrics to `/metrics.json` endpoint: total_retries, total_failures, last_retry_op, retries_by_operation
+- Added goroutine count tracking to `/metrics.json` endpoint for leak detection
+
 ### Tests
 - Added comprehensive unit tests for retry logic
 - Added unit tests for crypto error paths
@@ -42,10 +46,11 @@ All notable changes to this project will be documented in this file.
 - Added unit tests for cross-field validation
 - Added unit tests for applyConfigDefaults
 - Added unit tests for config registry (GetConfigField, SetConfigField, ListConfigFields)
+- Added unit tests for retry metrics recording
 
 ---
 
-## [0.5.3] - 2026-03-12
+## [0.5.4] - 2026-03-12
 
 ### Configuration & Validation Improvements
 - Added minimum/maximum bounds validation for duration fields:
