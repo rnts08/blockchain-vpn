@@ -47,6 +47,7 @@ func (am *AuthManager) AuthorizePeer(peerKey *btcec.PublicKey, duration time.Dur
 				existing.dataQuota = dataQuota
 				existing.remaining = dataQuota
 			} else {
+				existing.dataQuota += dataQuota
 				existing.remaining += dataQuota
 			}
 		}

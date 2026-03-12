@@ -1,7 +1,24 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
-  
+
+## [0.5.1] - 2026-03-12
+
+### Testing & Reliability
+- Added comprehensive unit tests for `UsageMeter` (time/data billing metering)
+- Added comprehensive unit tests for `SpendingManager` (spending limits, auto-recharge, session tracking)
+- Added complete test suite for `AuthManager` (authorization, data quotas, expiration, consumption)
+- Added unit tests for `session` package (sessionStats, rateEnforcer, bandwidth parsing)
+- Added unit tests for payment verification functions
+- Fixed bug in `AuthManager.AuthorizePeer` where extending a peer with additional data quota failed to increment `dataQuota`
+- Updated GUI tests to use demo mode to avoid RPC timeouts
+- Added `docs/TEST_COVERAGE.md` with detailed test gap analysis and roadmap
+
+### Infrastructure
+- Improved test coverage for critical billing and auth components ahead of v1.0 release
+
+---
+
 ## [0.5.0] - 2026-03-11
 
 ### Features: Flexible Pricing Models
