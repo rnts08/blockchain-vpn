@@ -77,15 +77,15 @@ Critical packages needing unit tests:
 
 - [ ] **11.5 OBS Package**: Add unit tests for `internal/obs` - Logging, metrics collection, event recording
 
-- [ ] **11.6 Blockchain Scanner**: Add unit tests for `internal/blockchain/scanner` - V3 payload decoding, delta scanning, filter application
+- [x] **11.6 Blockchain Scanner**: Add unit tests for `internal/blockchain/scanner` - V3 payload decoding, delta scanning, filter application
 
-- [ ] **11.7 Blockchain Payment**: Add unit tests for `internal/blockchain/payment` - BuildAndSendPayment, fee estimation, retry logic
+- [x] **11.7 Blockchain Payment**: Add unit tests for `internal/blockchain/payment` - BuildAndSendPayment, fee estimation, retry logic
 
-- [ ] **11.8 Blockchain Provider**: Add unit tests for `internal/blockchain/provider` - Announcement creation, reputation store integration
+- [x] **11.8 Blockchain Provider**: Add unit tests for `internal/blockchain/provider` - Announcement creation, reputation store integration
 
-- [ ] **11.9 Tunnel Session**: Add unit tests for `internal/tunnel/session` - Session lifetime, authorization renewal, cleanup
+- [x] **11.9 Tunnel Session**: Add unit tests for `internal/tunnel/session` - Session lifetime, authorization renewal, cleanup
 
-- [ ] **11.10 Tunnel Multi-Tunnel**: Add unit tests for `internal/tunnel/multi_tunnel` - Concurrent session management, Add/Cancel/ActiveCount
+- [x] **11.10 Tunnel Multi-Tunnel**: Add unit tests for `internal/tunnel/multi_tunnel` - Concurrent session management, Add/Cancel/ActiveCount
 
 E2E/Functional tests:
 
