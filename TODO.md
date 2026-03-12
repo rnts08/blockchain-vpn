@@ -8,11 +8,11 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 OS-dependent code with risks. Requires testing on multiple platforms.
 
-- [ ] **8.1 Cleanup Marker Location**: The marker files for network state recovery (`internal/tunnel/cleanup_marker_*.go`) use hardcoded paths (e.g., `/etc/blockchain-vpn-network-marker`). Move to application config directory for consistency and user-writable locations. Add pre-restore existence checks.
+- [x] **8.1 Cleanup Marker Location**: Already implemented in config.AppConfigDir(). Added pre-restore existence checks for provider IP validity and DNS server verification.
 
-- [ ] **8.2 Kill Switch Consolidation**: Review `killswitch_linux.go`, `killswitch_darwin.go`, `killswitch_windows.go` for duplication. Extract common rule management logic where possible. Audit for resource leaks to ensure iptables/network rules are restored even on partial failure.
+- [x] **8.2 Kill Switch Consolidation**: Already done - common code (resolveProviderIPv4) in killswitch_common.go. Each platform uses different firewall tools (iptables/pfctl/route) - no further consolidation practical.
 
-- [ ] **8.3 Privilege Escalation Tests**: Add tests for `privilege_linux.go` (and equivalents) covering failure modes: sudo prompts without TTY, missing sudoers config, user rejection. Ensure clear error messages.
+- [x] **8.3 Privilege Escalation Tests**: Added unit test in privilege_linux_test.go with mockable osGeteuid function. Code only checks euid - no sudo prompting exists.
 
 ---
 
@@ -63,7 +63,48 @@ OS-dependent code with risks. Requires testing on multiple platforms.
 
 ---
 
+## Group 11: Test Coverage Expansion (Medium-Hard)
+
+Critical packages needing unit tests:
+
+- [ ] **11.1 Auth Package**: Add unit tests for `internal/auth` - AuthManager data quotas, session authorization, CanAuthorize logic, expiration handling
+
+- [ ] **11.2 GeoIP Package**: Add unit tests for `internal/geoip` - EnrichEndpoints, country lookup, latency measurement with mock GeoIP database
+
+- [ ] **11.3 History Package**: Add unit tests for `internal/history` - Payment history persistence, query, export operations
+
+- [ ] **11.4 NAT Package**: Add unit tests for `internal/nat` - UPnP/NAT-PMP mapping with platform mocks
+
+- [ ] **11.5 OBS Package**: Add unit tests for `internal/obs` - Logging, metrics collection, event recording
+
+- [ ] **11.6 Blockchain Scanner**: Add unit tests for `internal/blockchain/scanner` - V3 payload decoding, delta scanning, filter application
+
+- [ ] **11.7 Blockchain Payment**: Add unit tests for `internal/blockchain/payment` - BuildAndSendPayment, fee estimation, retry logic
+
+- [ ] **11.8 Blockchain Provider**: Add unit tests for `internal/blockchain/provider` - Announcement creation, reputation store integration
+
+- [ ] **11.9 Tunnel Session**: Add unit tests for `internal/tunnel/session` - Session lifetime, authorization renewal, cleanup
+
+- [ ] **11.10 Tunnel Multi-Tunnel**: Add unit tests for `internal/tunnel/multi_tunnel` - Concurrent session management, Add/Cancel/ActiveCount
+
+E2E/Functional tests:
+
+- [ ] **11.11 Time-based Billing**: Functional test for time-based billing cycle (provider with pricing_method=time)
+
+- [ ] **11.12 Data-based Billing**: Functional test for data-based billing tiers (provider with pricing_method=data)
+
+- [ ] **11.13 Spending Limits**: Functional test for spending limit enforcement
+
+- [ ] **11.14 Multi-tunnel Concurrent**: Functional test for connecting to multiple providers simultaneously
+
+---
+
 ## Completed Groups
+
+### Group 6: Platform-Specific (Done)
+- **8.1 Cleanup Marker**: Added pre-restore existence checks for provider IP and DNS server validation
+- **8.2 Kill Switch Consolidation**: Already done - common code in killswitch_common.go
+- **8.3 Privilege Tests**: Added unit test with mockable osGeteuid
 
 ### Group 8: Testing (Done)
 - **7.2 Fuzz Test Coverage**: Expanded protocol fuzz test corpus with edge cases

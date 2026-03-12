@@ -2,7 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.8] - 2026-03-12
+## [0.5.9] - 2026-03-12
+
+### Platform-Specific Improvements
+- Added pre-restore existence checks in cleanup_marker_linux.go - validates provider IP and DNS server before restore
+- Added mockable `osGeteuid` variable in privilege_linux.go for unit testing
+- Added unit test for privilege_linux.go with mock support
 
 ### GUI/UX Improvements
 - Added inline validation error display for form fields in Provider and Client tabs
@@ -22,6 +27,8 @@ All notable changes to this project will be documented in this file.
 - Added integration test prerequisites documentation to TEST_COVERAGE.md
 
 ---
+
+## [0.5.8] - 2026-03-12
 
 ## [0.5.7] - 2026-03-12
 
