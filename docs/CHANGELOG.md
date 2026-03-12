@@ -2,7 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.7] - 2026-03-12
+## [0.5.8] - 2026-03-12
+
+### GUI/UX Improvements
+- Added inline validation error display for form fields in Provider and Client tabs
+- Replaced modal dialog popups with per-field error labels for validation errors
+- Fields with inline validation: price, max consumers, listen port, cert lifetime, rotate window, announce IP, TUN IP, TUN subnet, health check interval, max price, min bandwidth, max latency, min slots
+- Added `validatedField` helper for wrapping form entries with error labels
 
 ### Testing & Quality
 - Expanded fuzz test corpus in `internal/protocol/fuzz_test.go` with edge cases:
@@ -17,7 +23,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [0.5.5] - 2026-03-12
+## [0.5.7] - 2026-03-12
 
 ### Configuration & Validation Improvements
 - Added minimum/maximum bounds validation for duration fields:

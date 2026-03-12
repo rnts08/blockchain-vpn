@@ -105,6 +105,45 @@ type guiState struct {
 	selectedIdx int
 }
 
+type validatedField struct {
+	*widget.Entry
+	errorLabel *widget.Label
+}
+
+func newValidatedField(placeholder string) *validatedField {
+	entry := widget.NewEntry()
+	entry.SetPlaceHolder(placeholder)
+
+	errorLabel := widget.NewLabel("")
+	errorLabel.TextStyle = fyne.TextStyle{Bold: true}
+	errorLabel.Hide()
+
+	return &validatedField{
+		Entry:      entry,
+		errorLabel: errorLabel,
+	}
+}
+
+func (v *validatedField) SetError(err string) {
+	if err == "" {
+		v.errorLabel.Hide()
+	} else {
+		v.errorLabel.Text = err
+		v.errorLabel.Show()
+	}
+}
+
+func (v *validatedField) SetText(text string) {
+	v.Entry.SetText(text)
+}
+
+func (v *validatedField) Widget() fyne.CanvasObject {
+	return container.NewVBox(
+		v.Entry,
+		v.errorLabel,
+	)
+}
+
 const setupMarkerFile = "setup-complete"
 
 func buildMainTabs(w fyne.Window, state *guiState) fyne.CanvasObject {
@@ -454,21 +493,21 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 
 	ifaceEntry := widget.NewEntry()
 	ifaceEntry.SetText(s.cfg.Provider.InterfaceName)
-	listenPortEntry := widget.NewEntry()
+	listenPortEntry := newValidatedField("e.g., 443")
 	listenPortEntry.SetText(fmt.Sprintf("%d", s.cfg.Provider.ListenPort))
-	announceIPEntry := widget.NewEntry()
+	announceIPEntry := newValidatedField("e.g., 203.0.113.1 (optional)")
 	announceIPEntry.SetText(s.cfg.Provider.AnnounceIP)
 	countryEntry := widget.NewEntry()
 	countryEntry.SetText(s.cfg.Provider.Country)
-	priceEntry := widget.NewEntry()
+	priceEntry := newValidatedField("Price in satoshis per unit")
 	priceEntry.SetText(fmt.Sprintf("%d", s.cfg.Provider.Price))
-	maxConsumersEntry := widget.NewEntry()
+	maxConsumersEntry := newValidatedField("Maximum concurrent consumers")
 	maxConsumersEntry.SetText(fmt.Sprintf("%d", s.cfg.Provider.MaxConsumers))
 	bwEntry := widget.NewEntry()
 	bwEntry.SetText(s.cfg.Provider.BandwidthLimit)
-	tunIPEntry := widget.NewEntry()
+	tunIPEntry := newValidatedField("e.g., 10.0.0.1")
 	tunIPEntry.SetText(s.cfg.Provider.TunIP)
-	tunSubnetEntry := widget.NewEntry()
+	tunSubnetEntry := newValidatedField("e.g., 24")
 	tunSubnetEntry.SetText(s.cfg.Provider.TunSubnet)
 	natEnabled := widget.NewCheck("Enable NAT Traversal (UPnP/NAT-PMP)", nil)
 	natEnabled.SetChecked(s.cfg.Provider.EnableNAT)
@@ -486,13 +525,13 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	allowEntry.SetText(s.cfg.Provider.AllowlistFile)
 	denyEntry := widget.NewEntry()
 	denyEntry.SetText(s.cfg.Provider.DenylistFile)
-	lifeEntry := widget.NewEntry()
+	lifeEntry := newValidatedField("Certificate lifetime in hours")
 	lifeEntry.SetText(fmt.Sprintf("%d", s.cfg.Provider.CertLifetimeHours))
-	rotateEntry := widget.NewEntry()
+	rotateEntry := newValidatedField("Rotate before expiration (hours)")
 	rotateEntry.SetText(fmt.Sprintf("%d", s.cfg.Provider.CertRotateBeforeHours))
 	healthEnabled := widget.NewCheck("Enable Health Checks", nil)
 	healthEnabled.SetChecked(s.cfg.Provider.HealthCheckEnabled)
-	healthIntervalEntry := widget.NewEntry()
+	healthIntervalEntry := newValidatedField("e.g., 30s, 5m, 1h")
 	healthIntervalEntry.SetText(s.cfg.Provider.HealthCheckInterval)
 	metricsAddrEntry := widget.NewEntry()
 	metricsAddrEntry.SetText(s.cfg.Provider.MetricsListenAddr)
@@ -504,46 +543,57 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	saveBtn := widget.NewButton("Save Provider Config", func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+
+		priceEntry.SetError("")
+		maxConsumersEntry.SetError("")
+		listenPortEntry.SetError("")
+		lifeEntry.SetError("")
+		rotateEntry.SetError("")
+		announceIPEntry.SetError("")
+		tunIPEntry.SetError("")
+		tunSubnetEntry.SetError("")
+		healthIntervalEntry.SetError("")
+
 		price, err := strconv.ParseUint(strings.TrimSpace(priceEntry.Text), 10, 64)
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("invalid price: %w", err), w)
+			priceEntry.SetError(fmt.Sprintf("invalid price: %v", err))
 			return
 		}
 		maxConsumers, err := strconv.Atoi(strings.TrimSpace(maxConsumersEntry.Text))
 		if err != nil || maxConsumers < 0 {
-			dialog.ShowError(fmt.Errorf("invalid max consumers: must be a non-negative integer"), w)
+			maxConsumersEntry.SetError("must be a non-negative integer")
 			return
 		}
 		listenPort, err := strconv.Atoi(strings.TrimSpace(listenPortEntry.Text))
 		if err != nil || listenPort <= 0 || listenPort > 65535 {
-			dialog.ShowError(fmt.Errorf("invalid listen port"), w)
+			listenPortEntry.SetError("must be between 1 and 65535")
 			return
 		}
 		life, err := strconv.Atoi(strings.TrimSpace(lifeEntry.Text))
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("invalid cert lifetime: %w", err), w)
+			lifeEntry.SetError(fmt.Sprintf("invalid: %v", err))
 			return
 		}
 		rotate, err := strconv.Atoi(strings.TrimSpace(rotateEntry.Text))
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("invalid cert rotate window: %w", err), w)
+			rotateEntry.SetError(fmt.Sprintf("invalid: %v", err))
 			return
 		}
 		announceIP := strings.TrimSpace(announceIPEntry.Text)
 		if announceIP != "" && net.ParseIP(announceIP) == nil {
-			dialog.ShowError(fmt.Errorf("invalid announce IP"), w)
+			announceIPEntry.SetError("invalid IP address")
 			return
 		}
 		if net.ParseIP(strings.TrimSpace(tunIPEntry.Text)) == nil {
-			dialog.ShowError(fmt.Errorf("invalid provider TUN IP"), w)
+			tunIPEntry.SetError("invalid IP address")
 			return
 		}
 		if _, err := strconv.Atoi(strings.TrimSpace(tunSubnetEntry.Text)); err != nil {
-			dialog.ShowError(fmt.Errorf("invalid provider TUN subnet"), w)
+			tunSubnetEntry.SetError(fmt.Sprintf("invalid: %v", err))
 			return
 		}
 		if _, err := time.ParseDuration(strings.TrimSpace(healthIntervalEntry.Text)); err != nil {
-			dialog.ShowError(fmt.Errorf("invalid health check interval: %w", err), w)
+			healthIntervalEntry.SetError(fmt.Sprintf("invalid duration: %v", err))
 			return
 		}
 
@@ -667,24 +717,24 @@ func buildProviderTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 
 	form := widget.NewForm(
 		widget.NewFormItem("Interface Name", ifaceEntry),
-		widget.NewFormItem("Listen Port", listenPortEntry),
-		widget.NewFormItem("Announce IP (optional)", announceIPEntry),
+		widget.NewFormItem("Listen Port", listenPortEntry.Widget()),
+		widget.NewFormItem("Announce IP (optional)", announceIPEntry.Widget()),
 		widget.NewFormItem("Country", countryEntry),
-		widget.NewFormItem("Price (sats/session)", priceEntry),
-		widget.NewFormItem("Max Consumers (0=unlimited)", maxConsumersEntry),
+		widget.NewFormItem("Price (sats/session)", priceEntry.Widget()),
+		widget.NewFormItem("Max Consumers (0=unlimited)", maxConsumersEntry.Widget()),
 		widget.NewFormItem("Bandwidth Limit", bwEntry),
-		widget.NewFormItem("Provider TUN IP", tunIPEntry),
-		widget.NewFormItem("Provider TUN Subnet", tunSubnetEntry),
+		widget.NewFormItem("Provider TUN IP", tunIPEntry.Widget()),
+		widget.NewFormItem("Provider TUN Subnet", tunSubnetEntry.Widget()),
 		widget.NewFormItem("NAT Traversal", natEnabled),
 		widget.NewFormItem("Provider Egress NAT", egressNATEnabled),
 		widget.NewFormItem("NAT Outbound Interface", natOutboundEntry),
 		widget.NewFormItem("Isolation Mode", isolationSelect),
 		widget.NewFormItem("Allowlist File", allowEntry),
 		widget.NewFormItem("Denylist File", denyEntry),
-		widget.NewFormItem("Cert Lifetime Hours", lifeEntry),
-		widget.NewFormItem("Rotate Before Hours", rotateEntry),
+		widget.NewFormItem("Cert Lifetime Hours", lifeEntry.Widget()),
+		widget.NewFormItem("Rotate Before Hours", rotateEntry.Widget()),
 		widget.NewFormItem("Health Checks", healthEnabled),
-		widget.NewFormItem("Health Check Interval", healthIntervalEntry),
+		widget.NewFormItem("Health Check Interval", healthIntervalEntry.Widget()),
 		widget.NewFormItem("Metrics Listen Addr", metricsAddrEntry),
 		widget.NewFormItem("Key Password", passwordEntry),
 	)
@@ -707,19 +757,15 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	sortSelect.SetSelected("latency")
 	s.countryEntry = widget.NewSelectEntry([]string{"US", "DE", "UK", "FR", "NL", "SG", "JP", "CA", "AU"})
 	s.countryEntry.SetPlaceHolder("Country filter e.g. US")
-	maxPriceEntry := widget.NewEntry()
-	maxPriceEntry.SetPlaceHolder("Max price sats (optional)")
-	minBwEntry := widget.NewEntry()
-	minBwEntry.SetPlaceHolder("Min bandwidth Kbps")
-	maxLatencyEntry := widget.NewEntry()
-	maxLatencyEntry.SetPlaceHolder("Max latency ms")
-	minSlotsEntry := widget.NewEntry()
-	minSlotsEntry.SetPlaceHolder("Min available slots")
+	maxPriceEntry := newValidatedField("Max price sats (optional)")
+	minBwEntry := newValidatedField("Min bandwidth Kbps")
+	maxLatencyEntry := newValidatedField("Max latency ms")
+	minSlotsEntry := newValidatedField("Min available slots")
 	clientIfaceEntry := widget.NewEntry()
 	clientIfaceEntry.SetText(s.cfg.Client.InterfaceName)
-	clientTunIPEntry := widget.NewEntry()
+	clientTunIPEntry := newValidatedField("e.g., 10.0.0.2")
 	clientTunIPEntry.SetText(s.cfg.Client.TunIP)
-	clientTunSubnetEntry := widget.NewEntry()
+	clientTunSubnetEntry := newValidatedField("e.g., 24")
 	clientTunSubnetEntry.SetText(s.cfg.Client.TunSubnet)
 	clientMetricsAddrEntry := widget.NewEntry()
 	clientMetricsAddrEntry.SetText(s.cfg.Client.MetricsListenAddr)
@@ -769,25 +815,30 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 	}
 
 	scanBtn := widget.NewButton("Scan Providers", func() {
+		maxPriceEntry.SetError("")
+		minBwEntry.SetError("")
+		maxLatencyEntry.SetError("")
+		minSlotsEntry.SetError("")
+
 		go func() {
 			maxPrice, err := parseUint64Optional(maxPriceEntry.Text)
 			if err != nil {
-				dialog.ShowError(fmt.Errorf("invalid max price: %w", err), w)
+				maxPriceEntry.SetError(fmt.Sprintf("invalid: %v", err))
 				return
 			}
 			minBW, err := parseUint32Optional(minBwEntry.Text)
 			if err != nil {
-				dialog.ShowError(fmt.Errorf("invalid min bandwidth: %w", err), w)
+				minBwEntry.SetError(fmt.Sprintf("invalid: %v", err))
 				return
 			}
 			maxLatencyMS, err := parseIntOptional(maxLatencyEntry.Text)
 			if err != nil {
-				dialog.ShowError(fmt.Errorf("invalid max latency: %w", err), w)
+				maxLatencyEntry.SetError(fmt.Sprintf("invalid: %v", err))
 				return
 			}
 			minSlots, err := parseIntOptional(minSlotsEntry.Text)
 			if err != nil {
-				dialog.ShowError(fmt.Errorf("invalid min slots: %w", err), w)
+				minSlotsEntry.SetError(fmt.Sprintf("invalid: %v", err))
 				return
 			}
 			if err := s.scanProviders(sortSelect.Selected, strings.TrimSpace(s.countryEntry.Text), maxPrice, minBW, time.Duration(maxLatencyMS)*time.Millisecond, minSlots); err != nil {
@@ -818,12 +869,15 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
+		clientTunIPEntry.SetError("")
+		clientTunSubnetEntry.SetError("")
+
 		if net.ParseIP(strings.TrimSpace(clientTunIPEntry.Text)) == nil {
-			dialog.ShowError(fmt.Errorf("invalid client TUN IP"), w)
+			clientTunIPEntry.SetError("invalid IP address")
 			return
 		}
 		if _, err := strconv.Atoi(strings.TrimSpace(clientTunSubnetEntry.Text)); err != nil {
-			dialog.ShowError(fmt.Errorf("invalid client TUN subnet"), w)
+			clientTunSubnetEntry.SetError(fmt.Sprintf("invalid: %v", err))
 			return
 		}
 
@@ -873,22 +927,22 @@ func buildClientTab(w fyne.Window, s *guiState) fyne.CanvasObject {
 		widget.NewLabel("Country:"),
 		s.countryEntry,
 		widget.NewLabel("Max Price:"),
-		maxPriceEntry,
+		maxPriceEntry.Widget(),
 		widget.NewLabel("Min BW:"),
-		minBwEntry,
+		minBwEntry.Widget(),
 		widget.NewLabel("Max Latency:"),
-		maxLatencyEntry,
+		maxLatencyEntry.Widget(),
 		widget.NewLabel("Min Slots:"),
-		minSlotsEntry,
+		minSlotsEntry.Widget(),
 	)
 	settingsRow := container.NewGridWithColumns(
 		8,
 		widget.NewLabel("Interface"),
 		clientIfaceEntry,
 		widget.NewLabel("TUN IP"),
-		clientTunIPEntry,
+		clientTunIPEntry.Widget(),
 		widget.NewLabel("Subnet"),
-		clientTunSubnetEntry,
+		clientTunSubnetEntry.Widget(),
 		widget.NewLabel("Metrics"),
 		clientMetricsAddrEntry,
 	)

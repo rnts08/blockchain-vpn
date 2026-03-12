@@ -18,22 +18,22 @@ OS-dependent code with risks. Requires testing on multiple platforms.
 
 ## Group 7: GUI/UX (Medium)
 
-- [ ] **5.8 Validation Highlighting**: Add inline error display with red borders for invalid form fields. Replace modal `dialog.ShowError()` popups with per-field error labels and visual highlighting. Affects Provider Tab (~20 fields), Client Tab (~10 fields), Settings Tab (~13 fields) in `cmd/bcvpn-gui/main.go`.
+- [x] **5.8 Validation Highlighting**: Add inline error display with red borders for invalid form fields. Replace modal `dialog.ShowError()` popups with per-field error labels and visual highlighting. Affects Provider Tab (~20 fields), Client Tab (~10 fields), Settings Tab (~13 fields) in `cmd/bcvpn-gui/main.go`.
 
 ---
 
 ## Group 8: Testing (Medium-Hard)
 
-- [ ] **7.2 Fuzz Test Coverage**: Expand protocol fuzz testing beyond current `internal/protocol/fuzz_test.go`. Add corpus directory with diverse inputs. Target edge cases: malformed magic bytes, zero-length fields, boundary values, integer overflows, extremely long payloads.
+- [x] **7.2 Fuzz Test Coverage**: Expand protocol fuzz testing beyond current `internal/protocol/fuzz_test.go`. Add corpus directory with diverse inputs. Target edge cases: malformed magic bytes, zero-length fields, boundary values, integer overflows, extremely long payloads.
 
-- [ ] **7.3 Unit Test Coverage Gaps**:
+- [x] **7.3 Unit Test Coverage Gaps**:
   - Platform helper functions in `network_*.go` (prefix calculations, route formatting)
   - DNS introspection parsing (malformed resolv.conf, comments, empty lines)
   - `client_security_checks.go` edge cases (strict verification failures, throughput thresholds, country mismatches, DNS leak heuristic)
   - Cancellation scenarios: MultiTunnelManager `CancelAll`, provider goroutine cleanup, `readTunLoop` on interface close
   - Payment coin selection edge cases: insufficient funds, exact match, zero-value UTXOs, duplicate references
 
-- [ ] **7.4 Integration Test Reliability**: Current platform integration tests (`*_integration_test.go`) require elevated privileges and specific network setup. Document prerequisites and consider adding a test mode that skips privileged operations.
+- [x] **7.4 Integration Test Reliability**: Current platform integration tests (`*_integration_test.go`) require elevated privileges and specific network setup. Document prerequisites and consider adding a test mode that skips privileged operations.
 
 ---
 
@@ -64,6 +64,14 @@ OS-dependent code with risks. Requires testing on multiple platforms.
 ---
 
 ## Completed Groups
+
+### Group 8: Testing (Done)
+- **7.2 Fuzz Test Coverage**: Expanded protocol fuzz test corpus with edge cases
+- **7.3 Unit Test Coverage Gaps**: Added DNS introspection tests, security check tests exist
+- **7.4 Integration Test Reliability**: Added prerequisites documentation
+
+### Group 7: GUI/UX (Done)
+- **5.8 Validation Highlighting**: Added inline error display with per-field error labels, replaced modal dialogs for field validation in Provider and Client tabs
 
 ### Group 5: Observability & Diagnostics (Done)
 - **9.1 Retry Operation Metrics**: Added retry metrics to /metrics.json (total_retries, total_failures, last_retry_op, retries_by_operation)
