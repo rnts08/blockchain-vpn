@@ -316,6 +316,75 @@ make test-coverage
 
 ---
 
+## 10. Integration Test Prerequisites
+
+### Platform-Specific Requirements
+
+#### Linux (`network_linux_integration_test.go`)
+- **Privileges**: Requires root or `CAP_NET_ADMIN` capability
+- **System files**: Modifies `/etc/resolv.conf` (creates backup at `/etc/resolv.conf.bcvpn-backup`)
+- **Network**: Creates TUN device, modifies routing table
+- **Cleanup**: Tests restore original DNS and routes, but may leave artifacts on crash
+
+#### macOS (`network_darwin_integration_test.go`)
+- **Privileges**: Requires root or `sudo`
+- **System files**: Modifies `/etc/resolv.conf` (creates backup)
+- **Network**: Creates TUN device via utun, modifies routing
+- **Note**: Some tests may require disabling SIP for full routing control
+
+#### Windows (`network_windows_integration_test.go`)
+- **Privileges**: Requires Administrator
+- **Network**: Creates TUN adapter, modifies routing table
+- **Note**: Uses Wintun driver; may require driver installation
+
+### Functional Tests
+
+#### Client Security (`client_security_integration_test.go`)
+- **Network**: Requires internet access for:
+  - Public IP detection via external service
+  - GeoIP lookup for country verification
+  - Bandwidth measurement to test endpoints
+- **Firewall**: May be blocked by strict firewall rules
+
+#### TLS (`tls_integration_test.go`)
+- **Blockchain**: Requires running `ordexcoind` node
+- **Wallet**: Needs wallet with funds for key registration
+- **Network**: Outbound connection to blockchain network
+
+#### Transfer (`transfer_integration_test.go`)
+- **Blockchain**: Requires `ordexcoind` for authentication
+- **Provider**: Requires active provider to connect to
+- **Network**: Transfers actual data through tunnel
+
+### Running Integration Tests
+
+```bash
+# All integration tests (requires root/sudo on Linux)
+sudo make test-functional
+
+# Linux only
+go test -v -tags integration ./internal/tunnel -run "Linux"
+
+# Darwin only  
+go test -v -tags integration ./internal/tunnel -run "Darwin"
+
+# Windows only
+go test -v -tags integration ./internal/tunnel -run "Windows"
+
+# Skip integration, run only unit tests
+go test -v ./...
+```
+
+### CI Considerations
+
+- Integration tests run on all 3 platforms (Ubuntu, macOS, Windows)
+- Ubuntu runner has root privileges
+- macOS runner has sudo access
+- Windows runner has Administrator privileges
+- TLS and transfer tests require blockchain node in CI
+
+---
+
 ## Conclusion
 
 The project has strong foundation in unit testing for core low-level packages (protocol, crypto, config) and excellent integration tests for platform networking. However, **critical gaps exist in the blockchain, tunnel (advanced features), and auth layers** that directly impact the new v0.5.0 features (flexible billing, spending limits, multi-chain). Immediate focus should be on writing comprehensive unit tests for `usage`, `credit_manager`, `auth`, and `payment`, followed by E2E tests covering the billing scenarios.

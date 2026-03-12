@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.7] - 2026-03-12
+
+### Testing & Quality
+- Expanded fuzz test corpus in `internal/protocol/fuzz_test.go` with edge cases:
+  - Malformed magic bytes
+  - Zero-length fields
+  - Boundary values
+  - Integer overflows
+  - Extremely long payloads
+  - PAY/PRICE/HEARTBEAT variations
+- Added comprehensive unit tests for DNS introspection (`hasExpectedSecureDNS`)
+- Added integration test prerequisites documentation to TEST_COVERAGE.md
+
+---
+
 ## [0.5.5] - 2026-03-12
 
 ### Configuration & Validation Improvements
