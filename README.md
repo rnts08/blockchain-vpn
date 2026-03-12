@@ -6,16 +6,22 @@ Current version: `0.4.9`
 
 ## 0. Support the development
 
-BTC: bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta
-ETH/ERC-20: bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta
-LTC: bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta
-SOL: HB2o6q6vsW5796U5y7NxNqA7vYZW1vuQjpAHDo7FAMG8
-XRP: rUW7Q64vR4PwDM3F27etd6ipxK8MtuxsFs
+This project is done in my spare time and will be available for free, so donating and supporting the project will help me finish and polish it to a working and stable point.
 
-OXC: oxc1q3psft0hvlslddyp8ktr3s737req7q8hrl0rkly
-OXG: oxg1q34apjkn2yc6rsvuua98432ctqdrjh9hdkhpx0t
+    * BTC: bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta
+    * ETH/ERC-20: bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta
+    * LTC: bc1qkmzc6d49fl0edyeynezwlrfqv486nmk6p5pmta
+    * SOL: HB2o6q6vsW5796U5y7NxNqA7vYZW1vuQjpAHDo7FAMG8
+    * XRP: rUW7Q64vR4PwDM3F27etd6ipxK8MtuxsFs
+
+To help me test the current implementation with ordexcoin, you can help donate tokens that will be used for testing and refining the payment model(s). 
+
+    * OXC: oxc1q3psft0hvlslddyp8ktr3s737req7q8hrl0rkly
+    * OXG: oxg1q34apjkn2yc6rsvuua98432ctqdrjh9hdkhpx0t
 
 All donations will be direclty used to develop and maintain the blockchain VPN package and system, as well as expand to support multiple chains and connection methods such as native Bitcoin and Socks5 proxy vpns.
+
+Donators and supports will be immortalized in the applications about and readme sections. 
 
 ## 1. Architecture Overview
 
@@ -87,6 +93,19 @@ Clients purchase access by sending a transaction to the provider's address (deri
 3.  **Service Loop:**
     *   Listens on the specified TCP port for TLS connections.
     *   Runs a UDP echo server for latency checks.
+
+1.  **Initialization:**
+    *   Generates or loads a `secp256k1` private/public key (`btcec`).
+    *   Detects public IP address (automatically or via config).
+    *   Sets up a TUN interface and applies runtime networking configuration (platform-dependent backend).
+2.  **Announcement:**
+    *   Constructs a raw transaction using `ordexcoind` RPC.
+    *   Adds an output with `OP_RETURN` containing the service payload.
+    *   Signs and broadcasts the transaction.
+    *   Re-announces periodically (e.g., every 24 hours).
+3.  **Service Loop:**
+    *   Listens on the specified TCP port for TLS connections.
+    *   Runs a UDP echo server for latency checks.
     *   **Payment Monitor:** Scans the blockchain for transactions paying the service price to the provider's address containing a valid "PAY" `OP_RETURN` payload.
     *   **Access Control:** Verifies the client's TLS certificate against a list of authorized public keys derived from valid payments.
 
@@ -138,17 +157,35 @@ GOOS=windows GOARCH=amd64 go build -o bcvpn-windows-amd64.exe ./cmd/bcvpn
 Or use `Makefile` targets:
 
 ```bash
-make build            # native CLI
-make build-gui        # native GUI
-make build-cli-all    # cross-platform CLI artifacts (Linux/Darwin/Windows)
-make test             # run unit tests
-make tidy             # sync go.mod
+Available targets:
+
+  all            - Build CLI (default)
+  build          - Build CLI binary (bcvpn)
+  build-gui      - Build GUI binary (bcvpn-gui)
+  build-cli-all  - Build CLI for Linux, macOS, Windows
+  test           - Run unit tests
+  test-unit      - Run unit tests (explicit)
+  test-functional- Run functional tests (requires -tags)
+  fmt            - Format source code with gofmt
+  tidy           - Tidy Go dependencies
+  clean          - Remove build artifacts
+  bump-version   - Bump version in source files (increments patch)
+                       Use VERSION_OVERRIDE=x.y.z to set specific version
+  release        - Create a new release (bump, test, tag, push)
+                       Use VERSION_OVERRIDE=x.y.z to override version
+  help           - Show this help message
+
+Examples:
+  make build
+  make release
+  make release VERSION_OVERRIDE=1.2.3
 ```
 
 Notes:
 
 *   CLI cross-compilation is supported for Linux/macOS/Windows.
 *   GUI builds use Fyne/OpenGL dependencies and are best built natively on the target OS.
+*   Make release will only work if you're a maintainer of the project and have push access to the repo. 
 
 ### Configuration
 
@@ -172,7 +209,7 @@ Sample `config.json`:
 ```json
 {
   "rpc": {
-    "host": "localhost:18443",
+    "host": "localhost:25173",
     "user": "yourrpcuser",
     "pass": "yourrpcpassword"
   },
@@ -415,19 +452,6 @@ To adapt this for another chain:
 4.  Provider payment monitor authorizes that key until session expiry and enforces optional max active sessions.
 5.  Client connects over TLS, receives a dynamic TUN IP, traffic is forwarded through provider, and post-connect security checks run.
 
-### Platform Coverage
-
-- Linux: full runtime support, including provider egress NAT and sandbox hardening mode.
-- macOS: full client route/DNS/TUN automation support and provider egress NAT backend.
-- Windows: full client route/DNS/TUN automation support and provider egress NAT backend.
-- Other OSes: explicit runtime stubs and clear unsupported errors.
-- Privilege preflight is enforced before provider start and before client payment/connection.
-
-- [ ] Improve throughput verification with provider-assisted active probes (less dependence on external download endpoints).
-- [ ] Add signed provider reputation/quality metadata and configurable weighted-selection profiles.
-
-- Detailed install and privilege setup: [docs/INSTALL.md](docs/INSTALL.md)
-- UI design and behavior: [docs/GUI.md](docs/GUI.md)
 - Networking notes: [docs/NETWORKING.md](docs/NETWORKING.md)
 - End-to-end user guide: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
 - Troubleshooting by OS: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
