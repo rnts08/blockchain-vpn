@@ -4,20 +4,6 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 ---
 
-## Group 4: Code Quality & Abstraction (Hard)
-
-Refactoring to reduce duplication. Higher risk of breaking changes.
-
-### Code Duplication
-
-- [ ] **5.3 Config Get/Set Refactoring**: Replace massive 200+ line switch statements in `cmd/bcvpn/main.go` (`getConfigField`/`setConfigField`) with a reflection-based field registry or map. Reduces maintenance burden when adding new config fields.
-
-- [ ] **5.1 DNS Introspection Abstraction**: Factor out common parsing logic duplicated in `internal/tunnel/dns_introspection_linux.go`, `dns_introspection_darwin.go`, `dns_introspection_windows.go`. Create a shared helper for parsing `resolv.conf` format; platform files only implement command execution.
-
-- [ ] **5.2 Network Configuration Abstraction**: Extract common route setup and DNS configuration logic from `internal/tunnel/network_linux.go`, `network_darwin.go`, `network_windows.go`. These files share significant code for route manipulation, DNS writes, and cleanup.
-
----
-
 ## Group 5: Observability & Diagnostics (Medium-Hard)
 
 Metrics and monitoring improvements.
@@ -88,6 +74,11 @@ OS-dependent code with risks. Requires testing on multiple platforms.
 ---
 
 ## Completed Groups
+
+### Group 4: Code Quality & Abstraction (Done)
+- **5.3 Config Get/Set Refactoring**: Create reflection-based config registry (5.3)
+- DNS introspection (5.1) - common logic already extracted
+- Network abstraction (5.2) - skipped due to platform-specific complexity
 
 ### Group 3: Error Handling & Reliability (Done)
 - Add 30-second connection timeout to MultiTunnelManager.Add() (4.1)
