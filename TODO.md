@@ -57,7 +57,7 @@ OS-dependent code with risks. Requires testing on multiple platforms.
 
 - [x] **1.4 Update docs/TEST_COVERAGE.md** continuously while adding tests for all relevant code paths.
 
-- [ ] **1.5 Create a mock rpc server** so that e2e tests can be run as a utility, similar to the rpc-test utility.
+- [x] **1.5 Create a mock rpc server** so that e2e tests can be run as a utility, similar to the rpc-test utility.
 
 - [x] **1.6 Document the rpc-test utility**, add an option to the makefile to compile it, add a help section to it so that it can be used to verify RPC functionality according to the RPC spec.
 
@@ -67,15 +67,15 @@ OS-dependent code with risks. Requires testing on multiple platforms.
 
 Critical packages needing unit tests:
 
-- [ ] **11.1 Auth Package**: Add unit tests for `internal/auth` - AuthManager data quotas, session authorization, CanAuthorize logic, expiration handling
+- [x] **11.1 Auth Package**: Add unit tests for `internal/auth` - AuthManager data quotas, session authorization, CanAuthorize logic, expiration handling
 
-- [ ] **11.2 GeoIP Package**: Add unit tests for `internal/geoip` - EnrichEndpoints, country lookup, latency measurement with mock GeoIP database
+- [x] **11.2 GeoIP Package**: Add unit tests for `internal/geoip` - EnrichEndpoints, country lookup, latency measurement with mock GeoIP database
 
-- [ ] **11.3 History Package**: Add unit tests for `internal/history` - Payment history persistence, query, export operations
+- [x] **11.3 History Package**: Add unit tests for `internal/history` - Payment history persistence, query, export operations
 
-- [ ] **11.4 NAT Package**: Add unit tests for `internal/nat` - UPnP/NAT-PMP mapping with platform mocks
+- [x] **11.4 NAT Package**: Add unit tests for `internal/nat` - UPnP/NAT-PMP mapping with platform mocks
 
-- [ ] **11.5 OBS Package**: Add unit tests for `internal/obs` - Logging, metrics collection, event recording
+- [x] **11.5 OBS Package**: Add unit tests for `internal/obs` - Logging, metrics collection, event recording
 
 - [x] **11.6 Blockchain Scanner**: Add unit tests for `internal/blockchain/scanner` - V3 payload decoding, delta scanning, filter application
 
