@@ -4,70 +4,6 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 ---
 
-## Group 1: Quick Wins (Easy, Low Risk)
-
-Isolated fixes that improve debuggability and robustness.
-
-### Error Handling Fixes
-
-- [ ] **2.4 Crypto Key Validation**: Validate `btcec.PrivKeyFromBytes` result is non-nil in `internal/crypto/crypto.go:127`. Currently returns nil error but invalid key if decryption yields invalid bytes.
-
-- [ ] **2.3 Payment Hash errors**: Handle error from `chainhash.NewHashFromStr` in `internal/blockchain/payment.go:210` (error is ignored). Should never fail with RPC data but defensive programming needed.
-
-- [ ] **2.2 Scanner Silent Failures**: Add debug logging for `hex.DecodeString` failures in `internal/blockchain/scanner.go:88` and `protocol.ExtractScriptPayload` errors. Currently these are silently ignored, masking malformed data.
-
-### Logging Improvements
-
-- [ ] **4.2 Retry Logging**: Add debug logs in `internal/blockchain/retry.go:27-46` to make retry attempts visible. Log: "Retry X/Y for operation Z after Wms". Critical for debugging RPC issues.
-
-- [ ] **9.3 Enhanced Logging Context**: Add structured logging (with fields) to key operations: payment monitor found payment, provider server accepting connection, scanner block progress, config validation failures. Use `log.Printf` with key=value pairs.
-
----
-
-## Group 2: Configuration & Defaults (Medium)
-
-Improvements to config validation and removing hardcoded values.
-
-### Validation Gaps
-
-- [ ] **3.1 Duration Validations**: Add minimum value checks for time duration fields:
-  - `provider.health_check_interval` (currently no minimum, could be 0) - minimum 1s
-  - `provider.bandwidth_monitor_interval` (not validated at all in `Validate()`) - minimum 1s
-  - Add maximum bounds to prevent excessive intervals
-
-- [ ] **3.2 Cross-Field Validations**: Add checks in `internal/config/validate.go`:
-  - `cert_lifetime_hours` > `cert_rotate_before_hours` (prevent rotate window larger than lifetime)
-  - `max_session_duration_secs` should be <= cert lifetime (or 0 for unlimited)
-  - Client metrics port collision with provider listen port
-
-- [ ] **3.3 Default Application**: Ensure `config.LoadConfig` applies all defaults consistently. Currently only `MaxParallelTunnels` gets a default. Create `applyConfigDefaults()` function to handle all defaults.
-
-### Hardcoded Values → Configuration
-
-- [ ] **6.1 Announcement Interval**: The 24-hour reannouncement interval in `cmd/bcvpn/main.go` is hardcoded. Add `provider.announcement_interval` config field with 24h default.
-
-- [ ] **6.2 Default DNS Servers**: The hardcoded DNS servers (`1.1.1.1`, `8.8.8.8`) in `internal/tunnel/network_*.go` should be configurable via config. Add `client.dns_servers` and `provider.dns_servers` fields.
-
-- [ ] **6.3 Default RPC Credentials**: `internal/config/config.go` generates default RPC user "rpcuser" with empty password. Generate random secure credentials on first run OR require explicit setup (remove defaults).
-
----
-
-## Group 3: Error Handling & Reliability (Medium)
-
-Critical for testing and robustness. These make the CLI testable.
-
-### CLI Error Returns
-
-- [ ] **2.1 Replace log.Fatalf**: Refactor command handlers in `cmd/bcvpn/main.go` to return errors instead of calling `log.Fatalf` directly. Allow `main()` to handle exit codes. This makes commands testable and enables programmatic use. Affects ~20 command handlers.
-
-### Goroutine & Resource Management
-
-- [ ] **4.1 MultiTunnel Leak**: Add timeout to context in `internal/tunnel/multi_tunnel.go` (`Add()` method). The spawned goroutine may block indefinitely if `ConnectToProvider` hangs. Use `context.WithTimeout(parent, 30s)` and ensure `done` channel closes even on panic.
-
-- [ ] **4.3 Provider Shutdown Timeout**: The 5-second timeout in `cmd/bcvpn/main.go` may be too short if goroutines hang. Make it dynamic based on number of running goroutines. Ensure all provider goroutines respect `ctx.Done()`.
-
----
-
 ## Group 4: Code Quality & Abstraction (Hard)
 
 Refactoring to reduce duplication. Higher risk of breaking changes.
@@ -151,26 +87,24 @@ OS-dependent code with risks. Requires testing on multiple platforms.
 
 ---
 
-## Implementation Order
+## Completed Groups
 
-**Start here (Group 1)**:
-1. 2.4 Crypto Key Validation
-2. 2.3 Payment Hash errors
-3. 2.2 Scanner Silent Failures
-4. 4.2 Retry Logging
-5. 9.3 Enhanced Logging Context
+### Group 3: Error Handling & Reliability (Done)
+- Add 30-second connection timeout to MultiTunnelManager.Add() (4.1)
+- Add configurable provider.shutdown_timeout (4.3)
+- Add handleError helper functions for CLI error handling (2.1)
 
-**Then (Group 2)**:
-1. 3.1 Duration Validations
-2. 3.2 Cross-Field Validations
-3. 3.3 Default Application
-4. 6.1 Announcement Interval
-5. 6.2 Default DNS Servers
-6. 6.3 Default RPC Credentials
+### Group 2: Configuration & Defaults (Done)
+- Add min/max bounds for duration fields (3.1)
+- Add cross-field validation (3.2)
+- Add applyConfigDefaults() (3.3)
+- Add provider.announcement_interval (6.1)
+- Add provider.dns_servers and client.dns_servers (6.2)
+- Generate random RPC password (6.3)
 
-**Then (Group 3)**:
-1. 2.1 Replace log.Fatalf
-2. 4.1 MultiTunnel Leak
-3. 4.3 Provider Shutdown Timeout
-
-**Then (Group 4-10)** as time permits.
+### Group 1: Quick Wins (Done)
+- Crypto key validation (2.4)
+- Payment hash error handling (2.3)
+- Scanner debug logging (2.2)
+- Retry logging (4.2)
+- Enhanced logging context (9.3)
