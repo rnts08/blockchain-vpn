@@ -28,9 +28,10 @@ var (
 			BorderForeground(lipgloss.Color("#dca747")).
 			Foreground(lipgloss.Color("#e0e0e0"))
 	focusedTabStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#dca747")).
-			Background(lipgloss.Color("#333333")).
-			Padding(0, 1)
+			Foreground(lipgloss.Color("#212121")).
+			Background(lipgloss.Color("#dca747")).
+			Padding(0, 1).
+			Bold(true)
 	tabStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#888888")).
 			Background(lipgloss.Color("#212121")).
@@ -38,10 +39,19 @@ var (
 	statusBarStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("#333333")).
 			Foreground(lipgloss.Color("#e0e0e0"))
+	fieldStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#e0e0e0")).
+			Background(lipgloss.Color("#333333"))
+	activeFieldStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#dca747")).
+				Background(lipgloss.Color("#444444")).
+				Bold(true)
 	boldStyle = lipgloss.NewStyle().Bold(true)
 )
 
 type MainModel struct {
+	Width         int
+	Height        int
 	CurrentTab    Tab
 	StatusModel   StatusModel
 	ProviderModel ProviderModel
@@ -49,10 +59,13 @@ type MainModel struct {
 	StatsModel    StatsModel
 	ConfigOpen    bool
 	HelpOpen      bool
+	Editing       bool
 }
 
 func NewMainModel() MainModel {
 	return MainModel{
+		Width:         80,
+		Height:        24,
 		CurrentTab:    TabStatus,
 		StatusModel:   NewStatusModel(),
 		ProviderModel: NewProviderModel(),
@@ -69,24 +82,56 @@ func (m MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "tab", "shift+tab", "right", "left":
-			m.CurrentTab = m.switchTab(msg.String())
+		case "tab", "right":
+			m.CurrentTab = (m.CurrentTab + 1) % 4
+			m.Editing = false
+		case "shift+tab", "left":
+			m.CurrentTab = (m.CurrentTab + 3) % 4
+			m.Editing = false
 		case "q", "Q":
 			return m, tea.Quit
 		case "c", "C":
 			m.ConfigOpen = !m.ConfigOpen
+			m.Editing = false
 		case "?":
 			m.HelpOpen = !m.HelpOpen
 		case "1":
 			m.CurrentTab = TabStatus
+			m.Editing = false
 		case "2":
 			m.CurrentTab = TabProvider
+			m.Editing = false
 		case "3":
 			m.CurrentTab = TabConnect
+			m.Editing = false
 		case "4":
 			m.CurrentTab = TabStats
+			m.Editing = false
+		case "enter":
+			if !m.Editing {
+				m.Editing = true
+				m.ProviderModel.ActiveField = 0
+			}
+		case "up", "k":
+			if m.Editing && m.CurrentTab == TabProvider {
+				m.ProviderModel.ActiveField = (m.ProviderModel.ActiveField - 1 + len(providerFields)) % len(providerFields)
+			}
+		case "down", "j":
+			if m.Editing && m.CurrentTab == TabProvider {
+				m.ProviderModel.ActiveField = (m.ProviderModel.ActiveField + 1) % len(providerFields)
+			}
+		case "esc":
+			if m.Editing {
+				m.Editing = false
+			} else if m.ConfigOpen {
+				m.ConfigOpen = false
+			} else if m.HelpOpen {
+				m.HelpOpen = false
+			}
 		}
 	case tea.WindowSizeMsg:
+		m.Width = msg.Width
+		m.Height = msg.Height
 		m.StatusModel.Width = msg.Width
 		m.StatusModel.Height = msg.Height
 		m.ProviderModel.Width = msg.Width
@@ -112,16 +157,6 @@ func (m MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m MainModel) switchTab(key string) Tab {
-	switch key {
-	case "tab", "right":
-		return (m.CurrentTab + 1) % 4
-	case "shift+tab", "left":
-		return (m.CurrentTab + 3) % 4
-	}
-	return m.CurrentTab
-}
-
 func (m MainModel) View() string {
 	if m.ConfigOpen {
 		return m.renderConfigView()
@@ -134,7 +169,8 @@ func (m MainModel) View() string {
 	content := m.renderContent()
 	footer := m.renderStatusBar()
 
-	return header + "\n" + content + "\n" + footer
+	lines := header + "\n" + content + "\n" + footer
+	return lines
 }
 
 func (m MainModel) renderTabs() string {
@@ -148,14 +184,25 @@ func (m MainModel) renderTabs() string {
 	var result string
 	for i, tab := range tabs {
 		if Tab(i) == m.CurrentTab {
-			result += focusedTabStyle.Render(" "+tab+" ") + " "
+			if m.Editing && Tab(i) == TabProvider {
+				result += focusedTabStyle.Render(" "+tab+"*") + " "
+			} else {
+				result += focusedTabStyle.Render(" "+tab+" ") + " "
+			}
 		} else {
 			result += tabStyle.Render(" "+tab+" ") + " "
 		}
 	}
 
 	helpText := tabStyle.Render(" [?]Help")
-	return primaryStyle.Render("┌─") + result + primaryStyle.Render("─┬") + helpText + primaryStyle.Render("─┐")
+	modeText := tabStyle.Render(" MODE: ")
+	if m.Editing {
+		modeText += warningStyle.Render("EDITING")
+	} else {
+		modeText += successStyle.Render("VIEW")
+	}
+
+	return primaryStyle.Render("┌─") + result + primaryStyle.Render("─┬") + helpText + primaryStyle.Render("─┤") + modeText + primaryStyle.Render("─┐")
 }
 
 func (m MainModel) renderContent() string {
@@ -164,6 +211,7 @@ func (m MainModel) renderContent() string {
 	case TabStatus:
 		content = m.StatusModel.View()
 	case TabProvider:
+		m.ProviderModel.Editing = m.Editing
 		content = m.ProviderModel.View()
 	case TabConnect:
 		content = m.ConnectModel.View()
@@ -171,30 +219,31 @@ func (m MainModel) renderContent() string {
 		content = m.StatsModel.View()
 	}
 
-	width := 80
-	if m.StatusModel.Width > 0 {
-		width = m.StatusModel.Width
+	lines := splitLines(content)
+	usableHeight := m.Height - 4
+	if len(lines) > usableHeight {
+		lines = lines[:usableHeight]
 	}
 
-	lines := ""
-	for i, line := range splitLines(content) {
-		padding := width - stringWidth(line)
+	var result string
+	for i, line := range lines {
+		padding := m.Width - stringWidth(line)
 		if padding < 0 {
 			padding = 0
 		}
 		if i == 0 {
-			lines += primaryStyle.Render("│ ") + line + spaces(padding) + primaryStyle.Render(" │")
+			result += primaryStyle.Render("│ ") + line + spaces(padding) + primaryStyle.Render(" │")
 		} else {
-			lines += "\n" + primaryStyle.Render("│ ") + line + spaces(padding) + primaryStyle.Render(" │")
+			result += "\n" + primaryStyle.Render("│ ") + line + spaces(padding) + primaryStyle.Render(" │")
 		}
 	}
 
-	emptyLines := 20 - len(splitLines(content))
+	emptyLines := usableHeight - len(lines)
 	for i := 0; i < emptyLines; i++ {
-		lines += "\n" + primaryStyle.Render("│ ") + spaces(width-2) + primaryStyle.Render(" │")
+		result += "\n" + primaryStyle.Render("│ ") + spaces(m.Width-2) + primaryStyle.Render(" │")
 	}
 
-	return lines
+	return result
 }
 
 func (m MainModel) renderStatusBar() string {
@@ -205,100 +254,86 @@ func (m MainModel) renderStatusBar() string {
 	balance := " BAL: 50K sats"
 	tun := " TUN: " + successStyle.Render("✓")
 
+	if m.Editing {
+		status = warningStyle.Render("◐") + " EDITING"
+	}
+
 	bar := statusBarStyle.Render(status + download + upload + rpc + balance + tun)
 	return primaryStyle.Render("└") + bar + primaryStyle.Render("─┘")
 }
 
 func (m MainModel) renderConfigView() string {
-	content := boxStyle.Render(`CONFIGURATION EDITOR
+	m.ProviderModel.Editing = true
+	m.ProviderModel.ActiveField = 0
+	content := m.ProviderModel.renderConfig()
 
-[RPC SETTINGS]
-  Host:           [localhost:25173                                  ]
-  User:           [rpcuser                                         ]
-  Password:       [••••••••••••                                    ]
-  Network:       [MAINNET ▼]  Token Symbol: [ORDEX]
+	lines := splitLines(content)
+	usableHeight := m.Height - 2
+	if len(lines) > usableHeight {
+		lines = lines[:usableHeight]
+	}
 
-[SECURITY]
-  Key Storage:   [FILE    ▼]
-  TLS Min Ver:   [1.3    ▼]  Profile: [MODERN ▼]
-  Metrics Token: [••••••••••••]
-
-[PROVIDER]
-  Interface:    [bcvpn0  ]  Listen Port: [51820]
-  TUN IP:       [10.0.0.1]  Subnet: [/24 ▼]
-
-[CLIENT]
-  Interface:    [bcvpn1  ]
-  Max Tunnels:  [1   ]  Kill Switch: [●]
-
-                        [ Cancel ]    [ Save & Apply ]`)
-
-	width := 80
-	lines := ""
-	for i, line := range splitLines(content) {
-		padding := width - stringWidth(line)
+	var result string
+	for i, line := range lines {
+		padding := m.Width - stringWidth(line)
 		if padding < 0 {
 			padding = 0
 		}
 		if i == 0 {
-			lines += primaryStyle.Render("┌─") + line + spaces(padding) + primaryStyle.Render("─┐")
-		} else if i == len(splitLines(content))-1 {
-			lines += "\n" + primaryStyle.Render("└─") + line + spaces(padding) + primaryStyle.Render("─┘")
+			result += primaryStyle.Render("┌─") + line + spaces(padding) + primaryStyle.Render("─┐")
+		} else if i == len(lines)-1 {
+			result += "\n" + primaryStyle.Render("└─") + line + spaces(padding) + primaryStyle.Render("─┘")
 		} else {
-			lines += "\n" + primaryStyle.Render("│ ") + line + spaces(padding) + primaryStyle.Render(" │")
+			result += "\n" + primaryStyle.Render("│ ") + line + spaces(padding) + primaryStyle.Render(" │")
 		}
 	}
-	return lines
+	return result
 }
 
 func (m MainModel) renderHelpView() string {
-	content := boxStyle.Render(`KEYBOARD SHORTCUTS
+	content := renderHelp()
 
-Navigation
-─────────────────────────────────────────────────────────────────────
-Tab/Shift+Tab    Next / Previous tab
-←/→              Navigate tabs
-j/k              Down / Up (in lists)
-Enter            Select / Confirm
-Esc              Back / Cancel
+	lines := splitLines(content)
+	usableHeight := m.Height - 2
+	if len(lines) > usableHeight {
+		lines = lines[:usableHeight]
+	}
 
-Actions
-─────────────────────────────────────────────────────────────────────
-C                   Open configuration editor
-R                   Refresh / Rescan
-S                   Save / Start
-T                   Test speed
-Q                   Quit
-?                   Show this help
-
-Provider Mode
-─────────────────────────────────────────────────────────────────────
-A                   Announce to blockchain
-U                   Update price
-
-Consumer Mode
-─────────────────────────────────────────────────────────────────────
-F                   Filter providers
-/                   Search
-C                   Connect to selected
-D                   Disconnect`)
-
-	width := 80
-	lines := ""
-	for i, line := range splitLines(content) {
-		padding := width - stringWidth(line)
+	var result string
+	for i, line := range lines {
+		padding := m.Width - stringWidth(line)
 		if padding < 0 {
 			padding = 0
 		}
 		if i == 0 {
-			lines += primaryStyle.Render("┌─") + line + spaces(padding) + primaryStyle.Render("─┐")
-		} else if i == len(splitLines(content))-1 {
-			lines += "\n" + primaryStyle.Render("└─") + line + spaces(padding) + primaryStyle.Render("─┘")
+			result += primaryStyle.Render("┌─") + line + spaces(padding) + primaryStyle.Render("─┐")
+		} else if i == len(lines)-1 {
+			result += "\n" + primaryStyle.Render("└─") + line + spaces(padding) + primaryStyle.Render("─┘")
 		} else {
-			lines += "\n" + primaryStyle.Render("│ ") + line + spaces(padding) + primaryStyle.Render(" │")
+			result += "\n" + primaryStyle.Render("│ ") + line + spaces(padding) + primaryStyle.Render(" │")
 		}
 	}
-	return lines
+	return result
+}
+
+func renderHelp() string {
+	return `KEYBOARD SHORTCUTS
+
+Navigation
+--------------------------------
+Tab/Shift+Tab    Next / Previous tab
+<-/->            Navigate tabs
+j/k              Navigate fields (in edit mode)
+Enter            Start editing / Select
+Esc               Stop editing / Back
+
+Actions
+--------------------------------
+C                   Open configuration editor
+R                   Refresh / Rescan
+S                   Save / Start
+Q                   Quit
+?                   Show this help`
 }
 
 func splitLines(s string) []string {
