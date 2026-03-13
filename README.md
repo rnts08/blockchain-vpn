@@ -139,19 +139,12 @@ Clients purchase access by sending a transaction to the provider's address (deri
 
 ### Installation
 
-Build the CLI and GUI for your current OS:
+Build the CLI, GUI, and TUI for your current OS:
 
 ```bash
 go build -o bcvpn ./cmd/bcvpn
 go build -o bcvpn-gui ./cmd/bcvpn-gui
-```
-
-Cross-compile the CLI for major platforms:
-
-```bash
-GOOS=linux GOARCH=amd64 go build -o bcvpn-linux-amd64 ./cmd/bcvpn
-GOOS=darwin GOARCH=amd64 go build -o bcvpn-darwin-amd64 ./cmd/bcvpn
-GOOS=windows GOARCH=amd64 go build -o bcvpn-windows-amd64.exe ./cmd/bcvpn
+go build -o bcvpn-tui ./cmd/bcvpn_tui
 ```
 
 Or use `Makefile` targets:
@@ -162,6 +155,7 @@ Available targets:
   all            - Build CLI (default)
   build          - Build CLI binary (bcvpn)
   build-gui      - Build GUI binary (bcvpn-gui)
+  build-tui      - Build TUI binary (bcvpn-tui)
   build-cli-all  - Build CLI for Linux, macOS, Windows
   test           - Run unit tests
   test-unit      - Run unit tests (explicit)

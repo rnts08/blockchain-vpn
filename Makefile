@@ -27,6 +27,9 @@ build-rpc-test:
 build-mock-rpc:
 	$(GO) build -o mock-rpc ./cmd/mock-rpc
 
+build-tui:
+	$(GO) build -o bcvpn-tui ./cmd/bcvpn_tui
+
 build-linux:
 	GOOS=linux GOARCH=amd64 $(GO) build -o $(BINARY_NAME)-linux-amd64 ./cmd/bcvpn
 
