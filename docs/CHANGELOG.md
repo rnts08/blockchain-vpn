@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.20] - 2026-03-14
+
+### Configuration
+- Added `bandwidth_auto_test` field for automatic speed testing
+- Added `nat_traversal_method` field for explicit NAT traversal control ("auto", "upnp", "natpmp", "none")
+
+### Documentation
+- Added PROVIDER.md - comprehensive provider guide with setup, configuration, and troubleshooting
+- Added config.provider.example.json - example provider configuration
+
+### Version Bump
+- Bumped patch version to 0.5.20.
+
 ## [0.5.19] - 2026-03-14
 
 ### Documentation
