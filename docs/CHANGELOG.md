@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.10] - 2026-03-14
+
+### Tunnel Session Management
+- Added Close() method to clientSession to properly shut down connections and release resources.
+- Ensured MultiTunnelManager CancelAll properly cancels and waits for tunnels (already existed).
+
+### Testing
+- Added unit tests for clientSession.Close and sessionStats concurrency.
+- Added tests for MultiTunnelManager CancelAll concurrency.
+
+### Version Bump
+- Bumped patch version to 0.5.10.
+
 ## [0.5.9] - 2026-03-12
 
 ### Platform-Specific Improvements

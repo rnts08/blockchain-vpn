@@ -66,6 +66,8 @@ type clientSession struct {
 	stats           *sessionStats
 	upstreamLimiter *rateEnforcer
 	downLimiter     *rateEnforcer
+	closed          chan struct{}
+	once            sync.Once
 }
 
 func newClientSession(conn net.Conn, bytesPerSecond int64) *clientSession {
@@ -74,7 +76,25 @@ func newClientSession(conn net.Conn, bytesPerSecond int64) *clientSession {
 		stats:           newSessionStats(),
 		upstreamLimiter: newRateEnforcer(bytesPerSecond),
 		downLimiter:     newRateEnforcer(bytesPerSecond),
+		closed:          make(chan struct{}),
+		once:            sync.Once{},
 	}
+}
+
+// Close terminates the client session and releases resources.
+func (cs *clientSession) Close() error {
+	var err error
+	cs.once.Do(func() {
+		if cs.conn != nil {
+			err = cs.conn.Close()
+		}
+	})
+	close(cs.closed)
+	return err
+}
+
+func (cs *clientSession) ClosedChan() <-chan struct{} {
+	return cs.closed
 }
 
 func parseBandwidthLimit(limit string) (int64, error) {

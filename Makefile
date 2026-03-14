@@ -1,5 +1,6 @@
 BINARY_NAME=bcvpn
 GUI_BINARY_NAME=bcvpn-gui
+TUI_BINARY_NAME=bcvpn-tui
 GO=go
 VERSION_FILE=VERSION
 VERSION=$(shell cat $(VERSION_FILE))
@@ -28,7 +29,7 @@ build-mock-rpc:
 	$(GO) build -o mock-rpc ./cmd/mock-rpc
 
 build-tui:
-	$(GO) build -o bcvpn-tui ./cmd/bcvpn_tui
+	$(GO) build -o $(TUI_BINARY_NAME) ./cmd/bcvpn_tui
 
 build-linux:
 	GOOS=linux GOARCH=amd64 $(GO) build -o $(BINARY_NAME)-linux-amd64 ./cmd/bcvpn
@@ -61,7 +62,8 @@ clean:
 	rm -f $(BINARY_NAME) $(GUI_BINARY_NAME) \
 		$(BINARY_NAME)-linux-amd64 \
 		$(BINARY_NAME)-darwin-amd64 \
-		$(BINARY_NAME)-windows-amd64.exe
+		$(BINARY_NAME)-windows-amd64.exe \
+		$(TUI_BINARY_NAME)
 
 ## Version and release management
 # Bump version in source files. Use VERSION_OVERRIDE=x.y.z to set explicitly, otherwise patch is incremented.
