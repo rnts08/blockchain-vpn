@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.17] - 2026-03-14
+
+### Functional Tests - Performance
+- Added throughput measurement calculation tests
+- Added zero duration edge case tests
+- Added large payload throughput tests
+- Added context timeout handling tests
+- Added calculation precision tests
+
+### Version Bump
+- Bumped patch version to 0.5.17.
+
 ## [0.5.16] - 2026-03-14
 
 ### Functional Tests - Tunnel Lifecycle
