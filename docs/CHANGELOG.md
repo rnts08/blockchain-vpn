@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.21] - 2026-03-14
+
+### Documentation
+- Added CONSUMER.md - comprehensive consumer guide with scan, connect, payment, and security features
+- Added PROVIDER.md reference in CONSUMER.md for provider details
+
+### Configuration
+- Added `favorite_providers` field to client config for saving trusted providers
+
+### Version Bump
+- Bumped patch version to 0.5.21.
+
 ## [0.5.20] - 2026-03-14
 
 ### Configuration

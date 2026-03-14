@@ -102,6 +102,9 @@ type ClientConfig struct {
 	MaxParallelTunnels         int      `json:"max_parallel_tunnels"`
 	EnableWebSocketFallback    bool     `json:"enable_websocket_fallback"`
 
+	// Favorite providers (pubkeys)
+	FavoriteProviders []string `json:"favorite_providers"` // List of trusted provider pubkeys (hex)
+
 	// Spending limits
 	SpendingLimitEnabled   bool   `json:"spending_limit_enabled"`    // Enable total spending limit
 	SpendingLimitSats      uint64 `json:"spending_limit_sats"`       // Total spending cap in satoshis
@@ -313,6 +316,8 @@ func GenerateDefaultConfig(path string) error {
 			VerifyThroughputAfterSetup: true,
 			MaxParallelTunnels:         1,
 			EnableWebSocketFallback:    false,
+			// Favorite providers (add pubkeys to save favorites)
+			FavoriteProviders: []string{},
 			// Spending limits
 			SpendingLimitEnabled:   false,
 			SpendingLimitSats:      0,

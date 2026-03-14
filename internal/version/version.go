@@ -4,7 +4,7 @@ import "fmt"
 
 var (
 	// Application semantic version.
-	Version = "0.5.20"
+	Version = "0.5.21"
 	// Optional build metadata (can be injected via -ldflags).
 	GitCommit = "dev"
 	BuildDate = "unknown"
