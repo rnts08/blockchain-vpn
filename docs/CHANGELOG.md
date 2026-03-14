@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.15] - 2026-03-14
+
+### Functional Tests - Billing System
+- Added time-based billing functional tests (TestFunctional_TimeBasedBilling)
+- Added time-based billing payment renewal tests
+- Added time-based billing threshold behavior tests
+- Added data-based billing functional tests (TestFunctional_DataBasedBilling)
+- Added data-based billing payment renewal tests
+- Added data-based billing tiers tests (1KB, 1MB, 10MB)
+- Added spending limit enforcement functional tests
+- Added session spending limit functional tests
+- Added spending warning threshold functional tests
+
+### Functional Tests - Multi-Tunnel
+- Added multi-tunnel concurrent connection tests (TestFunctional_MultiTunnelConcurrent_Connection)
+- Added multiple providers concurrent test (5 providers)
+- Added duplicate tunnel ID rejection test
+- Added specific tunnel cancel test
+- Added concurrent tunnel add test (10 concurrent)
+- Added list interfaces mapping test
+
+### Version Bump
+- Bumped patch version to 0.5.15.
+
 ## [0.5.10] - 2026-03-14
 
 ### Tunnel Session Management
