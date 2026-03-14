@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.16] - 2026-03-14
+
+### Functional Tests - Tunnel Lifecycle
+- Added IP pool allocation and release tests (IPv4)
+- Added IPv6 pool allocation tests
+- Added IP pool exhaustion handling tests
+- Added session stats tracking tests
+- Added concurrent session stats tests
+- Added rate enforcer throttling tests
+- Added rate enforcer edge case tests
+
+### Functional Tests - Access Control
+- Added allowlist-only access control tests
+- Added denylist-only access control tests
+- Added empty policy access control tests
+- Added combined allowlist/denylist tests
+
+### Unit Tests - Utilities
+- Added formatBytes unit tests
+- Added large number format tests
+
+### Version Bump
+- Bumped patch version to 0.5.16.
+
 ## [0.5.15] - 2026-03-14
 
 ### Functional Tests - Billing System

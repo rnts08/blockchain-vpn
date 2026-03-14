@@ -2,7 +2,7 @@
 
 BlockchainVPN is a peer-to-peer VPN marketplace built on top of the OrdexCoin blockchain. It allows anyone to become a VPN provider by announcing their service on-chain, and allows clients to discover, pay for, and connect to these services in a decentralized, permissionless manner.
 
-Current version: `0.5.15`
+Current version: `0.5.16`
 
 ## 0. Support the development
 
@@ -21,7 +21,7 @@ To help me test the current implementation with ordexcoin, you can help donate t
 
 All donations will be direclty used to develop and maintain the blockchain VPN package and system, as well as expand to support multiple chains and connection methods such as native Bitcoin and Socks5 proxy vpns.
 
-Donators and supports will be immortalized in the applications about and readme sections. 
+Donators and supports will be immortalized in the applications about and readme sections. You can also use the following link to support me with any token of your choice: https://nestex.one/pay/Black-Spirited-174344
 
 ## 1. Architecture Overview
 
