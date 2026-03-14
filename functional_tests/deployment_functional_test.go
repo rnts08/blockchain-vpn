@@ -1,6 +1,6 @@
 //go:build functional
 
-package main
+package functests
 
 import (
 	"os"
@@ -22,6 +22,7 @@ func TestFunctional_Deployment_BuildTargets(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command("sh", "-c", tt.command)
+			cmd.Dir = getProjectRoot()
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Errorf("Build failed: %v\nOutput: %s", err, output)
@@ -33,7 +34,9 @@ func TestFunctional_Deployment_BuildTargets(t *testing.T) {
 func TestFunctional_Deployment_BuildOutput(t *testing.T) {
 	t.Parallel()
 
-	output, err := exec.Command("go", "build", "-o", "/tmp/bcvpn-test", "./cmd/bcvpn").CombinedOutput()
+	cmd := exec.Command("go", "build", "-o", "/tmp/bcvpn-test", "./cmd/bcvpn")
+	cmd.Dir = getProjectRoot()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Build failed: %v\nOutput: %s", err, output)
 	}
@@ -59,6 +62,8 @@ func TestFunctional_Deployment_MakefileTargets(t *testing.T) {
 		t.Skip("make not available")
 	}
 
+	projectRoot := getProjectRoot()
+
 	tests := []struct {
 		name   string
 		target string
@@ -70,7 +75,7 @@ func TestFunctional_Deployment_MakefileTargets(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command("make", tt.target)
-			cmd.Dir, _ = filepath.Abs("/home/timh/Projects/blockchain-vpn")
+			cmd.Dir, _ = filepath.Abs(projectRoot)
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Logf("make %s output: %s", tt.target, output)
@@ -82,7 +87,9 @@ func TestFunctional_Deployment_MakefileTargets(t *testing.T) {
 func TestFunctional_Deployment_VersionFile(t *testing.T) {
 	t.Parallel()
 
-	content, err := os.ReadFile("/home/timh/Projects/blockchain-vpn/VERSION")
+	projectRoot := getProjectRoot()
+
+	content, err := os.ReadFile(filepath.Join(projectRoot, "VERSION"))
 	if err != nil {
 		t.Fatalf("Failed to read VERSION: %v", err)
 	}
@@ -97,7 +104,9 @@ func TestFunctional_Deployment_VersionFile(t *testing.T) {
 func TestFunctional_Deployment_GoMod(t *testing.T) {
 	t.Parallel()
 
-	content, err := os.ReadFile("/home/timh/Projects/blockchain-vpn/go.mod")
+	projectRoot := getProjectRoot()
+
+	content, err := os.ReadFile(filepath.Join(projectRoot, "go.mod"))
 	if err != nil {
 		t.Fatalf("Failed to read go.mod: %v", err)
 	}

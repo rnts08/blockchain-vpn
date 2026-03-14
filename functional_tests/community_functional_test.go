@@ -1,6 +1,6 @@
 //go:build functional
 
-package main
+package functests
 
 import (
 	"os"
@@ -12,15 +12,13 @@ import (
 func TestFunctional_Community_FeedbackChannels(t *testing.T) {
 	t.Parallel()
 
-	projectRoot := "/home/timh/Projects/blockchain-vpn"
-
 	feedbackFiles := []string{
 		"docs/CONTRIBUTING.md",
 		"docs/COMMUNITY.md",
 	}
 
 	for _, file := range feedbackFiles {
-		path := filepath.Join(projectRoot, file)
+		path := filepath.Join(getProjectRoot(), file)
 		content, err := os.ReadFile(path)
 		if err != nil {
 			t.Errorf("Feedback file %s not found: %v", file, err)
@@ -38,9 +36,7 @@ func TestFunctional_Community_FeedbackChannels(t *testing.T) {
 func TestFunctional_Community_DocumentationLinks(t *testing.T) {
 	t.Parallel()
 
-	projectRoot := "/home/timh/Projects/blockchain-vpn"
-
-	readmePath := filepath.Join(projectRoot, "README.md")
+	readmePath := filepath.Join(getProjectRoot(), "README.md")
 	content, err := os.ReadFile(readmePath)
 	if err != nil {
 		t.Fatalf("README.md not found: %v", err)
@@ -63,9 +59,7 @@ func TestFunctional_Community_DocumentationLinks(t *testing.T) {
 func TestFunctional_Community_Changelog(t *testing.T) {
 	t.Parallel()
 
-	projectRoot := "/home/timh/Projects/blockchain-vpn"
-
-	changelogPath := filepath.Join(projectRoot, "docs/CHANGELOG.md")
+	changelogPath := filepath.Join(getProjectRoot(), "docs/CHANGELOG.md")
 	content, err := os.ReadFile(changelogPath)
 	if err != nil {
 		t.Fatalf("CHANGELOG.md not found: %v", err)
@@ -81,8 +75,6 @@ func TestFunctional_Community_Changelog(t *testing.T) {
 func TestFunctional_Community_CodeOfConduct(t *testing.T) {
 	t.Parallel()
 
-	projectRoot := "/home/timh/Projects/blockchain-vpn"
-
 	cocPaths := []string{
 		"CODE_OF_CONDUCT.md",
 		"docs/CODE_OF_CONDUCT.md",
@@ -90,7 +82,7 @@ func TestFunctional_Community_CodeOfConduct(t *testing.T) {
 
 	found := false
 	for _, path := range cocPaths {
-		fullPath := filepath.Join(projectRoot, path)
+		fullPath := filepath.Join(getProjectRoot(), path)
 		if _, err := os.Stat(fullPath); err == nil {
 			found = true
 			break
@@ -107,9 +99,7 @@ func TestFunctional_Community_CodeOfConduct(t *testing.T) {
 func TestFunctional_Community_VersionTracking(t *testing.T) {
 	t.Parallel()
 
-	projectRoot := "/home/timh/Projects/blockchain-vpn"
-
-	versionPath := filepath.Join(projectRoot, "VERSION")
+	versionPath := filepath.Join(getProjectRoot(), "VERSION")
 	content, err := os.ReadFile(versionPath)
 	if err != nil {
 		t.Fatalf("VERSION file not found: %v", err)
@@ -126,8 +116,6 @@ func TestFunctional_Community_VersionTracking(t *testing.T) {
 func TestFunctional_Community_License(t *testing.T) {
 	t.Parallel()
 
-	projectRoot := "/home/timh/Projects/blockchain-vpn"
-
 	licensePaths := []string{
 		"LICENSE",
 		"LICENSE.md",
@@ -135,7 +123,7 @@ func TestFunctional_Community_License(t *testing.T) {
 
 	found := false
 	for _, path := range licensePaths {
-		fullPath := filepath.Join(projectRoot, path)
+		fullPath := filepath.Join(getProjectRoot(), path)
 		if _, err := os.Stat(fullPath); err == nil {
 			found = true
 			break

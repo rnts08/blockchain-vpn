@@ -1,6 +1,6 @@
 //go:build functional
 
-package main
+package functests
 
 import (
 	"os"
@@ -21,10 +21,12 @@ func TestFunctional_Contributor_DevEnvironment(t *testing.T) {
 		{"go mod tidy", "go mod tidy"},
 	}
 
+	projectRoot := getProjectRoot()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command("sh", "-c", tt.command)
-			cmd.Dir = "/home/timh/Projects/blockchain-vpn"
+			cmd.Dir = projectRoot
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Logf("Command output: %s", string(output))
@@ -45,10 +47,12 @@ func TestFunctional_Contributor_BuildTargets(t *testing.T) {
 		{"fmt", "make fmt"},
 	}
 
+	projectRoot := getProjectRoot()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command("sh", "-c", tt.target)
-			cmd.Dir = "/home/timh/Projects/blockchain-vpn"
+			cmd.Dir = projectRoot
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Logf("make %s output: %s", tt.target, string(output))
@@ -66,7 +70,7 @@ func TestFunctional_Contributor_DirectoryStructure(t *testing.T) {
 		"docs",
 	}
 
-	projectRoot := "/home/timh/Projects/blockchain-vpn"
+	projectRoot := getProjectRoot()
 
 	for _, dir := range requiredDirs {
 		path := filepath.Join(projectRoot, dir)
@@ -85,7 +89,7 @@ func TestFunctional_Contributor_DirectoryStructure(t *testing.T) {
 func TestFunctional_Contributor_GoMod(t *testing.T) {
 	t.Parallel()
 
-	projectRoot := "/home/timh/Projects/blockchain-vpn"
+	projectRoot := getProjectRoot()
 
 	content, err := os.ReadFile(filepath.Join(projectRoot, "go.mod"))
 	if err != nil {
@@ -108,7 +112,7 @@ func TestFunctional_Contributor_DocumentationExists(t *testing.T) {
 		"docs/CONTRIBUTING.md",
 	}
 
-	projectRoot := "/home/timh/Projects/blockchain-vpn"
+	projectRoot := getProjectRoot()
 
 	for _, doc := range requiredDocs {
 		path := filepath.Join(projectRoot, doc)
@@ -123,7 +127,7 @@ func TestFunctional_Contributor_DocumentationExists(t *testing.T) {
 func TestFunctional_Contributor_MakefileTargets(t *testing.T) {
 	t.Parallel()
 
-	projectRoot := "/home/timh/Projects/blockchain-vpn"
+	projectRoot := getProjectRoot()
 
 	content, err := os.ReadFile(filepath.Join(projectRoot, "Makefile"))
 	if err != nil {
