@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.18] - 2026-03-14
+
+### Documentation
+- Added BILLING.md - billing system architecture documentation
+- Added MULTI_TUNNEL.md - multi-tunnel concurrency documentation
+- Added PROVIDER_LIFECYCLE.md - provider lifecycle management documentation
+- Added ACCESS_CONTROL.md - access control mechanisms documentation
+
+### Version Bump
+- Bumped patch version to 0.5.18.
+
 ## [0.5.17] - 2026-03-14
 
 ### Functional Tests - Performance
