@@ -20,16 +20,14 @@ build:
 	$(GO) build -o $(BINARY_NAME) ./cmd/bcvpn
 
 build-gui:
-	$(GO) build -o $(GUI_BINARY_NAME) ./cmd/bcvpn-gui
-
-build-rpc-test:
-	$(GO) build -o rpc-test ./cmd/rpc-test
-
-build-mock-rpc:
-	$(GO) build -o mock-rpc ./cmd/mock-rpc
+	@echo "The GUI component has been moved to the attic and is no longer actively maintained."
+	@echo "Source code located at: _attic/bcvpn-gui"
+	@echo "This target is deprecated and will not build the binary."
 
 build-tui:
-	$(GO) build -o $(TUI_BINARY_NAME) ./cmd/bcvpn_tui
+	@echo "The TUI component has been moved to the attic and is no longer actively maintained."
+	@echo "Source code located at: _attic/bcvpn_tui"
+	@echo "This target is deprecated and will not build the binary."
 
 build-linux:
 	GOOS=linux GOARCH=amd64 $(GO) build -o $(BINARY_NAME)-linux-amd64 ./cmd/bcvpn
@@ -128,7 +126,7 @@ help:
 	@echo ""
 	@echo "  $(YELLOW)all$(RESET)            - Build CLI (default)"
 	@echo "  $(YELLOW)build$(RESET)          - Build CLI binary (bcvpn)"
-	@echo "  $(YELLOW)build-gui$(RESET)      - Build GUI binary (bcvpn-gui)"
+	@echo "  $(YELLOW)build-gui$(RESET)      - DEPRECATED: GUI in attic (_attic/bcvpn-gui)"
 	@echo "  $(YELLOW)build-cli-all$(RESET)  - Build CLI for Linux, macOS, Windows"
 	@echo "  $(YELLOW)test$(RESET)           - Run unit tests"
 	@echo "  $(YELLOW)test-unit$(RESET)      - Run unit tests (explicit)"

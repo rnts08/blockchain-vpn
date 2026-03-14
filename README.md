@@ -93,19 +93,6 @@ Clients purchase access by sending a transaction to the provider's address (deri
 3.  **Service Loop:**
     *   Listens on the specified TCP port for TLS connections.
     *   Runs a UDP echo server for latency checks.
-
-1.  **Initialization:**
-    *   Generates or loads a `secp256k1` private/public key (`btcec`).
-    *   Detects public IP address (automatically or via config).
-    *   Sets up a TUN interface and applies runtime networking configuration (platform-dependent backend).
-2.  **Announcement:**
-    *   Constructs a raw transaction using `ordexcoind` RPC.
-    *   Adds an output with `OP_RETURN` containing the service payload.
-    *   Signs and broadcasts the transaction.
-    *   Re-announces periodically (e.g., every 24 hours).
-3.  **Service Loop:**
-    *   Listens on the specified TCP port for TLS connections.
-    *   Runs a UDP echo server for latency checks.
     *   **Payment Monitor:** Scans the blockchain for transactions paying the service price to the provider's address containing a valid "PAY" `OP_RETURN` payload.
     *   **Access Control:** Verifies the client's TLS certificate against a list of authorized public keys derived from valid payments.
 
@@ -139,47 +126,19 @@ Clients purchase access by sending a transaction to the provider's address (deri
 
 ### Installation
 
-Build the CLI, GUI, and TUI for your current OS:
+Build the CLI:
 
 ```bash
 go build -o bcvpn ./cmd/bcvpn
-go build -o bcvpn-gui ./cmd/bcvpn-gui
-go build -o bcvpn-tui ./cmd/bcvpn_tui
 ```
 
 Or use `Makefile` targets:
 
 ```bash
-Available targets:
-
-  all            - Build CLI (default)
-  build          - Build CLI binary (bcvpn)
-  build-gui      - Build GUI binary (bcvpn-gui)
-  build-tui      - Build TUI binary (bcvpn-tui)
-  build-cli-all  - Build CLI for Linux, macOS, Windows
-  test           - Run unit tests
-  test-unit      - Run unit tests (explicit)
-  test-functional- Run functional tests (requires -tags)
-  fmt            - Format source code with gofmt
-  tidy           - Tidy Go dependencies
-  clean          - Remove build artifacts
-  bump-version   - Bump version in source files (increments patch)
-                       Use VERSION_OVERRIDE=x.y.z to set specific version
-  release        - Create a new release (bump, test, tag, push)
-                       Use VERSION_OVERRIDE=x.y.z to override version
-  help           - Show this help message
-
-Examples:
-  make build
-  make release
-  make release VERSION_OVERRIDE=1.2.3
+make build
 ```
 
-Notes:
-
-*   CLI cross-compilation is supported for Linux/macOS/Windows.
-*   GUI builds use Fyne/OpenGL dependencies and are best built natively on the target OS.
-*   Make release will only work if you're a maintainer of the project and have push access to the repo. 
+**Note:** GUI and TUI builds are no longer supported. They have been moved to the `_attic` folder for archival purposes. See `_attic/README.md` if you wish to experiment with them.
 
 ### Configuration
 
@@ -423,22 +382,6 @@ To adapt this for another chain:
 - [x] Scriptable CLI config subcommands (`config get/set/validate`).
 - [x] CLI config profile export/import (`config export`, `config import`).
 - [x] Runtime event timeline and diagnostics bundle export (`events`, `diagnostics`).
-- [x] Cross-platform GUI application (`cmd/bcvpn-gui`) using Fyne.
-- [x] GUI first-run setup wizard (config, RPC, key, privilege checks).
-- [x] GUI auto-elevation relaunch flow (Linux/macOS/Windows backends).
-- [x] GUI parity for provider controls and diagnostics (rebroadcast, price update, metrics snapshots, doctor checks, version visibility).
-- [x] GUI event timeline and one-click diagnostics/profile import-export actions.
-- [x] OS-agnostic application config directory for `config.json`, `provider.key`, and `history.json`.
-- [x] Port conflict detection for provider/client listeners.
-- [x] Built-in credit manager for tracking prepaid usage.
-- [x] TLS certificate pinning for critical RPC/tunnel endpoints.
-- [x] Payment amount verification for client and provider payment flows.
-- [x] GUI real-time wallet balance display.
-- [x] GUI metrics/health panels with reactive auto-refresh.
-- [x] GUI confirmation dialogs for high-impact actions (e.g. "Disconnect All" and closing active clients).
-- [x] GUI log panel enhancements (auto-scroll, search, export) for easier diagnostics.
-- [x] GUI progress indicators for long-running operations (scan/connect flows).
-- [x] GUI reactive status labels that accurately reflect backend connection/payment state.
 
 ### How It Works
 
@@ -470,8 +413,6 @@ The project is organized into the following directory structure. Please ensure y
 ├── cmd/
 │   ├── bcvpn/
 │   │   └── main.go // Main CLI application entrypoint
-│   └── bcvpn-gui/
-│       └── main.go // GUI application entrypoint
 ├── internal/
 │   ├── auth/ // Authorization management
 │   ├── blockchain/ // Blockchain interaction (payment, provider, scanner)
@@ -489,4 +430,4 @@ The project is organized into the following directory structure. Please ensure y
 
 ## License
 
-General open source, source available but the copyright holder keeps the right to commercial use. 
+General open source, source available but the copyright holder keeps the right to commercial use.
