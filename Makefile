@@ -127,6 +127,7 @@ help:
 	@echo "  $(YELLOW)all$(RESET)            - Build CLI (default)"
 	@echo "  $(YELLOW)build$(RESET)          - Build CLI binary (bcvpn)"
 	@echo "  $(YELLOW)build-gui$(RESET)      - DEPRECATED: GUI in attic (_attic/bcvpn-gui)"
+	@echo "  $(YELLOW)build-tui$(RESET)      - DEPRECATED: TUI in attic (_attic/bcvpn-tui)"
 	@echo "  $(YELLOW)build-cli-all$(RESET)  - Build CLI for Linux, macOS, Windows"
 	@echo "  $(YELLOW)test$(RESET)           - Run unit tests"
 	@echo "  $(YELLOW)test-unit$(RESET)      - Run unit tests (explicit)"
