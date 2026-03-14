@@ -1,0 +1,100 @@
+{
+  "rpc": {
+    "host": "localhost:25173",
+    "user": "rpcuser",
+    "pass": "YOUR_RPC_PASSWORD_HERE",
+    "enable_tls": false,
+    "network": "mainnet",
+    "token_symbol": "ORDEX",
+    "cookie_file": ""
+  },
+  "logging": {
+    "format": "text",
+    "level": "info"
+  },
+  "security": {
+    "key_storage_mode": "file",
+    "key_storage_service": "BlockchainVPN",
+    "revocation_cache_file": "",
+    "tls_min_version": "1.3",
+    "tls_profile": "modern",
+    "tls_custom_cipher_suites": [],
+    "metrics_auth_token": ""
+  },
+  "provider": {
+    "interface_name": "bcvpn0",
+    "listen_port": 51820,
+    "auto_rotate_port": false,
+    
+    "announce_ip": "",          // Empty = auto-detect via ipify.org, ifconfig.me, etc.
+    "country": "",             // Empty = auto-detect via geoip (ip-api.com)
+    
+    "price_sats_per_session": 1000,
+    "max_consumers": 5,         // 0 = unlimited
+    
+    "bandwidth_limit": "0",     // "0" or empty = auto-test, or "10mbit", "100mbit", "1gbit"
+    "bandwidth_auto_test": true, // Run speed test on startup
+    
+    "dns_servers": ["1.1.1.1", "8.8.8.8"],
+    
+    "enable_nat": true,
+    "enable_egress_nat": false,
+    "nat_outbound_interface": "",
+    "nat_traversal_method": "auto", // "auto", "upnp", "natpmp", "none"
+    
+    "isolation_mode": "none",   // "none" or "sandbox"
+    "allowlist_file": "",       // Path to file with allowed pubkeys (hex, one per line)
+    "denylist_file": "",        // Path to file with blocked pubkeys (hex, one per line)
+    
+    "cert_lifetime_hours": 720,
+    "cert_rotate_before_hours": 24,
+    
+    "health_check_enabled": true,
+    "health_check_interval": "30s",
+    "bandwidth_monitor_interval": "30s",
+    
+    "announcement_interval": "24h",
+    "announcement_fee_target_blocks": 6,
+    "announcement_fee_mode": "conservative", // "conservative" or "economical"
+    
+    "throughput_probe_port": 51821,  // Port for clients to test bandwidth
+    "websocket_fallback_port": 0,     // 0 = disabled
+    
+    "heartbeat_interval": "5m",
+    "payment_monitor_interval": "30s",
+    "shutdown_timeout": "10s",
+    
+    "tun_ip": "10.0.0.1",
+    "tun_subnet": "24",
+    
+    "metrics_listen_addr": "127.0.0.1:9090",
+    "max_session_duration_secs": 0,  // 0 = no limit
+    
+    // Flexible Pricing Configuration
+    // Choose ONE pricing method:
+    "pricing_method": "session",   // "session" (per connection), "time" (per time unit), "data" (per data unit)
+    "billing_time_unit": "minute", // "minute" or "hour" (used if pricing_method = "time")
+    "billing_data_unit": "GB"      // "MB" or "GB" (used if pricing_method = "data")
+  },
+  "client": {
+    "interface_name": "bcvpn1",
+    "tun_ip": "10.10.0.2",
+    "tun_subnet": "24",
+    "dns_servers": ["1.1.1.1", "8.8.8.8"],
+    "enable_kill_switch": false,
+    "metrics_listen_addr": "",
+    "strict_verification": false,
+    "verify_throughput_after_connect": true,
+    "max_parallel_tunnels": 1,
+    "enable_websocket_fallback": false,
+    "spending_limit_enabled": false,
+    "spending_limit_sats": 0,
+    "spending_warning_percent": 80,
+    "auto_disconnect_on_limit": false,
+    "max_session_spending_sats": 0,
+    "auto_recharge_enabled": false,
+    "auto_recharge_threshold": 500,
+    "auto_recharge_amount": 1000,
+    "auto_recharge_min_balance": 100
+  }
+}

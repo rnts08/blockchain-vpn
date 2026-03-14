@@ -117,6 +117,30 @@ func Validate(cfg *Config) error {
 		errs = append(errs, fmt.Errorf("provider.isolation_mode must be one of: none, sandbox"))
 	}
 
+	// Validate NAT traversal method
+	switch strings.ToLower(strings.TrimSpace(cfg.Provider.NATTraversalMethod)) {
+	case "", "auto", "upnp", "natpmp", "none":
+		// valid
+	default:
+		errs = append(errs, fmt.Errorf("provider.nat_traversal_method must be one of: auto, upnp, natpmp, none"))
+	}
+
+	// Validate billing time unit
+	switch strings.ToLower(strings.TrimSpace(cfg.Provider.BillingTimeUnit)) {
+	case "", "minute", "hour":
+		// valid
+	default:
+		errs = append(errs, fmt.Errorf("provider.billing_time_unit must be one of: minute, hour"))
+	}
+
+	// Validate billing data unit
+	switch strings.ToLower(strings.TrimSpace(cfg.Provider.BillingDataUnit)) {
+	case "", "mb", "gb":
+		// valid
+	default:
+		errs = append(errs, fmt.Errorf("provider.billing_data_unit must be one of: mb, gb"))
+	}
+
 	// Cross-field: cert lifetime vs rotation window
 	if cfg.Provider.CertLifetimeHours > 0 && cfg.Provider.CertRotateBeforeHours > 0 {
 		if cfg.Provider.CertRotateBeforeHours >= cfg.Provider.CertLifetimeHours {

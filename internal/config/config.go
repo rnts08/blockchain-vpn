@@ -56,12 +56,14 @@ type ProviderConfig struct {
 	Price                       uint64   `json:"price_sats_per_session"`
 	MaxConsumers                int      `json:"max_consumers"` // 0 means unlimited
 	PrivateKeyFile              string   `json:"private_key_file"`
-	BandwidthLimit              string   `json:"bandwidth_limit"` // e.g. "10mbit"
-	DNSServers                  []string `json:"dns_servers"`     // Custom DNS servers (e.g., ["1.1.1.1", "8.8.8.8"])
+	BandwidthLimit              string   `json:"bandwidth_limit"`     // e.g. "10mbit", "0" or empty = auto-test
+	BandwidthAutoTest           bool     `json:"bandwidth_auto_test"` // Run speed test to determine max bandwidth
+	DNSServers                  []string `json:"dns_servers"`         // Custom DNS servers (e.g., ["1.1.1.1", "8.8.8.8"])
 	EnableNAT                   bool     `json:"enable_nat"`
 	EnableEgressNAT             bool     `json:"enable_egress_nat"`
 	NATOutboundInterface        string   `json:"nat_outbound_interface"`
-	IsolationMode               string   `json:"isolation_mode"` // "none" or "sandbox"
+	NATTraversalMethod          string   `json:"nat_traversal_method"` // "auto", "upnp", "natpmp", "none"
+	IsolationMode               string   `json:"isolation_mode"`       // "none" or "sandbox"
 	AllowlistFile               string   `json:"allowlist_file"`
 	DenylistFile                string   `json:"denylist_file"`
 	CertLifetimeHours           int      `json:"cert_lifetime_hours"`
@@ -271,11 +273,13 @@ func GenerateDefaultConfig(path string) error {
 			Price:                       1000,
 			MaxConsumers:                0,
 			PrivateKeyFile:              keyPath,
-			BandwidthLimit:              "10mbit",
+			BandwidthLimit:              "0",  // "0" or empty = auto-test, or specify "10mbit", "100mbit"
+			BandwidthAutoTest:           true, // Run speed test on startup to determine max bandwidth
 			DNSServers:                  []string{"1.1.1.1", "8.8.8.8"},
 			EnableNAT:                   true,
 			EnableEgressNAT:             false,
 			NATOutboundInterface:        "",
+			NATTraversalMethod:          "auto", // "auto", "upnp", "natpmp", "none"
 			IsolationMode:               "none",
 			AllowlistFile:               "",
 			DenylistFile:                "",
