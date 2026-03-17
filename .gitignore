@@ -31,3 +31,7 @@ go.work.sum
 # .idea/
 .vscode/
 .opencode
+
+# Don't push _attic code
+_attic
+_attic/*
