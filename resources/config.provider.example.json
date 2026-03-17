@@ -5,7 +5,7 @@
     "pass": "YOUR_RPC_PASSWORD_HERE",
     "enable_tls": false,
     "network": "mainnet",
-    "token_symbol": "ORDEX",
+    "token_symbol": "OXC",
     "cookie_file": ""
   },
   "logging": {

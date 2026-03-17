@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,15 +120,47 @@ type ClientConfig struct {
 	AutoRechargeMinBalance uint64 `json:"auto_recharge_min_balance"` // Minimum balance to maintain
 }
 
-const AppConfigDirName = "BlockchainVPN"
+const AppConfigDirName = "blockchain-vpn"
+const LegacyAppConfigDirName = "BlockchainVPN"
 const DefaultConfigFileName = "config.json"
 const DefaultProviderKeyFileName = "provider.key"
+
+var configDirVariants = []string{
+	"blockchain-vpn",
+	"BlockchainVPN",
+	"blockchainvpn",
+	"BlockchainVPN ",
+}
 
 func AppConfigDir() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("could not resolve user config dir: %w", err)
 	}
+	dir := filepath.Join(base, AppConfigDirName)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("could not create app config dir: %w", err)
+	}
+	return dir, nil
+}
+
+func ResolveConfigDir() (string, error) {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("could not resolve user config dir: %w", err)
+	}
+
+	for _, variant := range configDirVariants {
+		dir := filepath.Join(base, variant)
+		info, err := os.Stat(dir)
+		if err == nil && info.IsDir() {
+			if variant != AppConfigDirName {
+				log.Printf("Note: Found config directory at legacy location %q, consider migrating to %q", dir, filepath.Join(base, AppConfigDirName))
+			}
+			return dir, nil
+		}
+	}
+
 	dir := filepath.Join(base, AppConfigDirName)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("could not create app config dir: %w", err)
@@ -143,8 +176,24 @@ func DefaultConfigPath() (string, error) {
 	return filepath.Join(dir, DefaultConfigFileName), nil
 }
 
+func ResolveConfigPath() (string, error) {
+	dir, err := ResolveConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, DefaultConfigFileName), nil
+}
+
 func DefaultProviderKeyPath() (string, error) {
 	dir, err := AppConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, DefaultProviderKeyFileName), nil
+}
+
+func ResolveDefaultProviderKeyPath() (string, error) {
+	dir, err := ResolveConfigDir()
 	if err != nil {
 		return "", err
 	}
@@ -253,82 +302,32 @@ func GenerateDefaultConfig(path string) error {
 			Pass:        rpcPass,
 			EnableTLS:   false,
 			Network:     "mainnet",
-			TokenSymbol: "ORDEX",
-			CookieFile:  "",
+			TokenSymbol: "OXC",
 		},
 		Logging: LoggingConfig{
 			Format: "text",
 			Level:  "info",
 		},
 		Security: SecurityConfig{
-			KeyStorageMode:      "file",
-			KeyStorageService:   "BlockchainVPN",
-			RevocationCacheFile: "",
-			TLSMinVersion:       "1.3",
-			TLSProfile:          "modern",
-			MetricsAuthToken:    "",
+			KeyStorageMode:    "file",
+			KeyStorageService: "BlockchainVPN",
+			TLSMinVersion:     "1.3",
+			TLSProfile:        "modern",
 		},
 		Provider: ProviderConfig{
-			InterfaceName:               "bcvpn0",
-			ListenPort:                  51820,
-			AnnounceIP:                  "", // Leave empty to auto-detect public IP
-			Country:                     "", // Leave empty to auto-detect country
-			Price:                       1000,
-			MaxConsumers:                0,
-			PrivateKeyFile:              keyPath,
-			BandwidthLimit:              "0",  // "0" or empty = auto-test, or specify "10mbit", "100mbit"
-			BandwidthAutoTest:           true, // Run speed test on startup to determine max bandwidth
-			DNSServers:                  []string{"1.1.1.1", "8.8.8.8"},
-			EnableNAT:                   true,
-			EnableEgressNAT:             false,
-			NATOutboundInterface:        "",
-			NATTraversalMethod:          "auto", // "auto", "upnp", "natpmp", "none"
-			IsolationMode:               "none",
-			AllowlistFile:               "",
-			DenylistFile:                "",
-			CertLifetimeHours:           720,
-			CertRotateBeforeHours:       24,
-			HealthCheckEnabled:          true,
-			HealthCheckInterval:         "30s",
-			BandwidthMonitorInterval:    "30s",
-			AnnouncementInterval:        "24h",
-			MaxSessionDurationSecs:      0,
-			AnnouncementFeeTargetBlocks: 6,
-			AnnouncementFeeMode:         "conservative",
-			ThroughputProbePort:         51821,
-			WebSocketFallbackPort:       0, // Disabled by default
-			HeartbeatInterval:           "5m",
-			PaymentMonitorInterval:      "30s",
-			ShutdownTimeout:             "10s",
-			// New flexible pricing fields (default to session-based)
-			PricingMethod:   "session",
-			BillingTimeUnit: "minute",
-			BillingDataUnit: "GB",
+			InterfaceName:       "bcvpn0",
+			ListenPort:          51820,
+			Price:               1000,
+			PrivateKeyFile:      keyPath,
+			EnableNAT:           true,
+			NATTraversalMethod:  "auto",
+			HealthCheckEnabled:  true,
+			ThroughputProbePort: 51821,
 		},
 		Client: ClientConfig{
-			InterfaceName:              "bcvpn1",
-			TunIP:                      "10.10.0.2",
-			TunSubnet:                  "24",
-			DNSServers:                 []string{"1.1.1.1", "8.8.8.8"},
-			EnableKillSwitch:           false,
-			MetricsListenAddr:          "",
-			StrictVerification:         false,
-			VerifyThroughputAfterSetup: true,
-			MaxParallelTunnels:         1,
-			EnableWebSocketFallback:    false,
-			// Favorite providers (add pubkeys to save favorites)
-			FavoriteProviders: []string{},
-			// Spending limits
-			SpendingLimitEnabled:   false,
-			SpendingLimitSats:      0,
-			SpendingWarningPercent: 80,
-			AutoDisconnectOnLimit:  false,
-			MaxSessionSpendingSats: 0,
-			// Auto-recharge
-			AutoRechargeEnabled:    false,
-			AutoRechargeThreshold:  500,
-			AutoRechargeAmount:     1000,
-			AutoRechargeMinBalance: 100,
+			InterfaceName: "bcvpn1",
+			TunIP:         "10.10.0.2",
+			TunSubnet:     "24",
 		},
 	}
 

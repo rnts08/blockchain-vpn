@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-03-17
+
+### Configuration
+- Changed default token symbol from ORDEX to OXC
+- Simplified default config to only include essential fields
+- Changed default config storage directory from ~/.config/BlockchainVPN/ to ~/.config/blockchain-vpn/
+- Added detection for legacy config directory variants on startup
+
+### CLI
+- Added nice-looking help flag (-h, --help) with usage information
+- Added privilege warning for provider mode when running without elevated privileges
+
+### Version Bump
+- Bumped minor version to 0.6.0.
+
 ## [0.5.21] - 2026-03-14
 
 ### Documentation

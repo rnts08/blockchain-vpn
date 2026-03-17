@@ -57,7 +57,7 @@ func handleErrorFn(fn func() error) {
 }
 
 func main() {
-	defaultConfigPath, err := config.DefaultConfigPath()
+	defaultConfigPath, err := config.ResolveConfigPath()
 	if err != nil {
 		log.Fatalf("Failed to resolve default config path: %v", err)
 	}
@@ -136,9 +136,9 @@ func main() {
 	eventsLimit := eventsCmd.Int("limit", 100, "Maximum number of recent events to show")
 	diagOut := diagCmd.String("out", "", "Output path for diagnostics JSON bundle (default: app config dir)")
 
-	if len(os.Args) < 2 {
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', 'doctor', 'events', 'diagnostics', 'version', or 'about' subcommands")
-		os.Exit(1)
+	if len(os.Args) < 2 || os.Args[1] == "-h" || os.Args[1] == "--help" {
+		printHelp()
+		os.Exit(0)
 	}
 
 	switch os.Args[1] {
@@ -147,6 +147,9 @@ func main() {
 		defer stop()
 
 		if err := tunnel.EnsureElevatedPrivileges(); err != nil {
+			log.Printf("WARNING: Provider mode requires automatic networking privileges.")
+			log.Printf("Provider functionality will be limited without elevated privileges.")
+			log.Printf("Hint: Run with sudo or as Administrator for full functionality.")
 			log.Fatalf("Provider mode requires automatic networking privileges: %v", err)
 		}
 
@@ -483,7 +486,8 @@ func main() {
 		log.Printf("Diagnostics bundle written.")
 
 	default:
-		fmt.Println("expected 'generate-config', 'start-provider', 'rebroadcast', 'update-price', 'rotate-provider-key', 'scan', 'history', 'status', 'config', 'doctor', 'events', 'diagnostics', 'version', or 'about' subcommands")
+		fmt.Printf("unknown command: %s\n\n", os.Args[1])
+		printHelp()
 		os.Exit(1)
 	}
 }
@@ -998,6 +1002,7 @@ func resolveConfigPath(defaultPath string) string {
 	if _, err := os.Stat(defaultPath); err == nil {
 		return defaultPath
 	}
+
 	if _, err := os.Stat("config.json"); err == nil {
 		if err := migrateLegacyLocalFiles(defaultPath); err != nil {
 			log.Printf("Warning: failed to migrate local config files to app config dir: %v", err)
@@ -1005,6 +1010,20 @@ func resolveConfigPath(defaultPath string) string {
 		}
 		return defaultPath
 	}
+
+	home, _ := os.UserHomeDir()
+	legacyPaths := []string{
+		filepath.Join(home, ".ordexcoin", "blockchain-vpn", "config.json"),
+		filepath.Join(home, ".ordexcoin", "BlockchainVPN", "config.json"),
+		filepath.Join(home, "BlockchainVPN", "config.json"),
+	}
+	for _, legacyPath := range legacyPaths {
+		if _, err := os.Stat(legacyPath); err == nil {
+			log.Printf("Note: Found config at legacy location %q, consider moving to %q", legacyPath, defaultPath)
+			return legacyPath
+		}
+	}
+
 	return defaultPath
 }
 
@@ -1016,7 +1035,7 @@ func migrateLegacyLocalFiles(defaultConfigPath string) error {
 		log.Printf("Warning: migrated config copied but old local file could not be removed: %v", err)
 	}
 
-	defaultKeyPath, err := config.DefaultProviderKeyPath()
+	defaultKeyPath, err := config.ResolveDefaultProviderKeyPath()
 	if err != nil {
 		return err
 	}
@@ -1948,4 +1967,40 @@ func formatFileStatus(st fileStatus) string {
 		return fmt.Sprintf("%s (missing)", st.Path)
 	}
 	return fmt.Sprintf("%s (size=%d, modified=%s)", st.Path, st.SizeBytes, st.ModTime)
+}
+
+func printHelp() {
+	fmt.Print(`BlockchainVPN - Decentralized VPN Marketplace
+
+Usage: bcvpn <command> [options]
+
+Commands:
+  scan                    Scan for available VPN providers
+  start-provider          Start as a VPN provider
+  rebroadcast             Re-broadcast your provider announcement
+  update-price            Update your provider price
+  rotate-provider-key     Rotate your provider private key
+  history                 Show payment history
+  status                  Show current status and configuration
+  config                  Manage configuration (get, set, validate, export, import)
+  doctor                  Run diagnostics and health checks
+  events                  Show recent runtime events
+  diagnostics             Export diagnostics bundle
+  version                 Show version information
+  about                   Show about and donation info
+  generate-config         Generate a default configuration file
+
+Options:
+  -h, --help              Show this help message
+
+Examples:
+  bcvpn scan                           # Find available VPN providers
+  bcvpn start-provider                 # Start as a VPN provider
+  bcvpn status                         # Check current status
+  bcvpn config get rpc.host            # Get specific config value
+  bcvpn config set rpc.host localhost  # Set specific config value
+  bcvpn doctor                         # Run diagnostics
+
+For more information, visit: https://github.com/anomalyco/blockchain-vpn
+`)
 }
