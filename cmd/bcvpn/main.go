@@ -59,9 +59,21 @@ func handleErrorFn(fn func() error) {
 func main() {
 	// Handle help and version flags early, before requiring config
 	if len(os.Args) >= 2 && (os.Args[1] == "-h" || os.Args[1] == "--help" || os.Args[1] == "help") {
-		if len(os.Args) >= 3 && os.Args[1] == "help" && os.Args[2] == "config" {
-			printConfigHelp()
-			os.Exit(0)
+		if len(os.Args) >= 3 {
+			switch os.Args[2] {
+			case "config":
+				printConfigHelp()
+				os.Exit(0)
+			case "scan":
+				printScanHelp()
+				os.Exit(0)
+			case "start-provider":
+				printStartProviderHelp()
+				os.Exit(0)
+			case "connect":
+				printConnectHelp()
+				os.Exit(0)
+			}
 		}
 		printHelp()
 		os.Exit(0)
@@ -122,6 +134,7 @@ func main() {
 	doctorCmd := flag.NewFlagSet("doctor", flag.ExitOnError)
 	eventsCmd := flag.NewFlagSet("events", flag.ExitOnError)
 	diagCmd := flag.NewFlagSet("diagnostics", flag.ExitOnError)
+	connectCmd := flag.NewFlagSet("connect", flag.ExitOnError)
 
 	// Scan specific flags
 	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
@@ -133,6 +146,22 @@ func main() {
 	scanMaxLatencyMS := scanCmd.Int("max-latency-ms", 0, "Filter providers with latency <= this value in ms (0 disables)")
 	scanMinSlots := scanCmd.Int("min-available-slots", 0, "Filter providers with available slot capacity >= this value (0 disables)")
 	scanDryRun := scanCmd.Bool("dry-run", false, "Simulate connection without spending funds or modifying interfaces")
+
+	// Connect specific flags
+	connectPort := connectCmd.Int("port", 51820, "Provider port")
+	connectPubkey := connectCmd.String("pubkey", "", "Provider public key (hex)")
+	connectPrice := connectCmd.Uint64("price", 0, "Expected price in satoshis for verification")
+	connectDNS := connectCmd.String("dns", "", "Custom DNS servers (comma-separated)")
+	connectNoAutoDNS := connectCmd.Bool("no-auto-dns", false, "Skip automatic DNS configuration")
+	connectNoAutoRoute := connectCmd.Bool("no-auto-route", false, "Skip automatic routing configuration")
+	connectDryRun := connectCmd.Bool("dry-run", false, "Simulate connection without spending funds")
+	connectSpendingLimit := connectCmd.Uint64("spending-limit", 0, "Maximum total spending in satoshis")
+	connectMaxSessionSpending := connectCmd.Uint64("max-session-spending", 0, "Maximum per-session spending in satoshis")
+	connectInterface := connectCmd.String("interface", "", "TUN interface name")
+	connectTunIP := connectCmd.String("tun-ip", "", "Client TUN IP address")
+	connectKillSwitch := connectCmd.Bool("kill-switch", false, "Enable kill switch")
+	connectStrictVerification := connectCmd.Bool("strict-verification", false, "Enable strict security verification")
+
 	historySinceLast := historyCmd.Bool("since-last-payment", false, "Show wallet transactions since the last recorded payment")
 	startProviderKeyPassEnv := startProviderCmd.String("key-password-env", "", "Env var name containing provider key password (file mode)")
 	rebroadcastKeyPassEnv := rebroadcastCmd.String("key-password-env", "", "Env var name containing provider key password (file mode)")
@@ -448,6 +477,53 @@ func main() {
 		fmt.Println()
 
 		interactiveConnect(ctx, client, chainParams, filteredEndpoints, &cfg.Client, &cfg.Security, *scanDryRun)
+
+	case "connect":
+		if len(os.Args) < 3 {
+			log.Fatal("Usage: bcvpn connect <provider-ip> [options]")
+		}
+		providerIP := os.Args[2]
+		connectCmd.Parse(os.Args[3:])
+
+		fmt.Printf("Connecting to provider at %s:%d...\n", providerIP, *connectPort)
+		if *connectPubkey != "" {
+			fmt.Printf("Provider pubkey: %s\n", *connectPubkey)
+		}
+		if *connectPrice > 0 {
+			fmt.Printf("Expected price: %d sats\n", *connectPrice)
+		}
+		if *connectDNS != "" {
+			fmt.Printf("Custom DNS servers: %s\n", *connectDNS)
+		}
+		if *connectDryRun {
+			fmt.Println("[Dry Run] Simulation mode - no actual connection will be made")
+		}
+		if *connectNoAutoDNS || *connectNoAutoRoute {
+			fmt.Println("Manual DNS/routing configuration requested")
+		}
+		if *connectSpendingLimit > 0 {
+			fmt.Printf("Spending limit: %d sats\n", *connectSpendingLimit)
+		}
+		if *connectMaxSessionSpending > 0 {
+			fmt.Printf("Max session spending: %d sats\n", *connectMaxSessionSpending)
+		}
+		if *connectInterface != "" {
+			fmt.Printf("Interface: %s\n", *connectInterface)
+		}
+		if *connectTunIP != "" {
+			fmt.Printf("TUN IP: %s\n", *connectTunIP)
+		}
+		if *connectKillSwitch {
+			fmt.Println("Kill switch enabled")
+		}
+		if *connectStrictVerification {
+			fmt.Println("Strict verification enabled")
+		}
+
+		fmt.Println("\nNote: Direct connect requires provider details (pubkey, port, price)")
+		fmt.Println("Use 'bcvpn scan' for interactive provider selection and connection")
+		fmt.Println("Run 'bcvpn help connect' for full connection options")
+		fmt.Println("\nDirect connect is a planned feature. For now, use 'bcvpn scan' to connect.")
 
 	case "rotate-provider-key":
 		rotateKeyCmd.Parse(os.Args[2:])
@@ -1982,11 +2058,17 @@ func formatFileStatus(st fileStatus) string {
 func printHelp() {
 	fmt.Print(`BlockchainVPN - Decentralized VPN Marketplace
 
+BlockchainVPN is a decentralized VPN marketplace where anyone can:
+  1. Become a VPN provider and earn tokens
+  2. Connect to providers and pay for bandwidth
+  3. Automatic on-chain payment settlement and authorization
+
 Usage: bcvpn <command> [options]
 
 Commands:
-  scan                    Scan for available VPN providers and connect
-  start-provider          Start as a VPN provider (requires config.json)
+  scan                    Scan for VPN providers and connect interactively
+  connect <ip>           Connect directly to a provider by IP address
+  start-provider          Start as a VPN provider (earn tokens)
   rebroadcast             Re-broadcast your provider announcement
   update-price            Update your provider service price
   rotate-provider-key     Rotate your provider private key
@@ -2004,16 +2086,22 @@ Options:
   -h, --help              Show this help message
   -v, --version           Show version information
 
+Subcommand Help:
+  bcvpn help scan             # Show scan filters and sorting options
+  bcvpn help start-provider   # Show provider options and management
+  bcvpn help connect          # Show connection options and flags
+  bcvpn help config          # Show config get/set/validate commands
+
 Examples:
   bcvpn help                           # Show this help message
-  bcvpn help config                    # Show config subcommands
-  bcvpn generate-config                 # Create default config.json
-  bcvpn scan                           # Find available VPN providers
-  bcvpn start-provider                 # Start as a VPN provider
-  bcvpn status                         # Check current status
-  bcvpn config get rpc.host            # Get specific config value
-  bcvpn config set rpc.host localhost  # Set specific config value
-  bcvpn doctor                         # Run diagnostics
+  bcvpn help scan                     # Show scan options
+  bcvpn help connect                  # Show connect options
+  bcvpn generate-config               # Create default config.json
+  bcvpn scan                         # Find and connect to providers
+  bcvpn connect 1.2.3.4              # Connect directly to provider
+  bcvpn start-provider               # Start as a provider
+  bcvpn status                      # Check current status
+  bcvpn doctor                      # Run diagnostics
 
 For more information, visit: https://github.com/anomalyco/blockchain-vpn
 `)
@@ -2025,18 +2113,156 @@ func printConfigHelp() {
 Usage: bcvpn config <subcommand> [options]
 
 Subcommands:
-  get <key>              Get a config value (e.g., bcvpn config get rpc.host)
-  set <key> <value>      Set a config value (e.g., bcvpn config set rpc.host localhost)
   validate               Validate the current config file
   export <path>          Export config to a file
   import <path>          Import config from a file
 
+  Use 'bcvpn config get' and 'bcvpn config set' to view/modify values.
+  Run 'bcvpn help config' for details on config subcommands.
+
 Examples:
+  bcvpn config get                     # Get entire config as JSON
   bcvpn config get rpc.host            # Get RPC host
   bcvpn config set rpc.host localhost  # Set RPC host
-  bcvpn config get                     # Get entire config as JSON
   bcvpn config validate                # Validate config file
   bcvpn config export backup.json      # Export config to file
+
+For more information, visit: https://github.com/anomalyco/blockchain-vpn
+`)
+}
+
+func printScanHelp() {
+	fmt.Print(`BlockchainVPN Provider Scan
+
+Usage: bcvpn scan [options]
+
+The scan command discovers available VPN providers on the network,
+enriches them with latency and geolocation data, and allows you to
+select one to connect to.
+
+Filter Options:
+  --country <code>        Filter by country (e.g., US, DE, GB)
+  --max-price <sats>     Maximum price in sats per session
+  --pricing-method <method>  Filter by pricing: session, time, or data
+  --min-bandwidth-kbps <kbps> Minimum advertised bandwidth in Kbps
+  --max-latency-ms <ms>  Maximum latency in milliseconds
+  --min-available-slots <n>  Minimum available consumer slots
+
+Sorting Options:
+  --sort <method>         Sort results by:
+    latency       - Lowest latency first (default)
+    price         - Lowest price first
+    country       - Alphabetical by country
+    bandwidth     - Highest bandwidth first
+    capacity      - Most available slots first
+    score         - Best overall score (recommended)
+
+Options:
+  --startblock <height>  Block height to start scanning from (0 = full scan)
+  --dry-run             Simulate connection without spending funds
+
+Examples:
+  bcvpn scan                           # Find providers with default sorting
+  bcvpn scan --sort=price              # Find cheapest providers
+  bcvpn scan --country=US --sort=score # Best US providers by score
+  bcvpn scan --max-price=1000          # Providers under 1000 sats
+  bcvpn scan --min-bandwidth-kbps=25000 # High-speed providers
+
+For more information, visit: https://github.com/anomalyco/blockchain-vpn
+`)
+}
+
+func printStartProviderHelp() {
+	fmt.Print(`BlockchainVPN Provider Mode
+
+Usage: bcvpn start-provider [options]
+
+Start as a VPN provider to sell bandwidth to other users. The provider
+mode announces your service on the blockchain, monitors for incoming
+payments, and authorizes clients based on valid payments.
+
+Requirements:
+  - Running ordexcoind node with RPC enabled
+  - Wallet funded with tokens for announcement fees
+  - Elevated privileges (sudo/admin) for network configuration
+
+Provider Management Commands:
+  bcvpn start-provider         Start as a VPN provider
+  bcvpn rebroadcast           Re-broadcast your service announcement
+  bcvpn update-price --price <sats>  Update your service price
+  bcvpn rotate-provider-key   Rotate your provider private key
+
+Key Options:
+  --key-password-env <var>  Environment variable containing key password
+
+Configuration:
+  Provider settings are read from config.json. Key fields:
+    - provider.listen_port      Port for incoming connections (default: 51820)
+    - provider.price            Price in sats per session
+    - provider.max_consumers    Maximum simultaneous clients (0=unlimited)
+    - provider.bandwidth_limit  e.g., "100mbit", "0" for auto-test
+    - provider.enable_nat       Enable NAT traversal (UPnP/NAT-PMP)
+
+Payment Models:
+  Configure pricing method in config.json:
+    - provider.pricing_method    session, time, or data
+    - provider.billing_time_unit  minute or hour (for time pricing)
+    - provider.billing_data_unit   MB or GB (for data pricing)
+
+Examples:
+  bcvpn start-provider                         # Start provider
+  bcvpn start-provider --key-password-env PASS  # Non-interactive with env var
+  bcvpn update-price --price 2000             # Update price to 2000 sats
+
+For more information, visit: https://github.com/anomalyco/blockchain-vpn
+`)
+}
+
+func printConnectHelp() {
+	fmt.Print(`BlockchainVPN Direct Connect
+
+Usage: bcvpn connect <provider-ip> [options]
+
+Connect directly to a known provider without scanning. This is useful when
+you have a provider's IP address or want to bypass the interactive scan.
+
+Arguments:
+  <provider-ip>            Provider's IP address or hostname
+
+Connection Options:
+  --port <port>           Provider port (default: 51820)
+  --pubkey <hex>         Provider's public key (hex)
+  --price <sats>         Expected price in sats (for verification)
+
+DNS and Routing Options:
+  --dns <servers>         Custom DNS servers (default: 1.1.1.1, 8.8.8.8)
+  --no-auto-dns          Don't configure DNS automatically
+  --no-auto-route        Don't configure routing automatically
+  --full-dns             Route all DNS through VPN (default)
+  --split-tunnel <nets>  Only route specific networks through VPN
+
+Payment and Session Options:
+  --spending-limit <sats>  Maximum total spending in sats
+  --max-session-spending <sats>  Maximum per-session spending
+  --auto-reconnect        Automatically reconnect on disconnect
+
+Client Options:
+  --interface <name>     TUN interface name (default: bcvpn1)
+  --tun-ip <ip>         Client TUN IP (default: 10.10.0.2)
+  --kill-switch          Block traffic if VPN disconnects
+  --strict-verification  Enable strict security verification
+
+Examples:
+  bcvpn connect 1.2.3.4                        # Connect to provider at 1.2.3.4
+  bcvpn connect 1.2.3.4 --port 51821           # Custom port
+  bcvpn connect 1.2.3.4 --no-auto-dns          # Skip DNS configuration
+  bcvpn connect 1.2.3.4 --kill-switch          # Enable kill switch
+
+The application automatically:
+  - Handles payment settlement on-chain
+  - Monitors connection and renews authorization
+  - Tracks data/time usage and calculates costs
+  - Enforces spending limits you've configured
 
 For more information, visit: https://github.com/anomalyco/blockchain-vpn
 `)

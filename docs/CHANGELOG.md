@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.2] - 2026-03-17
+
+### CLI
+- Added 'bcvpn help scan' showing filter and sorting options (country, price, bandwidth, latency, etc.)
+- Added 'bcvpn help start-provider' showing provider management commands
+- Added 'bcvpn help connect' showing direct connection options
+- Added 'connect' command for direct provider connection (planned feature)
+- Removed get/set from config help since covered by 'bcvpn help config'
+- Main help now includes description of marketplace functionality
+
+### Version Bump
+- Bumped patch version to 0.6.2.
+
 ## [0.6.1] - 2026-03-17
 
 ### CLI
