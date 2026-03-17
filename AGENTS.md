@@ -173,6 +173,43 @@ staticcheck ./...
 
 ---
 
+## Version Management
+
+### Version Bumping Rules
+- **Patch version** (e.g., 0.5.21 → 0.5.22): Use for bug fixes and small changes - bump automatically after each feature or fix
+- **Minor version** (e.g., 0.5.21 → 0.6.0): Use only when explicitly told to do so
+- **Major version** (e.g., 0.5.21 → 1.0.0): Use only when explicitly told to do so
+
+### Version Update Procedure
+When completing a feature or fix that should be committed:
+
+1. **Update version in `internal/version/version.go`**
+2. **Update README.md** - find and update the version number (search for `Current version:`)
+3. **Update CHANGELOG.md** - add a new section at the top with the new version and date
+4. **Run `make fmt` and `make test`** to ensure code is formatted and tests pass
+5. **Commit the changes** with a descriptive commit message
+
+### Changelog Format
+```markdown
+## [0.5.22] - 2026-03-17
+
+### Feature Name
+- Description of the change
+
+### Bug Fix
+- Description of the fix
+
+### Version Bump
+- Bumped patch version to 0.5.22.
+```
+
+### Commit Message Format
+- Use imperative mood: "Add feature" not "Added feature"
+- Start with subsystem: "config:", "fix:", "docs:", "test:"
+- Example: `config: add new option to config`
+
+---
+
 ## Common Tasks
 
 **Add a new package:**
