@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1] - 2026-03-17
+
+### CLI
+- Help and version flags now work without requiring config.json
+- Added 'bcvpn help config' subcommand for config management help
+- Main help now shows 'see bcvpn help config' for config command
+
+### Version Bump
+- Bumped patch version to 0.6.1.
+
 ## [0.6.0] - 2026-03-17
 
 ### Configuration

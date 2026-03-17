@@ -183,11 +183,12 @@ staticcheck ./...
 ### Version Update Procedure
 When completing a feature or fix that should be committed:
 
-1. **Update version in `internal/version/version.go`**
-2. **Update README.md** - find and update the version number (search for `Current version:`)
-3. **Update CHANGELOG.md** - add a new section at the top with the new version and date
-4. **Run `make fmt` and `make test`** to ensure code is formatted and tests pass
-5. **Commit the changes** with a descriptive commit message
+1. **Update version in `VERSION`** (simple version file)
+2. **Update version in `internal/version/version.go`**
+3. **Update README.md** - find and update the version number (search for `Current version:`)
+4. **Update CHANGELOG.md** - add a new section at the top with the new version and date
+5. **Run `make fmt` and `make test`** to ensure code is formatted and tests pass
+6. **Commit the changes** with a descriptive commit message
 
 ### Changelog Format
 ```markdown
