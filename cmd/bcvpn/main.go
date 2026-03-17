@@ -59,6 +59,10 @@ func handleErrorFn(fn func() error) {
 func main() {
 	// Handle help and version flags early, before requiring config
 	if len(os.Args) >= 2 && (os.Args[1] == "-h" || os.Args[1] == "--help" || os.Args[1] == "help") {
+		if len(os.Args) >= 3 && os.Args[1] == "help" && os.Args[2] == "config" {
+			printConfigHelp()
+			os.Exit(0)
+		}
 		printHelp()
 		os.Exit(0)
 	}
@@ -1988,7 +1992,7 @@ Commands:
   rotate-provider-key     Rotate your provider private key
   history                 Show payment transaction history
   status                  Show current status and configuration
-  config                  Manage configuration (get, set, validate, export, import)
+  config                  Manage configuration (see 'bcvpn help config')
   doctor                  Run diagnostics and health checks
   events                  Show recent runtime events
   diagnostics             Export diagnostics bundle for troubleshooting
@@ -2002,6 +2006,7 @@ Options:
 
 Examples:
   bcvpn help                           # Show this help message
+  bcvpn help config                    # Show config subcommands
   bcvpn generate-config                 # Create default config.json
   bcvpn scan                           # Find available VPN providers
   bcvpn start-provider                 # Start as a VPN provider
@@ -2009,6 +2014,29 @@ Examples:
   bcvpn config get rpc.host            # Get specific config value
   bcvpn config set rpc.host localhost  # Set specific config value
   bcvpn doctor                         # Run diagnostics
+
+For more information, visit: https://github.com/anomalyco/blockchain-vpn
+`)
+}
+
+func printConfigHelp() {
+	fmt.Print(`BlockchainVPN Config Management
+
+Usage: bcvpn config <subcommand> [options]
+
+Subcommands:
+  get <key>              Get a config value (e.g., bcvpn config get rpc.host)
+  set <key> <value>      Set a config value (e.g., bcvpn config set rpc.host localhost)
+  validate               Validate the current config file
+  export <path>          Export config to a file
+  import <path>          Import config from a file
+
+Examples:
+  bcvpn config get rpc.host            # Get RPC host
+  bcvpn config set rpc.host localhost  # Set RPC host
+  bcvpn config get                     # Get entire config as JSON
+  bcvpn config validate                # Validate config file
+  bcvpn config export backup.json      # Export config to file
 
 For more information, visit: https://github.com/anomalyco/blockchain-vpn
 `)
