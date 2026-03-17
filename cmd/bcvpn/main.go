@@ -57,6 +57,17 @@ func handleErrorFn(fn func() error) {
 }
 
 func main() {
+	// Handle help and version flags early, before requiring config
+	if len(os.Args) >= 2 && (os.Args[1] == "-h" || os.Args[1] == "--help" || os.Args[1] == "help") {
+		printHelp()
+		os.Exit(0)
+	}
+
+	if len(os.Args) >= 2 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Println(version.String())
+		os.Exit(0)
+	}
+
 	defaultConfigPath, err := config.ResolveConfigPath()
 	if err != nil {
 		log.Fatalf("Failed to resolve default config path: %v", err)
@@ -135,11 +146,6 @@ func main() {
 	eventsJSON := eventsCmd.Bool("json", false, "Output events in JSON format")
 	eventsLimit := eventsCmd.Int("limit", 100, "Maximum number of recent events to show")
 	diagOut := diagCmd.String("out", "", "Output path for diagnostics JSON bundle (default: app config dir)")
-
-	if len(os.Args) < 2 || os.Args[1] == "-h" || os.Args[1] == "--help" {
-		printHelp()
-		os.Exit(0)
-	}
 
 	switch os.Args[1] {
 	case "start-provider":
@@ -1975,25 +1981,28 @@ func printHelp() {
 Usage: bcvpn <command> [options]
 
 Commands:
-  scan                    Scan for available VPN providers
-  start-provider          Start as a VPN provider
+  scan                    Scan for available VPN providers and connect
+  start-provider          Start as a VPN provider (requires config.json)
   rebroadcast             Re-broadcast your provider announcement
-  update-price            Update your provider price
+  update-price            Update your provider service price
   rotate-provider-key     Rotate your provider private key
-  history                 Show payment history
+  history                 Show payment transaction history
   status                  Show current status and configuration
   config                  Manage configuration (get, set, validate, export, import)
   doctor                  Run diagnostics and health checks
   events                  Show recent runtime events
-  diagnostics             Export diagnostics bundle
+  diagnostics             Export diagnostics bundle for troubleshooting
   version                 Show version information
-  about                   Show about and donation info
+  about                   Show about info and donation addresses
   generate-config         Generate a default configuration file
 
 Options:
   -h, --help              Show this help message
+  -v, --version           Show version information
 
 Examples:
+  bcvpn help                           # Show this help message
+  bcvpn generate-config                 # Create default config.json
   bcvpn scan                           # Find available VPN providers
   bcvpn start-provider                 # Start as a VPN provider
   bcvpn status                         # Check current status
