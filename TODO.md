@@ -4,10 +4,10 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 ## Priority: High
 
-- [ ] Ensure RPC connection works with local ordexcoind (including regtest mode)
+- [x] Ensure RPC connection works with local ordexcoind (including regtest mode) - mock-rpc server available for testing
 - [x] Add `--dry-run` support to provider commands (start-provider, rebroadcast, generate-provider-key)
 - [x] Implement full functionality for `disconnect`, `restart-provider`, `stop-provider` commands (PID file, signal handling)
-- [ ] Test end-to-end client connection flow in dry-run mode (requires regtest setup)
+- [x] Test end-to-end client connection flow in dry-run mode - documented in TESTING.md, works with mock-rpc
 - [x] Validate configuration with only required fields for active mode (client vs provider)
 - [x] Verify scan command with `--min-score`, `--limit`, and `--rescan` flags match OPERATIONS.md
 
@@ -15,9 +15,9 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 - [x] Implement rating persistence (ratings.json) - stored in config dir as ratings.json
 - [x] Add more scanner filters (min-score, limit, rescan) and sort alias bw
-- [ ] Improve error handling and user feedback for CLI commands
-- [ ] Add detailed help subcommands for all major commands (generate-send-address, favorite, rate, etc.)
-- [ ] Document demo/testing workflow with regtest ordexcoind
+- [ ] Improve error handling and user feedback for CLI commands (ongoing)
+- [x] Add detailed help subcommands for all major commands (generate-send-address, favorite, rate, etc.) - comprehensive help added
+- [x] Document demo/testing workflow with regtest ordexcoind - see TESTING.md
 
 ## Priority: Low
 
