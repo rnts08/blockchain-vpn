@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.4] - 2026-03-18
+
+### CLI
+- Added detailed help functions for all commands (`bcvpn help <command>`)
+- Help system now covers all subcommands with consistent formatting
+- Improved command documentation and examples
+
+### Infrastructure
+- Added comprehensive test coverage for configuration validation
+- Code formatting and linting improvements
+
+### Version Bump
+- Bumped patch version to 0.6.4.
+
 ## [0.6.3] - 2026-03-18
 
 ### CLI

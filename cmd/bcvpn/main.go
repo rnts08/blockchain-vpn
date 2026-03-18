@@ -80,6 +80,63 @@ func main() {
 			case "connect":
 				printConnectHelp()
 				os.Exit(0)
+			case "generate-config":
+				printGenerateConfigHelp()
+				os.Exit(0)
+			case "version":
+				printVersionHelp()
+				os.Exit(0)
+			case "about":
+				printAboutHelp()
+				os.Exit(0)
+			case "status":
+				printStatusHelp()
+				os.Exit(0)
+			case "events":
+				printEventsHelp()
+				os.Exit(0)
+			case "doctor":
+				printDoctorHelp()
+				os.Exit(0)
+			case "diagnostics":
+				printDiagnosticsHelp()
+				os.Exit(0)
+			case "history":
+				printHistoryHelp()
+				os.Exit(0)
+			case "generate-send-address":
+				printGenerateSendAddressHelp()
+				os.Exit(0)
+			case "generate-receive-address":
+				printGenerateReceiveAddressHelp()
+				os.Exit(0)
+			case "generate-tls-keypair":
+				printGenerateTLSKeypairHelp()
+				os.Exit(0)
+			case "favorite":
+				printFavoriteHelp()
+				os.Exit(0)
+			case "rate":
+				printRateHelp()
+				os.Exit(0)
+			case "generate-provider-key":
+				printGenerateProviderKeyHelp()
+				os.Exit(0)
+			case "disconnect":
+				printDisconnectHelp()
+				os.Exit(0)
+			case "stop-provider":
+				printStopProviderHelp()
+				os.Exit(0)
+			case "restart-provider":
+				printRestartProviderHelp()
+				os.Exit(0)
+			case "rotate-provider-key":
+				printRotateProviderKeyHelp()
+				os.Exit(0)
+			case "rebroadcast":
+				printRebroadcastHelp()
+				os.Exit(0)
 			}
 		}
 		printHelp()
@@ -2700,5 +2757,340 @@ The application automatically:
   - Enforces spending limits you've configured
 
 For more information, visit: https://github.com/anomalyco/blockchain-vpn
+`)
+}
+
+// Detailed help functions for commands
+
+func printGenerateConfigHelp() {
+	fmt.Print(`BlockchainVPN Generate Config
+
+Usage: bcvpn generate-config
+
+Generate a default configuration file at the standard location. The config
+includes sensible defaults for both client and provider modes. You can edit
+the file after generation.
+
+Options:
+  None
+
+Example:
+  bcvpn generate-config
+`)
+}
+
+func printVersionHelp() {
+	fmt.Print(`BlockchainVPN Version
+
+Usage: bcvpn version [--json]
+
+Show version information.
+
+Options:
+  --json          Output in JSON format (version, commit, build date)
+
+Example:
+  bcvpn version
+`)
+}
+
+func printAboutHelp() {
+	fmt.Print(`BlockchainVPN About
+
+Usage: bcvpn about [--json]
+
+Show about information and donation addresses.
+
+Options:
+  --json          Output in JSON format
+
+Example:
+  bcvpn about
+`)
+}
+
+func printStatusHelp() {
+	fmt.Print(`BlockchainVPN Status
+
+Usage: bcvpn status [--json]
+
+Show current status and configuration. This displays config values, file
+status, RPC connection info, security settings, and network privileges.
+
+Options:
+  --json          Output in JSON format
+
+Example:
+  bcvpn status
+`)
+}
+
+func printEventsHelp() {
+	fmt.Print(`BlockchainVPN Recent Events
+
+Usage: bcvpn events [--limit N] [--json]
+
+Show recent runtime events from the VPN tunnel. This provides a log of
+connection events, errors, and state changes.
+
+Options:
+  --limit <N>     Maximum number of events to show (default: 100)
+  --json          Output in JSON format
+
+Examples:
+  bcvpn events
+  bcvpn events --limit 50
+`)
+}
+
+func printDoctorHelp() {
+	fmt.Print(`BlockchainVPN Diagnostics
+
+Usage: bcvpn doctor [--json]
+
+Run diagnostics and health checks. This verifies configuration, network
+privileges, required tools, and security settings. It outputs a report with
+any issues found.
+
+Options:
+  --json          Output results in JSON format
+
+Example:
+  bcvpn doctor
+`)
+}
+
+func printDiagnosticsHelp() {
+	fmt.Print(`BlockchainVPN Export Diagnostics
+
+Usage: bcvpn diagnostics [--out PATH]
+
+Export a diagnostics bundle for troubleshooting. The bundle includes config,
+recent events, and runtime metrics in a JSON file.
+
+Options:
+  --out <PATH>    Output file path (default: app config dir with timestamp)
+
+Example:
+  bcvpn diagnostics --out /tmp/diag.json
+`)
+}
+
+func printHistoryHelp() {
+	fmt.Print(`BlockchainVPN Payment History
+
+Usage: bcvpn history [--json] [--table] [--from DATETIME] [--to DATETIME]
+
+Show payment transaction history. By default shows all recorded payments.
+
+Options:
+  --json          Output in JSON format
+  --table         Show as table (default)
+  --from <datetime>  Show transactions from this date/time
+  --to <datetime>    Show transactions to this date/time
+
+Example:
+  bcvpn history --since-last-payment
+`)
+}
+
+func printGenerateSendAddressHelp() {
+	fmt.Print(`BlockchainVPN Generate Send Address
+
+Usage: bcvpn generate-send-address
+
+Generates a new address for sending funds via RPC. This address can be used
+as the source for payments.
+
+This command connects to the RPC daemon and calls GetNewAddress. The new
+address is printed to stdout.
+
+No options are available.
+
+Example:
+  bcvpn generate-send-address
+`)
+}
+
+func printGenerateReceiveAddressHelp() {
+	fmt.Print(`BlockchainVPN Generate Receive Address
+
+Usage: bcvpn generate-receive-address
+
+Generates a new address for receiving payments via RPC. This address can be
+shared with others to receive funds.
+
+This command connects to the RPC daemon and calls GetNewAddress. The new
+address is printed to stdout.
+
+No options are available.
+
+Example:
+  bcvpn generate-receive-address
+`)
+}
+
+func printGenerateTLSKeypairHelp() {
+	fmt.Print(`BlockchainVPN Generate TLS Keypair
+
+Usage: bcvpn generate-tls-keypair
+
+Generates a TLS-compatible keypair for the VPN tunnel. The private key and
+public key are printed in hexadecimal format.
+
+The private key should be kept secret. The public key can be shared with
+others if needed for authentication.
+
+No options are available.
+
+Example:
+  bcvpn generate-tls-keypair
+`)
+}
+
+func printFavoriteHelp() {
+	fmt.Print(`BlockchainVPN Favorite Providers
+
+Usage: bcvpn favorite [add|remove] <pubkey> [comment]
+
+Manage your list of favorite (trusted) providers. You can add or remove a
+provider by its public key (hex). An optional comment can be added to
+identify the provider.
+
+Subcommands:
+  add <pubkey> [comment]     Add a provider to favorites
+  remove <pubkey>            Remove a provider from favorites
+
+Examples:
+  bcvpn favorite add 02abc...def "US, fast"
+  bcvpn favorite remove 02abc...def
+`)
+}
+
+func printRateHelp() {
+	fmt.Print(`BlockchainVPN Rate Provider
+
+Usage: bcvpn rate <pubkey> <rating> [comment]
+
+Rate a VPN provider. The rating is an integer from 1 to 5. An optional
+comment can provide additional feedback. Ratings are stored locally in the
+application's config directory.
+
+Arguments:
+  <pubkey>     Provider's public key (hex)
+  <rating>     Rating value (1-5)
+
+Example:
+  bcvpn rate 02abc...def 5 "Excellent service, low latency"
+`)
+}
+
+func printGenerateProviderKeyHelp() {
+	fmt.Print(`BlockchainVPN Generate Provider Key
+
+Usage: bcvpn generate-provider-key [--dry-run]
+
+Generates a new encrypted provider private key. The key is saved to the path
+specified in the configuration (provider.private_key_file). You will be
+prompted to enter a password for encryption.
+
+Options:
+  --dry-run        Show what would be generated without creating files
+
+This key is used for both TLS server authentication and for receiving
+payments. Keep it secure.
+
+Example:
+  bcvpn generate-provider-key
+`)
+}
+
+func printDisconnectHelp() {
+	fmt.Print(`BlockchainVPN Disconnect Client
+
+Usage: bcvpn disconnect
+
+Disconnect an active VPN client connection. This sends a SIGTERM to the
+client process and removes the PID file.
+
+This command works only if the client is running in the same user session
+and the PID file exists.
+
+Options:
+  None
+
+Example:
+  bcvpn disconnect
+`)
+}
+
+func printStopProviderHelp() {
+	fmt.Print(`BlockchainVPN Stop Provider
+
+Usage: bcvpn stop-provider
+
+Stop a running provider service. This sends a SIGTERM to the provider process
+and removes the PID file.
+
+This command works only if the provider is running in the same user session
+and the PID file exists.
+
+Options:
+  None
+
+Example:
+  bcvpn stop-provider
+`)
+}
+
+func printRestartProviderHelp() {
+	fmt.Print(`BlockchainVPN Restart Provider
+
+Usage: bcvpn restart-provider
+
+Restart the provider service. This is equivalent to stopping and then starting
+the provider. You will need to start the provider manually after stopping.
+
+Options:
+  None
+
+Example:
+  bcvpn restart-provider
+`)
+}
+
+func printRotateProviderKeyHelp() {
+	fmt.Print(`BlockchainVPN Rotate Provider Key
+
+Usage: bcvpn rotate-provider-key [--key-file <path>] [--old-password-env <var>] [--new-password-env <var>]
+
+Rotate your provider private key. This creates a new encrypted key file and
+backs up the old one. You will be prompted for the old and new passwords
+unless provided via environment variables.
+
+Options:
+  --key-file <path>        Path to provider private key (default: from config)
+  --old-password-env <var> Environment variable containing current password
+  --new-password-env <var> Environment variable containing new password
+
+Example:
+  bcvpn rotate-provider-key
+`)
+}
+
+func printRebroadcastHelp() {
+	fmt.Print(`BlockchainVPN Re-broadcast Service
+
+Usage: bcvpn rebroadcast [--dry-run] [--key-password-env <var>]
+
+Re-broadcast your service announcement on the blockchain. This is useful to
+refresh your announcement or update your advertised details.
+
+Options:
+  --dry-run               Simulate announcement without making real transaction
+  --key-password-env <var> Environment variable containing provider key password
+
+Example:
+  bcvpn rebroadcast
 `)
 }
