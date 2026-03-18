@@ -84,6 +84,7 @@ type ProviderConfig struct {
 	HeartbeatInterval           string   `json:"heartbeat_interval"`       // e.g. "5m"
 	PaymentMonitorInterval      string   `json:"payment_monitor_interval"` // e.g. "1m"
 	ShutdownTimeout             string   `json:"shutdown_timeout"`         // e.g. "10s"
+	PIDFile                     string   `json:"pid_file"`                 // Path to PID file (default: config dir/provider.pid)
 
 	// New fields for flexible pricing
 	PricingMethod   string `json:"pricing_method"`    // "session", "time", "data"
@@ -124,6 +125,7 @@ const AppConfigDirName = "blockchain-vpn"
 const LegacyAppConfigDirName = "BlockchainVPN"
 const DefaultConfigFileName = "config.json"
 const DefaultProviderKeyFileName = "provider.key"
+const DefaultProviderPIDFileName = "provider.pid"
 
 var configDirVariants = []string{
 	"blockchain-vpn",
@@ -198,6 +200,24 @@ func ResolveDefaultProviderKeyPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, DefaultProviderKeyFileName), nil
+}
+
+func ResolveProviderPIDFilePath(cfg *Config, cfgPath string) (string, error) {
+	// If provider.pid_file is set explicitly, use it (relative to config dir or absolute)
+	if strings.TrimSpace(cfg.Provider.PIDFile) != "" {
+		if filepath.IsAbs(cfg.Provider.PIDFile) {
+			return cfg.Provider.PIDFile, nil
+		}
+		// Relative to config directory
+		dir := filepath.Dir(cfgPath)
+		return filepath.Join(dir, cfg.Provider.PIDFile), nil
+	}
+	// Default: use config directory with standard name
+	dir, err := ResolveConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, DefaultProviderPIDFileName), nil
 }
 
 func ResolveProviderKeyPath(cfg *Config, cfgPath string) error {

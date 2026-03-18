@@ -2,18 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.6.2] - 2026-03-17
+## [0.6.3] - 2026-03-18
 
 ### CLI
-- Added 'bcvpn help scan' showing filter and sorting options (country, price, bandwidth, latency, etc.)
-- Added 'bcvpn help start-provider' showing provider management commands
-- Added 'bcvpn help connect' showing direct connection options
-- Added 'connect' command for direct provider connection (planned feature)
-- Removed get/set from config help since covered by 'bcvpn help config'
-- Main help now includes description of marketplace functionality
+- Added `--dry-run` flag to `start-provider`, `rebroadcast`, and `generate-provider-key` commands
+- Implemented `disconnect` command using PID file management
+- Implemented `stop-provider` and `restart-provider` commands with proper PID file handling
+- Added `--min-score`, `--limit` (max 100), and `--rescan` flags to `scan` command
+- Added `bw` as an alias for `--sort` (bandwidth)
+- Updated help text to match OPERATIONS.md specifications
+- Removed obsolete `update-price` command
+
+### Configuration
+- Configuration validation now only requires fields for active mode (provider or client)
+- Added `pid_file` field to provider configuration (default: config dir/provider.pid)
+
+### Bug Fixes
+- Fixed duplicate validation code in internal/config/validate.go
 
 ### Version Bump
-- Bumped patch version to 0.6.2.
+- Bumped patch version to 0.6.3.
+
 
 ## [0.6.1] - 2026-03-17
 

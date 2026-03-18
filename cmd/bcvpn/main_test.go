@@ -15,7 +15,7 @@ func TestFilterEndpoints(t *testing.T) {
 		mkEndpoint("US", 1000, 50000, 10, 20*time.Millisecond),
 		mkEndpoint("DE", 3000, 10000, 2, 120*time.Millisecond),
 	}
-	filtered := filterEndpoints(endpoints, "US", 1500, 20000, 50*time.Millisecond, 5, "")
+	filtered := filterEndpoints(endpoints, "US", 1500, 20000, 50*time.Millisecond, 5, "", 0)
 	if len(filtered) != 1 {
 		t.Fatalf("expected 1 filtered endpoint, got %d", len(filtered))
 	}

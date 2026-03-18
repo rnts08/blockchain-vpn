@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"blockchain-vpn/internal/auth"
@@ -55,6 +56,12 @@ func handleError(err error) {
 func handleErrorFn(fn func() error) {
 	handleError(fn())
 }
+
+var (
+	activeTunnelManager *tunnel.MultiTunnelManager // for disconnect command
+	activeTunnelCtx     context.Context
+	activeTunnelCancel  context.CancelFunc
+)
 
 func main() {
 	// Handle help and version flags early, before requiring config
@@ -125,7 +132,7 @@ func main() {
 	startProviderCmd := flag.NewFlagSet("start-provider", flag.ExitOnError)
 	historyCmd := flag.NewFlagSet("history", flag.ExitOnError)
 	rebroadcastCmd := flag.NewFlagSet("rebroadcast", flag.ExitOnError)
-	updatePriceCmd := flag.NewFlagSet("update-price", flag.ExitOnError)
+
 	rotateKeyCmd := flag.NewFlagSet("rotate-provider-key", flag.ExitOnError)
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
 	configCmd := flag.NewFlagSet("config", flag.ExitOnError)
@@ -135,6 +142,16 @@ func main() {
 	eventsCmd := flag.NewFlagSet("events", flag.ExitOnError)
 	diagCmd := flag.NewFlagSet("diagnostics", flag.ExitOnError)
 	connectCmd := flag.NewFlagSet("connect", flag.ExitOnError)
+	// New commands per OPERATIONS.md
+	generateSendAddressCmd := flag.NewFlagSet("generate-send-address", flag.ExitOnError)
+	generateReceiveAddressCmd := flag.NewFlagSet("generate-receive-address", flag.ExitOnError)
+	generateTLSKeypairCmd := flag.NewFlagSet("generate-tls-keypair", flag.ExitOnError)
+	favoriteCmd := flag.NewFlagSet("favorite", flag.ExitOnError)
+	rateCmd := flag.NewFlagSet("rate", flag.ExitOnError)
+	generateProviderKeyCmd := flag.NewFlagSet("generate-provider-key", flag.ExitOnError)
+	disconnectCmd := flag.NewFlagSet("disconnect", flag.ExitOnError)
+	restartProviderCmd := flag.NewFlagSet("restart-provider", flag.ExitOnError)
+	stopProviderCmd := flag.NewFlagSet("stop-provider", flag.ExitOnError)
 
 	// Scan specific flags
 	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
@@ -146,6 +163,9 @@ func main() {
 	scanMaxLatencyMS := scanCmd.Int("max-latency-ms", 0, "Filter providers with latency <= this value in ms (0 disables)")
 	scanMinSlots := scanCmd.Int("min-available-slots", 0, "Filter providers with available slot capacity >= this value (0 disables)")
 	scanDryRun := scanCmd.Bool("dry-run", false, "Simulate connection without spending funds or modifying interfaces")
+	scanMinScore := scanCmd.Float64("min-score", 0, "Minimum provider score (0-100) to include")
+	scanLimit := scanCmd.Int("limit", 0, "Maximum number of results to display (0 = unlimited)")
+	scanRescan := scanCmd.Bool("rescan", false, "Force a fresh full scan, ignoring cached results")
 
 	// Connect specific flags
 	connectPort := connectCmd.Int("port", 51820, "Provider port")
@@ -165,10 +185,9 @@ func main() {
 	historySinceLast := historyCmd.Bool("since-last-payment", false, "Show wallet transactions since the last recorded payment")
 	startProviderKeyPassEnv := startProviderCmd.String("key-password-env", "", "Env var name containing provider key password (file mode)")
 	rebroadcastKeyPassEnv := rebroadcastCmd.String("key-password-env", "", "Env var name containing provider key password (file mode)")
-	updatePriceKeyPassEnv := updatePriceCmd.String("key-password-env", "", "Env var name containing provider key password (file mode)")
 
 	// Update-price specific flags
-	updatePriceNewPrice := updatePriceCmd.Uint64("price", 0, "The new price in satoshis per session")
+
 	rotateKeyPath := rotateKeyCmd.String("key-file", "", "Provider private key file to rotate (defaults to provider.private_key_file from config)")
 	rotateOldPassEnv := rotateKeyCmd.String("old-password-env", "", "Env var name containing current key password (file mode)")
 	rotateNewPassEnv := rotateKeyCmd.String("new-password-env", "", "Env var name containing new key password (file mode)")
@@ -179,11 +198,31 @@ func main() {
 	eventsJSON := eventsCmd.Bool("json", false, "Output events in JSON format")
 	eventsLimit := eventsCmd.Int("limit", 100, "Maximum number of recent events to show")
 	diagOut := diagCmd.String("out", "", "Output path for diagnostics JSON bundle (default: app config dir)")
+	startProviderDryRun := startProviderCmd.Bool("dry-run", false, "Simulate provider operations without making real transactions or writing PID file")
+	rebroadcastDryRun := rebroadcastCmd.Bool("dry-run", false, "Simulate announcement without making real transaction")
+	generateProviderKeyDryRun := generateProviderKeyCmd.Bool("dry-run", false, "Show what would be generated without creating files")
 
 	switch os.Args[1] {
 	case "start-provider":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
+
+		startProviderCmd.Parse(os.Args[2:])
+		if *startProviderDryRun {
+			fmt.Println("[Dry Run] Simulation mode - no actual provider startup, no transactions, no PID file.")
+			fmt.Println("Would perform the following actions:")
+			fmt.Println(" - Check for elevated privileges")
+			fmt.Println(" - Load/generate provider key")
+			fmt.Println(" - Determine announce IP/port")
+			fmt.Println(" - Build provider endpoint")
+			fmt.Println(" - Announce service on blockchain")
+			fmt.Println(" - Broadcast initial heartbeat")
+			fmt.Println(" - Start payment monitor")
+			fmt.Println(" - Start provider server")
+			fmt.Println(" - Start echo server")
+			fmt.Println(" - Write PID file")
+			return
+		}
 
 		if err := tunnel.EnsureElevatedPrivileges(); err != nil {
 			log.Printf("WARNING: Provider mode requires automatic networking privileges.")
@@ -192,7 +231,6 @@ func main() {
 			log.Fatalf("Provider mode requires automatic networking privileges: %v", err)
 		}
 
-		startProviderCmd.Parse(os.Args[2:])
 		client := connectRPCWithConfig(cfg)
 		defer client.Shutdown()
 
@@ -313,6 +351,20 @@ func main() {
 			}
 		}()
 
+		// Write PID file to allow stop/restart management
+		pidPath, err := config.ResolveProviderPIDFilePath(cfg, configPath)
+		if err != nil {
+			log.Printf("Warning: failed to resolve PID file path: %v", err)
+		} else {
+			if err := writePIDFile(pidPath); err != nil {
+				log.Printf("Warning: failed to write PID file: %v", err)
+			} else {
+				log.Printf("PID file written to %s (PID: %d)", pidPath, os.Getpid())
+				// Ensure PID file is removed on shutdown
+				defer os.Remove(pidPath)
+			}
+		}
+
 		<-ctx.Done()
 		log.Println("Shutting down provider...")
 		done := make(chan struct{})
@@ -335,6 +387,15 @@ func main() {
 
 	case "rebroadcast":
 		rebroadcastCmd.Parse(os.Args[2:])
+		if *rebroadcastDryRun {
+			fmt.Println("[Dry Run] Simulation: would re-broadcast service announcement on blockchain.")
+			fmt.Println("Would use provider key from config:", cfg.Provider.PrivateKeyFile)
+			fmt.Println("Would announce at IP:", cfg.Provider.AnnounceIP)
+			fmt.Println("Would announce at port:", cfg.Provider.ListenPort)
+			fmt.Println("Would use price:", cfg.Provider.Price)
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
@@ -362,31 +423,14 @@ func main() {
 		}
 		log.Println("Service announcement re-broadcasted successfully.")
 
-	case "update-price":
-		updatePriceCmd.Parse(os.Args[2:])
-		if *updatePriceNewPrice == 0 {
-			log.Fatal("--price must be a positive value")
-		}
-
-		client := connectRPCWithConfig(cfg)
-		defer client.Shutdown()
-
-		providerKey, err := getProviderKey(cfg, *updatePriceKeyPassEnv)
-		if err != nil {
-			log.Fatalf("Failed to get provider key: %v", err)
-		}
-
-		log.Printf("Broadcasting price update to %d satoshis...", *updatePriceNewPrice)
-		if err := blockchain.AnnouncePriceUpdate(client, providerKey.PubKey(), *updatePriceNewPrice, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode); err != nil {
-			log.Fatalf("Price update announcement failed: %v", err)
-		}
-		log.Println("Price update broadcasted successfully.")
-
 	case "scan":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
 
 		scanCmd.Parse(os.Args[2:])
+		if *scanLimit > 100 {
+			log.Fatal("--limit cannot exceed 100")
+		}
 		client := connectRPCWithConfig(cfg)
 		defer client.Shutdown()
 
@@ -402,7 +446,7 @@ func main() {
 			log.Printf("Warning: failed to get default scan cache path: %v", err)
 		}
 		var cache *blockchain.ScanCache
-		if cachePath != "" {
+		if cachePath != "" && !*scanRescan {
 			cache = blockchain.NewScanCache(cachePath)
 			if err := cache.Load(); err != nil {
 				log.Printf("Warning: failed to load scan cache: %v", err)
@@ -441,6 +485,7 @@ func main() {
 			time.Duration(*scanMaxLatencyMS)*time.Millisecond,
 			*scanMinSlots,
 			strings.TrimSpace(*scanPricingMethod),
+			*scanMinScore,
 		)
 
 		if len(filteredEndpoints) == 0 {
@@ -449,6 +494,10 @@ func main() {
 		}
 
 		sortEndpoints(filteredEndpoints, *scanSortBy)
+
+		if *scanLimit > 0 && *scanLimit < len(filteredEndpoints) {
+			filteredEndpoints = filteredEndpoints[:*scanLimit]
+		}
 
 		fmt.Println()
 		for _, ep := range filteredEndpoints {
@@ -571,6 +620,33 @@ func main() {
 		}
 		log.Printf("Diagnostics bundle written.")
 
+	case "generate-send-address":
+		generateSendAddressCmd.Parse(os.Args[2:])
+		handleGenerateSendAddress(cfg)
+	case "generate-receive-address":
+		generateReceiveAddressCmd.Parse(os.Args[2:])
+		handleGenerateReceiveAddress(cfg)
+	case "generate-tls-keypair":
+		generateTLSKeypairCmd.Parse(os.Args[2:])
+		handleGenerateTLSKeypair()
+	case "favorite":
+		favoriteCmd.Parse(os.Args[2:])
+		handleFavorite(cfg, configPath)
+	case "rate":
+		rateCmd.Parse(os.Args[2:])
+		handleRate(cfg, configPath)
+	case "generate-provider-key":
+		generateProviderKeyCmd.Parse(os.Args[2:])
+		handleGenerateProviderKey(cfg, *generateProviderKeyDryRun)
+	case "disconnect":
+		disconnectCmd.Parse(os.Args[2:])
+		handleDisconnect()
+	case "restart-provider":
+		restartProviderCmd.Parse(os.Args[2:])
+		handleRestartProvider(cfg, configPath)
+	case "stop-provider":
+		stopProviderCmd.Parse(os.Args[2:])
+		handleStopProvider(cfg, configPath)
 	default:
 		fmt.Printf("unknown command: %s\n\n", os.Args[1])
 		printHelp()
@@ -757,6 +833,275 @@ func requiredNetworkingTools(goos string) []string {
 	default:
 		return nil
 	}
+}
+
+// New handlers per OPERATIONS.md
+
+func generateAddress(cfg *config.Config) {
+	client := connectRPCWithConfig(cfg)
+	defer client.Shutdown()
+	addr, err := client.GetNewAddress("")
+	if err != nil {
+		log.Fatalf("Failed to generate new address: %v", err)
+	}
+	fmt.Println(addr.String())
+}
+
+func handleGenerateSendAddress(cfg *config.Config) {
+	generateAddress(cfg)
+}
+
+func handleGenerateReceiveAddress(cfg *config.Config) {
+	generateAddress(cfg)
+}
+
+func handleGenerateTLSKeypair() {
+	key, err := btcec.NewPrivateKey()
+	if err != nil {
+		log.Fatalf("Failed to generate TLS keypair: %v", err)
+	}
+	privHex := hex.EncodeToString(key.Serialize())
+	pubHex := hex.EncodeToString(key.PubKey().SerializeCompressed())
+	fmt.Printf("Private Key (hex): %s\n", privHex)
+	fmt.Printf("Public Key (hex): %s\n", pubHex)
+}
+
+func handleGenerateProviderKey(cfg *config.Config, dryRun bool) {
+	keyPath := cfg.Provider.PrivateKeyFile
+	if dryRun {
+		fmt.Printf("[Dry Run] Would generate provider key at: %s\n", keyPath)
+		fmt.Println("[Dry Run] Would prompt for password and generate a new encrypted key.")
+		fmt.Println("[Dry Run] Would output the public key.")
+		return
+	}
+	if _, err := os.Stat(keyPath); err == nil {
+		fmt.Print("Provider key already exists. Overwrite? (y/N): ")
+		reader := bufio.NewReader(os.Stdin)
+		resp, _ := reader.ReadString('\n')
+		if strings.TrimSpace(strings.ToLower(resp)) != "y" {
+			fmt.Println("Aborted.")
+			os.Exit(0)
+		}
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter password for new provider key: ")
+	pass1, _ := reader.ReadString('\n')
+	fmt.Print("Confirm password: ")
+	pass2, _ := reader.ReadString('\n')
+	if strings.TrimSpace(pass1) != strings.TrimSpace(pass2) {
+		log.Fatal("Passwords do not match")
+	}
+	password := []byte(strings.TrimSpace(pass1))
+	if len(password) == 0 {
+		log.Fatal("Password cannot be empty")
+	}
+	key, err := crypto.GenerateAndEncryptKey(keyPath, password)
+	if err != nil {
+		log.Fatalf("Failed to generate provider key: %v", err)
+	}
+	log.Printf("Provider key generated and saved to %s", keyPath)
+	log.Printf("Public key: %s", hex.EncodeToString(key.PubKey().SerializeCompressed()))
+}
+
+func handleFavorite(cfg *config.Config, configPath string) {
+	if len(os.Args) < 3 {
+		log.Fatal("Usage: bcvpn favorite [add|remove] <pubkey> [comment]")
+	}
+	subcmd := strings.ToLower(os.Args[2])
+	if subcmd != "add" && subcmd != "remove" {
+		log.Fatalf("Unknown favorite command: %s (expected add/remove)", subcmd)
+	}
+	if len(os.Args) < 4 {
+		log.Fatalf("Missing pubkey for %s", subcmd)
+	}
+	pubkey := strings.TrimSpace(os.Args[3])
+	// comment ignored
+
+	if _, err := hex.DecodeString(pubkey); err != nil {
+		log.Fatalf("Invalid pubkey hex: %v", err)
+	}
+
+	favs := cfg.Client.FavoriteProviders
+	switch subcmd {
+	case "add":
+		for _, existing := range favs {
+			if existing == pubkey {
+				log.Fatalf("Provider already in favorites")
+			}
+		}
+		cfg.Client.FavoriteProviders = append(favs, pubkey)
+	case "remove":
+		newFavs := []string{}
+		found := false
+		for _, existing := range favs {
+			if existing == pubkey {
+				found = true
+				continue
+			}
+			newFavs = append(newFavs, existing)
+		}
+		if !found {
+			log.Fatalf("Provider not in favorites")
+		}
+		cfg.Client.FavoriteProviders = newFavs
+	}
+
+	if err := saveConfigFile(configPath, cfg); err != nil {
+		log.Fatalf("Failed to save config: %v", err)
+	}
+	log.Printf("Favorites updated. Total: %d", len(cfg.Client.FavoriteProviders))
+}
+
+type ratingEntry struct {
+	ProviderPubkey string `json:"provider_pubkey"`
+	Score          int    `json:"score"`
+	Comment        string `json:"comment,omitempty"`
+	Timestamp      string `json:"timestamp"`
+}
+
+func handleRate(cfg *config.Config, configPath string) {
+	if len(os.Args) < 4 {
+		log.Fatal("Usage: bcvpn rate <provider-pubkey> <rating> [comment]")
+	}
+	pubkey := strings.TrimSpace(os.Args[2])
+	ratingStr := strings.TrimSpace(os.Args[3])
+	rating, err := strconv.Atoi(ratingStr)
+	if err != nil || rating < 1 || rating > 5 {
+		log.Fatal("Rating must be an integer between 1 and 5")
+	}
+	comment := ""
+	if len(os.Args) > 4 {
+		comment = strings.Join(os.Args[4:], " ")
+	}
+
+	if _, err := hex.DecodeString(pubkey); err != nil {
+		log.Fatalf("Invalid pubkey hex: %v", err)
+	}
+
+	dir, err := config.AppConfigDir()
+	if err != nil {
+		log.Fatalf("Failed to get config dir: %v", err)
+	}
+	ratingsPath := filepath.Join(dir, "ratings.json")
+	ratings := []ratingEntry{}
+	if data, err := os.ReadFile(ratingsPath); err == nil {
+		if err := json.Unmarshal(data, &ratings); err != nil {
+			ratings = []ratingEntry{}
+		}
+	} else if !os.IsNotExist(err) {
+		log.Fatalf("Failed to read ratings: %v", err)
+	}
+
+	// Update or add
+	found := false
+	for i, r := range ratings {
+		if r.ProviderPubkey == pubkey {
+			ratings[i].Score = rating
+			ratings[i].Comment = comment
+			ratings[i].Timestamp = time.Now().UTC().Format(time.RFC3339)
+			found = true
+			break
+		}
+	}
+	if !found {
+		ratings = append(ratings, ratingEntry{
+			ProviderPubkey: pubkey,
+			Score:          rating,
+			Comment:        comment,
+			Timestamp:      time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+
+	data, err := json.MarshalIndent(ratings, "", "  ")
+	if err != nil {
+		log.Fatalf("Failed to marshal ratings: %v", err)
+	}
+	if err := os.WriteFile(ratingsPath, data, 0o644); err != nil {
+		log.Fatalf("Failed to write ratings: %v", err)
+	}
+	log.Printf("Rating for %s: %d/5 saved.", pubkey, rating)
+}
+
+func handleDisconnect() {
+	dir, err := config.AppConfigDir()
+	if err != nil {
+		log.Fatalf("Failed to get app config dir: %v", err)
+	}
+	pidPath := filepath.Join(dir, "client.pid")
+	pid, err := readPIDFile(pidPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Fatal("No VPN client connection appears to be active (PID file not found).")
+		}
+		log.Fatalf("Failed to read client PID file: %v", err)
+	}
+	if !isProcessRunning(pid) {
+		// Stale PID file
+		os.Remove(pidPath)
+		log.Fatalf("Process with PID %d is not running (stale PID file).", pid)
+	}
+	log.Printf("Disconnecting client (PID %d)...", pid)
+	// Send SIGTERM to request graceful shutdown
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		log.Fatalf("Failed to send disconnect signal: %v", err)
+	}
+	log.Println("Disconnect signal sent.")
+	// Wait for process to exit
+	timeout := 5 * time.Second
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !isProcessRunning(pid) {
+			break
+		}
+		<-ticker.C
+	}
+	os.Remove(pidPath)
+	if isProcessRunning(pid) {
+		log.Println("Warning: client process did not exit within timeout; PID file cleared.")
+	} else {
+		log.Println("Client disconnected successfully.")
+	}
+}
+
+func handleStopProvider(cfg *config.Config, configPath string) {
+	pidPath, err := config.ResolveProviderPIDFilePath(cfg, configPath)
+	if err != nil {
+		log.Fatalf("Failed to resolve PID file path: %v", err)
+	}
+
+	pid, err := readPIDFile(pidPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Fatalf("No provider running (PID file not found at %s)", pidPath)
+		}
+		log.Fatalf("Failed to read PID file: %v", err)
+	}
+
+	if !isProcessRunning(pid) {
+		log.Fatalf("Process with PID %d is not running", pid)
+	}
+
+	log.Printf("Stopping provider (PID %d)...", pid)
+	if err := stopProviderProcess(pid, true); err != nil {
+		log.Fatalf("Failed to stop provider: %v", err)
+	}
+
+	// Remove PID file
+	os.Remove(pidPath)
+	log.Println("Provider stopped successfully.")
+}
+
+func handleRestartProvider(cfg *config.Config, configPath string) {
+	// Stop the running provider
+	handleStopProvider(cfg, configPath)
+
+	// For now, we'll just instruct the user to run start-provider manually.
+	// A more seamless approach would be to re-execute start-provider after stopping,
+	// but that would block and make this command block as well. That's acceptable but
+	// requires more careful handling of signals and cleanup.
+	log.Println("Provider stopped. To start it again, run: bcvpn start-provider")
 }
 
 func handleVersion(jsonMode bool) {
@@ -1277,6 +1622,20 @@ func parseBandwidthLimitToKbps(v string) uint32 {
 }
 
 func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainParams *chaincfg.Params, endpoints []*geoip.EnrichedVPNEndpoint, clientCfg *config.ClientConfig, secCfg *config.SecurityConfig, dryRun bool) {
+	// Write client PID file for management (stop/disconnect)
+	dir, err := config.AppConfigDir()
+	if err != nil {
+		log.Printf("Warning: failed to get app config dir: %v", err)
+	} else {
+		pidPath := filepath.Join(dir, "client.pid")
+		if err := writePIDFile(pidPath); err != nil {
+			log.Printf("Warning: failed to write client PID file: %v", err)
+		} else {
+			log.Printf("Client PID file written to %s (PID: %d)", pidPath, os.Getpid())
+			defer os.Remove(pidPath)
+		}
+	}
+
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter the number of the provider to connect to (or press Enter to quit): ")
 	input, _ := reader.ReadString('\n')
@@ -1411,6 +1770,8 @@ func sortEndpoints(endpoints []*geoip.EnrichedVPNEndpoint, sortBy string) {
 	case "country":
 		sort.Slice(endpoints, func(i, j int) bool { return effectiveCountry(endpoints[i]) < effectiveCountry(endpoints[j]) })
 		fmt.Println("Sorted by country.")
+	case "bw":
+		fallthrough
 	case "bandwidth":
 		sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].AdvertisedBandwidthKB > endpoints[j].AdvertisedBandwidthKB })
 		fmt.Println("Sorted by bandwidth (highest first).")
@@ -1430,7 +1791,7 @@ func sortEndpoints(endpoints []*geoip.EnrichedVPNEndpoint, sortBy string) {
 	}
 }
 
-func filterEndpoints(endpoints []*geoip.EnrichedVPNEndpoint, country string, maxPrice uint64, minBandwidthKB uint32, maxLatency time.Duration, minSlots int, pricingMethod string) []*geoip.EnrichedVPNEndpoint {
+func filterEndpoints(endpoints []*geoip.EnrichedVPNEndpoint, country string, maxPrice uint64, minBandwidthKB uint32, maxLatency time.Duration, minSlots int, pricingMethod string, minScore float64) []*geoip.EnrichedVPNEndpoint {
 	var filtered []*geoip.EnrichedVPNEndpoint
 	for _, ep := range endpoints {
 		if country != "" && !strings.EqualFold(country, effectiveCountry(ep)) {
@@ -1452,6 +1813,9 @@ func filterEndpoints(endpoints []*geoip.EnrichedVPNEndpoint, country string, max
 			continue
 		}
 		if minSlots > 0 && effectiveCapacitySlots(ep) < minSlots {
+			continue
+		}
+		if minScore > 0 && computeProviderScore(ep) < minScore {
 			continue
 		}
 		filtered = append(filtered, ep)
@@ -1722,6 +2086,60 @@ func saveConfigFile(path string, cfg *config.Config) error {
 		return err
 	}
 	return util.WriteFileAtomic(path, out.Bytes(), 0o644)
+}
+
+// writePIDFile writes the current process ID to the specified path.
+func writePIDFile(path string) error {
+	pid := os.Getpid()
+	data := []byte(strconv.Itoa(pid))
+	return util.WriteFileAtomic(path, data, 0o644)
+}
+
+// readPIDFile reads the PID from the specified path.
+func readPIDFile(path string) (int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0, err
+	}
+	return pid, nil
+}
+
+// isProcessRunning checks if a process with the given PID exists.
+func isProcessRunning(pid int) bool {
+	// On Unix-like systems, sending signal 0 checks if process exists without affecting it
+	err := syscall.Kill(pid, 0)
+	return err == nil
+}
+
+// stopProviderProcess stops a provider process by PID (from PID file or explicit PID).
+func stopProviderProcess(pid int, graceful bool) error {
+	if graceful {
+		// Send SIGTERM first for graceful shutdown
+		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+			return fmt.Errorf("failed to send SIGTERM to PID %d: %w", pid, err)
+		}
+		// Wait up to shutdown timeout for process to exit
+		timeout := 10 * time.Second
+		for i := 0; i < int(timeout/time.Second); i++ {
+			if !isProcessRunning(pid) {
+				return nil
+			}
+			time.Sleep(1 * time.Second)
+		}
+		// If still running, send SIGKILL
+		if isProcessRunning(pid) {
+			if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+				return fmt.Errorf("failed to send SIGKILL to PID %d: %w", pid, err)
+			}
+		}
+		return nil
+	}
+	// Immediate kill
+	return syscall.Kill(pid, syscall.SIGKILL)
 }
 
 func applyConfigDefaults(cfg *config.Config) {
@@ -2066,42 +2484,54 @@ BlockchainVPN is a decentralized VPN marketplace where anyone can:
 Usage: bcvpn <command> [options]
 
 Commands:
-  scan                    Scan for VPN providers and connect interactively
-  connect <ip>           Connect directly to a provider by IP address
-  start-provider          Start as a VPN provider (earn tokens)
-  rebroadcast             Re-broadcast your provider announcement
-  update-price            Update your provider service price
-  rotate-provider-key     Rotate your provider private key
-  history                 Show payment transaction history
-  status                  Show current status and configuration
+  generate-config         Generate a default configuration file
   config                  Manage configuration (see 'bcvpn help config')
-  doctor                  Run diagnostics and health checks
-  events                  Show recent runtime events
-  diagnostics             Export diagnostics bundle for troubleshooting
   version                 Show version information
   about                   Show about info and donation addresses
-  generate-config         Generate a default configuration file
+  help                    Show this help message
+
+  Infrastructure:
+  status [--json]                 Show current status and configuration
+  events [--limit N] [--json]     Show recent runtime events
+  doctor [--json]                 Run diagnostics and health checks
+  diagnostics [--out PATH]        Export diagnostics bundle for troubleshooting
+  history [--json] [--table] [--from DATETIME] [--to DATETIME] Show payment transaction history
+
+  VPN Client:
+  scan [options]                  Scan for VPN providers and connect interactively
+  connect <provider-ip> [options] Connect directly to a provider
+  disconnect                      Disconnect active VPN tunnel
+  generate-send-address           Generate a new address for sending (via RPC)
+  generate-tls-keypair            Generate TLS-compatible keypair for the tunnel
+  favorite [add|remove] <pubkey> [comment]  Manage favorite providers
+  rate <pubkey> <rating> [comment]         Rate a provider
+
+  VPN Provider:
+  start-provider [options]        Start as a VPN provider (earn tokens)
+  stop-provider                   Stop the running provider service
+  restart-provider                Restart the provider service
+  generate-provider-key           Generate a new provider private key
+  rotate-provider-key             Rotate your provider private key
+  rebroadcast                     Re-broadcast your service announcement
+  generate-receive-address        Generate a new address for receiving (via RPC)
+  generate-tls-keypair            Generate TLS-compatible keypair (shared)
 
 Options:
-  -h, --help              Show this help message
-  -v, --version           Show version information
+  -h, --help    Show this help message
+  -v, --version Show version information
 
 Subcommand Help:
-  bcvpn help scan             # Show scan filters and sorting options
-  bcvpn help start-provider   # Show provider options and management
-  bcvpn help connect          # Show connection options and flags
-  bcvpn help config          # Show config get/set/validate commands
+  bcvpn help <command> for detailed usage of specific commands.
+  Detailed help available for: config, scan, start-provider, connect, generate-tls-keypair, favorite, rate.
 
 Examples:
-  bcvpn help                           # Show this help message
-  bcvpn help scan                     # Show scan options
-  bcvpn help connect                  # Show connect options
   bcvpn generate-config               # Create default config.json
   bcvpn scan                         # Find and connect to providers
-  bcvpn connect 1.2.3.4              # Connect directly to provider
+  bcvpn connect 1.2.3.4 --port 51820 # Connect directly to provider
   bcvpn start-provider               # Start as a provider
-  bcvpn status                      # Check current status
-  bcvpn doctor                      # Run diagnostics
+  bcvpn status                       # Check current status
+  bcvpn doctor                       # Run diagnostics
+  bcvpn config set rpc.host localhost # Update RPC host
 
 For more information, visit: https://github.com/anomalyco/blockchain-vpn
 `)
@@ -2141,25 +2571,26 @@ enriches them with latency and geolocation data, and allows you to
 select one to connect to.
 
 Filter Options:
-  --country <code>        Filter by country (e.g., US, DE, GB)
-  --max-price <sats>     Maximum price in sats per session
-  --pricing-method <method>  Filter by pricing: session, time, or data
+  --country <code>          Filter by country (e.g., US, DE, GB)
+  --max-price <sats>        Maximum price in sats per session
+  --pricing-method <method> Filter by pricing: session, time, or data
   --min-bandwidth-kbps <kbps> Minimum advertised bandwidth in Kbps
-  --max-latency-ms <ms>  Maximum latency in milliseconds
-  --min-available-slots <n>  Minimum available consumer slots
-
-Sorting Options:
-  --sort <method>         Sort results by:
-    latency       - Lowest latency first (default)
-    price         - Lowest price first
+  --max-latency-ms <ms>     Maximum latency in milliseconds
+  --min-available-slots <n> Minimum available consumer slots
+  --min-score <float>       Minimum provider score (0-100)
+  --sort <method>           Sort by:
     country       - Alphabetical by country
-    bandwidth     - Highest bandwidth first
+    price         - Lowest price first
+    bw            - Highest bandwidth first (bandwidth)
+    latency       - Lowest latency first (default)
     capacity      - Most available slots first
     score         - Best overall score (recommended)
 
 Options:
   --startblock <height>  Block height to start scanning from (0 = full scan)
-  --dry-run             Simulate connection without spending funds
+  --limit <N>            Limit number of results (max 100)
+  --rescan               Force a fresh scan, ignoring cached results
+  --dry-run              Simulate connection without spending funds
 
 Examples:
   bcvpn scan                           # Find providers with default sorting
@@ -2188,9 +2619,11 @@ Requirements:
 
 Provider Management Commands:
   bcvpn start-provider         Start as a VPN provider
-  bcvpn rebroadcast           Re-broadcast your service announcement
-  bcvpn update-price --price <sats>  Update your service price
-  bcvpn rotate-provider-key   Rotate your provider private key
+  bcvpn rebroadcast            Re-broadcast your service announcement
+  bcvpn generate-provider-key  Generate a new provider private key
+  bcvpn rotate-provider-key    Rotate your provider private key
+  bcvpn restart-provider       Restart the provider service
+  bcvpn stop-provider          Stop the provider service
 
 Key Options:
   --key-password-env <var>  Environment variable containing key password
@@ -2212,7 +2645,9 @@ Payment Models:
 Examples:
   bcvpn start-provider                         # Start provider
   bcvpn start-provider --key-password-env PASS  # Non-interactive with env var
-  bcvpn update-price --price 2000             # Update price to 2000 sats
+  bcvpn generate-provider-key                  # Create a new provider key
+  bcvpn rebroadcast                            # Re-announce your service
+  bcvpn stop-provider                          # Stop the provider service
 
 For more information, visit: https://github.com/anomalyco/blockchain-vpn
 `)
