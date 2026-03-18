@@ -15,6 +15,7 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 - [x] Implement rating persistence (ratings.json) - stored in config dir as ratings.json
 - [x] Add more scanner filters (min-score, limit, rescan) and sort alias bw
+- [x] Simplify default config generation to only include essential fields
 - [ ] Improve error handling and user feedback for CLI commands (ongoing)
 - [x] Add detailed help subcommands for all major commands (generate-send-address, favorite, rate, etc.) - comprehensive help added
 - [x] Document demo/testing workflow with regtest ordexcoind - see TESTING.md
