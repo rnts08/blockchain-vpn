@@ -1,6 +1,4 @@
 BINARY_NAME=bcvpn
-GUI_BINARY_NAME=bcvpn-gui
-TUI_BINARY_NAME=bcvpn-tui
 GO=go
 VERSION_FILE=VERSION
 VERSION=$(shell cat $(VERSION_FILE))
@@ -11,23 +9,13 @@ GREEN:=\033[0;32m
 YELLOW:=\033[0;33m
 RESET:=\033[0m
 
-.PHONY: all build build-gui build-cli-all build-linux build-darwin build-windows test test-functional fmt tidy clean bump-version release help
+.PHONY: all build build-cli-all build-linux build-darwin build-windows test test-functional fmt tidy clean bump-version release help
 
 all: build
 
 ## Build binaries
 build:
 	$(GO) build -o $(BINARY_NAME) ./cmd/bcvpn
-
-build-gui:
-	@echo "The GUI component has been moved to the attic and is no longer actively maintained."
-	@echo "Source code located at: _attic/bcvpn-gui"
-	@echo "This target is deprecated and will not build the binary."
-
-build-tui:
-	@echo "The TUI component has been moved to the attic and is no longer actively maintained."
-	@echo "Source code located at: _attic/bcvpn_tui"
-	@echo "This target is deprecated and will not build the binary."
 
 build-linux:
 	GOOS=linux GOARCH=amd64 $(GO) build -o $(BINARY_NAME)-linux-amd64 ./cmd/bcvpn
@@ -57,11 +45,10 @@ tidy:
 
 ## Cleanup
 clean:
-	rm -f $(BINARY_NAME) $(GUI_BINARY_NAME) \
+	rm -f $(BINARY_NAME) \
 		$(BINARY_NAME)-linux-amd64 \
 		$(BINARY_NAME)-darwin-amd64 \
-		$(BINARY_NAME)-windows-amd64.exe \
-		$(TUI_BINARY_NAME)
+		$(BINARY_NAME)-windows-amd64.exe
 
 ## Version and release management
 # Bump version in source files. Use VERSION_OVERRIDE=x.y.z to set explicitly, otherwise patch is incremented.
@@ -126,8 +113,6 @@ help:
 	@echo ""
 	@echo "  $(YELLOW)all$(RESET)            - Build CLI (default)"
 	@echo "  $(YELLOW)build$(RESET)          - Build CLI binary (bcvpn)"
-	@echo "  $(YELLOW)build-gui$(RESET)      - DEPRECATED: GUI in attic (_attic/bcvpn-gui)"
-	@echo "  $(YELLOW)build-tui$(RESET)      - DEPRECATED: TUI in attic (_attic/bcvpn-tui)"
 	@echo "  $(YELLOW)build-cli-all$(RESET)  - Build CLI for Linux, macOS, Windows"
 	@echo "  $(YELLOW)test$(RESET)           - Run unit tests"
 	@echo "  $(YELLOW)test-unit$(RESET)      - Run unit tests (explicit)"

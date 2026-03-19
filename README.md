@@ -116,7 +116,7 @@ Clients purchase access by sending a transaction to the provider's address (deri
 
 ### Prerequisites
 
-*   **Go 1.22+** installed.
+*   **Go 1.25+** installed.
 *   **OrdexCoin Core (`ordexcoind`)** running and fully synced.
     *   RPC must be enabled (`server=1`).
     *   Transaction indexing (`txindex=1`) is recommended for faster scanning but not strictly required for basic operation.
@@ -345,11 +345,11 @@ To adapt this for another chain:
 
 ## 6. Project Status
 
-### Feature Checklist
+### Feature Checklist (Implemented)
 
 - [x] On-chain service announcement and discovery protocol (`OP_RETURN` payloads).
-- [x] v2 provider metadata payload (bandwidth, country, capacity, availability flags) with scanner compatibility for v1/v2.
-- [x] Advanced scanner filtering (country, price, bandwidth, latency, slots) and multi-field sorting.
+- [x] v2/v3 provider metadata payload (bandwidth, country, capacity, availability flags) with scanner compatibility for v1/v2/v3.
+- [x] Advanced scanner filtering (country, price, bandwidth, latency, slots, pricing method) and multi-field sorting.
 - [x] Provider score/ranking algorithm and output in CLI.
 - [x] Provider service announcement rebroadcasting and price update announcements.
 - [x] Provider heartbeat/availability broadcasts for freshness-aware discovery.
@@ -368,13 +368,13 @@ To adapt this for another chain:
 - [x] Client routing and DNS auto-configuration for Linux, macOS, and Windows.
 - [x] Optional cross-platform client kill switch mode.
 - [x] Post-connect client security checks (egress IP transition, DNS leak heuristic, provider-country verification).
+- [x] Connection quality scoring with 75% bandwidth threshold verification.
 - [x] OS-native DNS introspection checks and optional strict verification mode.
-- [x] Throughput verification against advertised provider bandwidth after connect.
 - [x] RPC retry + exponential backoff for transient failures.
 - [x] Payment history storage and reporting.
 - [x] Machine-readable status output for automation (`bcvpn status --json`).
 - [x] Runtime metrics endpoint (`/metrics.json`) for provider/client health and throughput.
-- [x] Structured JSON log mode for CLI/GUI backend actions.
+- [x] Structured JSON log mode for CLI backend actions.
 - [x] Crash-safe route/DNS restore marker recovery on startup.
 - [x] Optional hardware-backed provider key storage integration (macOS Keychain, Windows DPAPI, Linux libsecret).
 - [x] Mutual TLS revocation cache enforcement for provider/client cert identity keys.
@@ -383,6 +383,22 @@ To adapt this for another chain:
 - [x] CLI config profile export/import (`config export`, `config import`).
 - [x] Runtime event timeline and diagnostics bundle export (`events`, `diagnostics`).
 - [x] Rating system with local persistence and blockchain broadcast on disconnect.
+- [x] On-chain accumulated rating display in scan output.
+- [x] Spending limits with auto-recharge support for clients.
+- [x] Time-based and data-based billing models alongside session billing.
+- [x] WebSocket fallback transport for NAT-restricted networks.
+
+### Known Limitations (Post-Beta)
+
+- [ ] No automatic reconnection on network disconnect (single network blip ends session)
+- [ ] Heartbeat announcements lack cryptographic signature
+- [ ] Reputation scores not signature-verified (trust through network effect)
+- [ ] Direct connect command is stub-only (use scan to connect)
+- [ ] Provider bandwidth auto-detection not implemented (manual config required)
+- [ ] Refund flow not implemented
+- [ ] NAT traversal method selection via config not implemented
+- [ ] WebSocket origin validation not implemented
+- [ ] STUN integration for NAT type detection not implemented
 
 ### How It Works
 
