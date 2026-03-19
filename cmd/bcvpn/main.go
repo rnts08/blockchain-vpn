@@ -527,7 +527,12 @@ func main() {
 		handleError(err)
 
 		if len(endpoints) == 0 {
-			fmt.Println("No VPN endpoints found.")
+			fmt.Println("No VPN providers found on the blockchain.")
+			fmt.Println()
+			fmt.Println("Tips:")
+			fmt.Println("  - Ensure ordexcoind is running and synchronized")
+			fmt.Println("  - Run 'bcvpn start-provider' to become a provider")
+			fmt.Println("  - Check 'bcvpn doctor' for diagnostics")
 			return
 		}
 
@@ -546,7 +551,13 @@ func main() {
 		)
 
 		if len(filteredEndpoints) == 0 {
-			fmt.Println("No VPN endpoints found matching your criteria.")
+			fmt.Println("No VPN providers match your filter criteria.")
+			fmt.Println()
+			fmt.Println("Try relaxing filters:")
+			fmt.Println("  --max-price <value>      Increase max price")
+			fmt.Println("  --country <code>        Change country filter")
+			fmt.Println("  --max-latency-ms <ms>    Increase latency tolerance")
+			fmt.Println("  --min-score <score>     Lower minimum score")
 			return
 		}
 
@@ -626,10 +637,20 @@ func main() {
 			fmt.Println("Strict verification enabled")
 		}
 
-		fmt.Println("\nNote: Direct connect requires provider details (pubkey, port, price)")
-		fmt.Println("Use 'bcvpn scan' for interactive provider selection and connection")
-		fmt.Println("Run 'bcvpn help connect' for full connection options")
-		fmt.Println("\nDirect connect is a planned feature. For now, use 'bcvpn scan' to connect.")
+		fmt.Println()
+		fmt.Println("========================================")
+		fmt.Println("Direct connect requires provider details.")
+		fmt.Println("For the best experience, use 'bcvpn scan' for")
+		fmt.Println("interactive provider discovery and connection.")
+		fmt.Println("========================================")
+		fmt.Println()
+		fmt.Println("Quick start:")
+		fmt.Println("  bcvpn scan                    # Discover providers")
+		fmt.Println("  bcvpn help scan               # View scan options")
+		fmt.Println("  bcvpn help connect           # View direct connect options")
+		fmt.Println()
+		fmt.Println("Direct connect is available with --pubkey, --port, and --price flags.")
+		fmt.Println("Example: bcvpn connect 1.2.3.4 --pubkey=... --port=51820 --price=1000")
 
 	case "rotate-provider-key":
 		rotateKeyCmd.Parse(os.Args[2:])
@@ -1088,14 +1109,18 @@ func handleDisconnect() {
 	pid, err := readPIDFile(pidPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Fatal("No VPN client connection appears to be active (PID file not found).")
+			fmt.Println("No active VPN connection found.")
+			fmt.Println()
+			fmt.Println("To connect to a VPN provider, run: bcvpn scan")
+			os.Exit(1)
 		}
 		log.Fatalf("Failed to read client PID file: %v", err)
 	}
 	if !isProcessRunning(pid) {
-		// Stale PID file
 		os.Remove(pidPath)
-		log.Fatalf("Process with PID %d is not running (stale PID file).", pid)
+		fmt.Printf("Previous VPN connection (PID %d) is no longer running (stale PID file).\n", pid)
+		fmt.Println("To connect to a VPN provider, run: bcvpn scan")
+		os.Exit(1)
 	}
 	log.Printf("Disconnecting client (PID %d)...", pid)
 	// Send SIGTERM to request graceful shutdown
@@ -1131,13 +1156,18 @@ func handleStopProvider(cfg *config.Config, configPath string) {
 	pid, err := readPIDFile(pidPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Fatalf("No provider running (PID file not found at %s)", pidPath)
+			fmt.Println("No provider is currently running.")
+			fmt.Println()
+			fmt.Println("To start a provider, run: bcvpn start-provider")
+			os.Exit(1)
 		}
 		log.Fatalf("Failed to read PID file: %v", err)
 	}
 
 	if !isProcessRunning(pid) {
-		log.Fatalf("Process with PID %d is not running", pid)
+		fmt.Printf("Provider process (PID %d) is not running. The PID file may be stale.\n", pid)
+		fmt.Println("To start a provider, run: bcvpn start-provider")
+		os.Exit(1)
 	}
 
 	log.Printf("Stopping provider (PID %d)...", pid)
@@ -1260,12 +1290,12 @@ func connectRPCWithConfig(cfg *config.Config) *rpcclient.Client {
 	}
 	client, err := rpcclient.New(connCfg, nil)
 	if err != nil {
-		log.Fatalf("Error creating new RPC client: %v", err)
+		log.Fatalf("Failed to connect to RPC server at %s: %v\nHint: Ensure ordexcoind is running and the RPC credentials are correct.", connCfg.Host, err)
 	}
 
 	// Check server warmup status if needed
 	if err := waitForServerReady(context.Background(), client); err != nil {
-		log.Fatalf("RPC server not ready: %v", err)
+		log.Fatalf("RPC server not ready at %s: %v\nHint: The node may still be warming up. Wait a moment and try again, or check ordexcoind logs.", connCfg.Host, err)
 	}
 
 	return client
@@ -1401,7 +1431,7 @@ func getProviderKey(cfg *config.Config, passwordEnv string) (*btcec.PrivateKey, 
 		}
 		key, err := crypto.LoadAndDecryptKey(keyPath, password)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load and decrypt key: %w", err)
+			return nil, fmt.Errorf("failed to load and decrypt provider key (wrong password?): %w", err)
 		}
 		log.Println("Provider key successfully decrypted.")
 		return key, nil

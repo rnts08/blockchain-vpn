@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.5] - 2026-03-19
+
+### CLI
+- Improved error handling and user feedback for CLI commands
+- Added helpful hints and guidance in error messages for RPC connection failures
+- Added guidance when no VPN providers are found during scan
+- Added actionable guidance when no provider or client connection is active
+- Improved connect command output with better usage examples
+
+### Version Bump
+- Bumped patch version to 0.6.5.
+
 ## [0.6.4] - 2026-03-18
 
 ### CLI
