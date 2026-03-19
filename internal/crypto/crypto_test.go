@@ -3,6 +3,7 @@ package crypto
 import (
 	"bytes"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -93,21 +94,7 @@ func TestLoadAndDecryptKey_InvalidDecryptedLength(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid key length")
 	}
-	if err != nil && !contains(err.Error(), "invalid decrypted key length") {
+	if err != nil && !strings.Contains(err.Error(), "invalid decrypted key length") {
 		t.Errorf("expected 'invalid decrypted key length' error, got: %v", err)
 	}
-}
-
-// Helper functions
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr))
-}
-
-func containsAt(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

@@ -135,7 +135,11 @@ func mapWithNATPMP(ctx context.Context, internalTCPPort, internalUDPPort int) (*
 	ch := make(chan pmpResult, 1)
 	go func() {
 		resp, err := client.GetExternalAddress()
-		ch <- pmpResult{resp: resp, err: err}
+		select {
+		case <-ctx.Done():
+			return
+		case ch <- pmpResult{resp: resp, err: err}:
+		}
 	}()
 	var extResp *natpmp.GetExternalAddressResult
 	select {

@@ -45,13 +45,13 @@ func CheckPortAvailable(port int) (bool, error) {
 	if err != nil {
 		return false, nil
 	}
-	ln.Close()
+	defer ln.Close()
 
 	udpLn, err := net.ListenUDP("udp", &net.UDPAddr{Port: port})
 	if err != nil {
 		return false, nil
 	}
-	udpLn.Close()
+	defer udpLn.Close()
 
 	return true, nil
 }

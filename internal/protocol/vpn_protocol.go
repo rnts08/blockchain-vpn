@@ -623,7 +623,7 @@ func EncodeCertFingerprintPayload(pubKey *btcec.PublicKey, certFingerprint []byt
 	}
 	buf.Write(pubKey.SerializeCompressed())
 	if len(certFingerprint) < 16 {
-		certFingerprint = make([]byte, 16)
+		return nil, fmt.Errorf("cert fingerprint too short: got %d bytes, need 16", len(certFingerprint))
 	}
 	buf.Write(certFingerprint[:16])
 	return buf.Bytes(), nil

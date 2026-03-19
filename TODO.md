@@ -30,16 +30,16 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 ### Medium
 
-- [ ] `EncodeCertFingerprintPayload` in `internal/protocol/vpn_protocol.go:622` - silently zeroes truncated fingerprints instead of returning error
-- [ ] NAT-PMP goroutine in `internal/nat/nat.go:136` - may send on channel after context cancellation
-- [ ] Unsafe type assertion in `internal/config/config_registry.go:139` - `.([]string)` could panic
+- [x] `EncodeCertFingerprintPayload` in `internal/protocol/vpn_protocol.go:622` - silently zeroes truncated fingerprints instead of returning error
+- [x] NAT-PMP goroutine in `internal/nat/nat.go:136` - may send on channel after context cancellation
+- [x] Unsafe type assertion in `internal/config/config_registry.go:139` - `.([]string)` could panic
 
 ### Low
 
-- [ ] `runPowerShell` in `internal/crypto/keystore.go:360` - inherits full process environment unnecessarily
-- [ ] `containsAt` test helper in `internal/crypto/crypto_test.go:106` - uses recursion, prefer `strings.Contains`
-- [ ] Manual close in `internal/config/port.go:43` - use defer for robustness
-- [ ] Cleanup errors silently ignored in `internal/nat/nat.go:67,107`
+- [x] `CheckPortAvailable` in `internal/config/port.go:43` - use defer for robustness
+- [x] `containsAt` test helper in `internal/crypto/crypto_test.go:106` - use strings.Contains
+- [ ] `runPowerShell` in `internal/crypto/keystore.go:360` - inherits full process environment (intentional for PowerShell)
+- [ ] Cleanup errors silently ignored in `internal/nat/nat.go:67,107` (acceptable pattern)
 
 ---
 

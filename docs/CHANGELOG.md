@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.9] - 2026-03-19
+
+### Bug Fixes
+- `EncodeCertFingerprintPayload` now returns error for truncated fingerprints instead of silently zeroing
+- NAT-PMP goroutine now checks context cancellation before sending result to prevent potential leaks
+- `CheckPortAvailable` uses defer for robust resource cleanup
+- Replaced custom `containsAt` test helper with `strings.Contains`
+
+### Version Bump
+- Bumped patch version to 0.6.9.
+
 ## [0.6.8] - 2026-03-19
 
 ### Security Fixes
