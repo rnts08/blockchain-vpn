@@ -61,8 +61,8 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 ## Future Enhancements
 
-- [ ] NAT traversal method selection via config (`NATTraversalMethod` config option unused)
-- [ ] WebSocket origin validation (currently allows all origins)
+- [ ] NAT traversal method selection via config (`NATTraversalMethod` config option - UPnP/NAT-PMP work, just config unused)
+- [ ] WebSocket origin validation (currently allows all origins - security hardening)
 - [ ] Symmetric NAT detection and handling
 - [ ] STUN integration for NAT type detection
 - [ ] Full blockchain rating broadcast integration (infrastructure exists, needs key management)
