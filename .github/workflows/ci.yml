@@ -8,7 +8,7 @@ on:
 
 env:
   GO_VERSION: "1.25.x"
-  VERSION: "0.7.1"
+  VERSION: "0.7.2"
 
 jobs:
   test-and-lint:

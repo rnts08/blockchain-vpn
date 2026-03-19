@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.2] - 2026-03-19
+
+### Bug Fixes
+- Fixed panic on startup with no command arguments - now prints help instead of crashing
+- Fixed Windows build failure - extracted Unix-only process functions into platform-specific files
+
+### CI/CD
+- Added beta release workflow on push to main branch
+- Cross-platform builds: linux/darwin/windows × amd64/arm64
+- SHA256 checksums and draft GitHub release on each push to main
+
+### Testing
+- Added 993 lines of config and setup validation tests
+- Test coverage analysis with gap report for critical paths
+
+### Version Bump
+- Bumped patch version to 0.7.2.
+
 ## [0.7.1] - 2026-03-19
 
 ### Bug Fixes
