@@ -20,6 +20,17 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 - [x] Add detailed help subcommands for all major commands (generate-send-address, favorite, rate, etc.) - comprehensive help added
 - [x] Document demo/testing workflow with regtest ordexcoind - see TESTING.md
 
+## Rating System
+
+- [x] `AnnounceRating` function for blockchain rating broadcast
+- [x] `--broadcast` flag on rate command
+- [x] `EncodeReputationPayloadWithoutSignature` for signing ratings
+- [x] Add rating prompt on disconnect (1-5 stars or skip)
+- [x] Integrate AnnounceRating into disconnect flow
+- [x] Client key generation/loading for signing ratings
+- [ ] Update scanner to show accumulated on-chain rating
+- [ ] Reputation score aggregation from blockchain
+
 ## Issues Found During Code Review (Beta Testing Prep)
 
 ### Critical - Architecture Gaps (FIXED)

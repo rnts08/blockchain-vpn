@@ -729,7 +729,7 @@ func main() {
 		handleGenerateProviderKey(cfg, *generateProviderKeyDryRun)
 	case "disconnect":
 		disconnectCmd.Parse(os.Args[2:])
-		handleDisconnect()
+		handleDisconnect(cfg)
 	case "restart-provider":
 		restartProviderCmd.Parse(os.Args[2:])
 		handleRestartProvider(cfg, configPath)
@@ -1048,6 +1048,56 @@ type ratingEntry struct {
 	Timestamp      string `json:"timestamp"`
 }
 
+// sessionInfo stores information about the active/last VPN session for rating purposes.
+type sessionInfo struct {
+	ProviderPubkey   string `json:"provider_pubkey"`
+	ProviderEndpoint string `json:"provider_endpoint"` // IP:Port
+	ConnectedAt      string `json:"connected_at"`
+	DisconnectedAt   string `json:"disconnected_at,omitempty"`
+	Rated            bool   `json:"rated"`
+}
+
+func saveSessionInfo(pubkey string, endpoint string) error {
+	dir, err := config.AppConfigDir()
+	if err != nil {
+		return err
+	}
+	info := sessionInfo{
+		ProviderPubkey:   pubkey,
+		ProviderEndpoint: endpoint,
+		ConnectedAt:      time.Now().UTC().Format(time.RFC3339),
+	}
+	data, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "session.json"), data, 0o644)
+}
+
+func loadSessionInfo() (*sessionInfo, error) {
+	dir, err := config.AppConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "session.json"))
+	if err != nil {
+		return nil, err
+	}
+	var info sessionInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+func clearSessionInfo() error {
+	dir, err := config.AppConfigDir()
+	if err != nil {
+		return err
+	}
+	return os.Remove(filepath.Join(dir, "session.json"))
+}
+
 func handleRate(cfg *config.Config, configPath string, broadcastOnChain bool) {
 	if len(os.Args) < 4 {
 		log.Fatal("Usage: bcvpn rate <provider-pubkey> <rating> [comment]")
@@ -1118,7 +1168,7 @@ func handleRate(cfg *config.Config, configPath string, broadcastOnChain bool) {
 	}
 }
 
-func handleDisconnect() {
+func handleDisconnect(cfg *config.Config) {
 	dir, err := config.AppConfigDir()
 	if err != nil {
 		log.Fatalf("Failed to get app config dir: %v", err)
@@ -1136,6 +1186,7 @@ func handleDisconnect() {
 	}
 	if !isProcessRunning(pid) {
 		os.Remove(pidPath)
+		clearSessionInfo()
 		fmt.Printf("Previous VPN connection (PID %d) is no longer running (stale PID file).\n", pid)
 		fmt.Println("To connect to a VPN provider, run: bcvpn scan")
 		os.Exit(1)
@@ -1163,6 +1214,159 @@ func handleDisconnect() {
 	} else {
 		log.Println("Client disconnected successfully.")
 	}
+
+	// Prompt for rating
+	promptForRating(cfg)
+}
+
+// promptForRating asks the user to rate the last provider they connected to.
+func promptForRating(cfg *config.Config) {
+	dir, err := config.AppConfigDir()
+	if err != nil {
+		log.Printf("Warning: could not get config dir: %v", err)
+		return
+	}
+
+	session, err := loadSessionInfo()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return // No session info, skip rating
+		}
+		log.Printf("Warning: could not load session info: %v", err)
+		return
+	}
+
+	if session.Rated {
+		return // Already rated
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println()
+	fmt.Printf("How would you rate your connection to provider %s? (1-5 stars, or press Enter to skip)\n", session.ProviderPubkey[:16]+"...")
+	fmt.Print("Rating (1-5): ")
+
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+
+	if input == "" {
+		fmt.Println("Rating skipped.")
+		return
+	}
+
+	rating, err := strconv.Atoi(input)
+	if err != nil || rating < 1 || rating > 5 {
+		fmt.Println("Invalid rating. Rating skipped.")
+		return
+	}
+
+	// Save rating locally
+	ratingsPath := filepath.Join(dir, "ratings.json")
+	ratings := []ratingEntry{}
+	if data, err := os.ReadFile(ratingsPath); err == nil {
+		json.Unmarshal(data, &ratings)
+	} else if !os.IsNotExist(err) {
+		log.Printf("Warning: could not read ratings file: %v", err)
+	}
+
+	ratings = append(ratings, ratingEntry{
+		ProviderPubkey: session.ProviderPubkey,
+		Score:          rating,
+		Comment:        "",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339),
+	})
+
+	data, _ := json.MarshalIndent(ratings, "", "  ")
+	os.WriteFile(ratingsPath, data, 0o644)
+	fmt.Printf("Rating saved: %d/5 stars for provider %s\n", rating, session.ProviderPubkey[:16]+"...")
+
+	// Broadcast on blockchain if RPC is configured
+	if cfg != nil && strings.TrimSpace(cfg.RPC.Host) != "" {
+		fmt.Println("Broadcasting rating to blockchain...")
+		if err := broadcastRatingOnChain(cfg, session.ProviderPubkey, uint8(rating)); err != nil {
+			fmt.Printf("Warning: could not broadcast rating: %v\n", err)
+			fmt.Println("Rating saved locally but not on blockchain.")
+		} else {
+			fmt.Println("Rating broadcast to blockchain!")
+		}
+	} else {
+		fmt.Println("Note: RPC not configured. Rating saved locally only.")
+		fmt.Println("Configure RPC in config to broadcast ratings on blockchain.")
+	}
+
+	// Mark session as rated
+	session.Rated = true
+	session.DisconnectedAt = time.Now().UTC().Format(time.RFC3339)
+	sessionData, _ := json.MarshalIndent(session, "", "  ")
+	os.WriteFile(filepath.Join(dir, "session.json"), sessionData, 0o644)
+}
+
+func broadcastRatingOnChain(cfg *config.Config, providerPubkeyHex string, rating uint8) error {
+	providerPubKeyBytes, err := hex.DecodeString(providerPubkeyHex)
+	if err != nil {
+		return fmt.Errorf("invalid provider pubkey: %w", err)
+	}
+	providerPubKey, err := btcec.ParsePubKey(providerPubKeyBytes)
+	if err != nil {
+		return fmt.Errorf("invalid provider pubkey: %w", err)
+	}
+
+	client := connectRPCWithConfig(cfg)
+
+	clientKey, err := getOrCreateClientKey(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to get client key: %w", err)
+	}
+
+	return blockchain.AnnounceRating(client, providerPubKey, clientKey, rating, "bcvpn-client", 6, "conservative")
+}
+
+func getOrCreateClientKey(cfg *config.Config) (*btcec.PrivateKey, error) {
+	dir, err := config.AppConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	keyPath := filepath.Join(dir, "client.key")
+
+	// Try to load existing key
+	if _, err := os.Stat(keyPath); err == nil {
+		// Key exists, prompt for password or use env
+		password := os.Getenv("BCVPN_KEY_PASSWORD")
+		if password == "" {
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Enter password to decrypt client key: ")
+			pass, _ := reader.ReadString('\n')
+			password = strings.TrimSpace(pass)
+		}
+		return crypto.LoadAndDecryptKey(keyPath, []byte(password))
+	}
+
+	// Generate new key
+	fmt.Println("No client key found. Generating new key...")
+	key, err := btcec.NewPrivateKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate key: %w", err)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter password to encrypt new client key: ")
+	pass1, _ := reader.ReadString('\n')
+	fmt.Print("Confirm password: ")
+	pass2, _ := reader.ReadString('\n')
+	if strings.TrimSpace(pass1) != strings.TrimSpace(pass2) {
+		return nil, fmt.Errorf("passwords do not match")
+	}
+	password := strings.TrimSpace(pass1)
+
+	privKeyBytes := key.Serialize()
+	encrypted, err := crypto.Encrypt(privKeyBytes, []byte(password))
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt key: %w", err)
+	}
+	if err := os.WriteFile(keyPath, encrypted, 0o600); err != nil {
+		return nil, fmt.Errorf("failed to save key: %w", err)
+	}
+	fmt.Println("Client key generated and saved.")
+	return key, nil
 }
 
 func handleStopProvider(cfg *config.Config, configPath string) {
@@ -1844,6 +2048,14 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 	peerPubKey := selectedEndpoint.Endpoint.PublicKey
 	endpointAddr := fmt.Sprintf("%s:%d", selectedEndpoint.Endpoint.IP.String(), selectedEndpoint.Endpoint.Port)
 	fmt.Printf("\nConnecting to %s...\n", endpointAddr)
+
+	// Save session info for rating after disconnect
+	if !dryRun {
+		pubkeyHex := hex.EncodeToString(peerPubKey.SerializeCompressed())
+		if err := saveSessionInfo(pubkeyHex, endpointAddr); err != nil {
+			log.Printf("Warning: failed to save session info: %v", err)
+		}
+	}
 
 	if dryRun {
 		fmt.Printf("[Dry Run] Simulation: Would create TUN interface %s and connect to %s.\n", clientCfg.InterfaceName, endpointAddr)

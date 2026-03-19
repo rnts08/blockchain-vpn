@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.15] - 2026-03-19
+
+### Rating System
+- Added `sessionInfo` struct with local storage for session persistence
+- Added rating prompt on disconnect (1-5 stars or skip)
+- Integrated `AnnounceRating` into disconnect flow when RPC configured
+- Added client key generation/loading for signing ratings
+- Rating saved locally in ratings.json and broadcast to blockchain if RPC configured
+
+### Version Bump
+- Bumped patch version to 0.6.15.
+
 ## [0.6.14] - 2026-03-19
 
 ### Quality Assurance & Trust Features
