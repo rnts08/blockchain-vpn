@@ -594,8 +594,12 @@ func main() {
 
 		fmt.Printf("\nAvailable VPN endpoints:\n")
 		for i, ep := range filteredEndpoints {
+			ratingStr := ""
+			if ep.ReputationScore != 0 {
+				ratingStr = fmt.Sprintf(", Rating: %d", ep.ReputationScore)
+			}
 			fmt.Printf(
-				"  [%d] Country: %s, Latency: %v, IP: %s, Port: %d, Price: %d sats/session, Bandwidth: %d Kbps, Capacity: %s, Score: %.2f\n",
+				"  [%d] Country: %s, Latency: %v, IP: %s, Port: %d, Price: %d sats/session, Bandwidth: %d Kbps, Capacity: %s, Score: %.2f%s\n",
 				i,
 				effectiveCountry(ep),
 				ep.Latency.Round(time.Millisecond),
@@ -605,6 +609,7 @@ func main() {
 				ep.AdvertisedBandwidthKB,
 				displayCapacity(ep),
 				computeProviderScore(ep),
+				ratingStr,
 			)
 		}
 		fmt.Println()

@@ -28,8 +28,8 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 - [x] Add rating prompt on disconnect (1-5 stars or skip)
 - [x] Integrate AnnounceRating into disconnect flow
 - [x] Client key generation/loading for signing ratings
-- [ ] Update scanner to show accumulated on-chain rating
-- [ ] Reputation score aggregation from blockchain
+- [x] Update scanner to show accumulated on-chain rating
+- [x] Reputation score aggregation from blockchain
 
 ## Issues Found During Code Review (Beta Testing Prep)
 

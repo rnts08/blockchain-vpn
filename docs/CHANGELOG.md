@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.16] - 2026-03-19
+
+### Rating System
+- Updated scan output to display on-chain accumulated rating (ReputationScore)
+- Rating shown in scan output when provider has blockchain ratings
+
+### Version Bump
+- Bumped patch version to 0.6.16.
+
 ## [0.6.15] - 2026-03-19
 
 ### Rating System
