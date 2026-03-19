@@ -77,16 +77,42 @@ jobs:
 
       - name: Create checksums
         run: |
-          find artifacts -type f -name 'bcvpn*' | sort | xargs sha256sum > SHA256SUMS
-          cat SHA256SUMS
+          find artifacts -type f -name 'bcvpn*' | sort | xargs sha256sum > artifacts/SHA256SUMS
+          cat artifacts/SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
-          name: bcvpn v${{ env.VERSION }}
+          name: bcvpn v${{ env.VERSION }} (Beta)
           draft: true
           generate_release_notes: true
+          body: |
+            ## BlockchainVPN v${{ env.VERSION }} Beta
+
+            This is a **beta release** of BlockchainVPN, a P2P VPN system powered by blockchain payments.
+
+            ### What's New
+            - Rating system with blockchain broadcast
+            - Connection quality verification (75% bandwidth threshold)
+            - Session spending limits enforcement
+            - Multiple critical concurrency and security fixes
+            - Interactive guided setup command (`bcvpn setup`)
+            - Cross-platform builds (Linux, macOS, Windows)
+
+            ### Binaries
+            - `bcvpn-linux-amd64` - Linux x86_64
+            - `bcvpn-linux-arm64` - Linux ARM64
+            - `bcvpn-darwin-amd64` - macOS Intel
+            - `bcvpn-darwin-arm64` - macOS Apple Silicon
+            - `bcvpn-windows-amd64.exe` - Windows x86_64
+
+            ### Known Limitations (Post-Beta)
+            - No automatic reconnection on network disconnect
+            - No cryptographic signature verification for reputation scores
+            - Direct connect command is stub-only (use `bcvpn scan` to find providers)
+
+            **Full Changelog**: https://github.com/rnts08/blockchain-vpn/compare/v0.4.9...v${{ env.VERSION }}
           files: |
             artifacts/bcvpn-linux-amd64/bcvpn-linux-amd64
             artifacts/bcvpn-linux-arm64/bcvpn-linux-arm64
