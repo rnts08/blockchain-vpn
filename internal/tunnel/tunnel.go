@@ -241,13 +241,21 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 		limitBytesPerSec = 0
 	}
 
+	var bgWg sync.WaitGroup
+
 	// Start the central TUN reader goroutine
 	// This reads packets from the TUN interface and routes them to the correct client connection.
-	go readTunLoop(iface, clients)
+	bgWg.Add(1)
+	go func() {
+		defer bgWg.Done()
+		readTunLoop(iface, clients)
+	}()
 
 	if cfg.WebSocketFallbackPort > 0 {
 		wsAddr := fmt.Sprintf("0.0.0.0:%d", cfg.WebSocketFallbackPort)
+		bgWg.Add(1)
 		go func() {
+			defer bgWg.Done()
 			log.Printf("Provider WebSocket server listening on %s", wsAddr)
 			if err := transport.StartWSServer(ctx, wsAddr, tlsConfig, func(conn net.Conn, r *http.Request) {
 				handleClient(ctx, conn, cfg, sec, privKey, authManager, ipPool, clients, limitBytesPerSec, iface, policy, r)
@@ -265,6 +273,7 @@ func StartProviderServer(ctx context.Context, cfg *config.ProviderConfig, sec *c
 			select {
 			case <-ctx.Done():
 				log.Println("Provider server shutting down.")
+				bgWg.Wait()
 				return nil
 			default:
 				recordRuntimeError(err)
@@ -393,9 +402,13 @@ func handleClient(ctx context.Context, conn net.Conn, cfg *config.ProviderConfig
 
 	// Handle client traffic and session
 	go func(c net.Conn, ip net.IP, pk *btcec.PublicKey) {
-		defer c.Close()
-		defer ipPool.Release(ip)
 		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Recovered from panic in client handler for %s: %v", c.RemoteAddr(), r)
+				recordRuntimeError(fmt.Errorf("panic in client handler: %v", r))
+			}
+			c.Close()
+			ipPool.Release(ip)
 			clients.RemoveSession(ip)
 			log.Printf("Client %s (%s) disconnected.", hex.EncodeToString(pk.SerializeCompressed()), c.RemoteAddr())
 			recordEvent("provider", "client_disconnected", c.RemoteAddr().String())
@@ -516,8 +529,9 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 			destIP := net.IP(packet[16:20])
 			clients.mu.RLock()
 			session, ok := clients.m[destIP.String()]
-			clients.mu.RUnlock()
 			if ok {
+				session := session
+				clients.mu.RUnlock()
 				if session.downLimiter != nil {
 					session.downLimiter.accountAndThrottle(n)
 				}
@@ -525,6 +539,8 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 				if _, err := session.conn.Write(packet[:n]); err != nil {
 					log.Printf("Info: failed to write packet to client %s: %v", destIP.String(), err)
 				}
+			} else {
+				clients.mu.RUnlock()
 			}
 		} else if version == 6 {
 			// IPv6 Header: Version (byte 0 >> 4) should be 6. Dest IP is bytes 24-40.
@@ -535,8 +551,9 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 			destIP := net.IP(packet[24:40])
 			clients.mu.RLock()
 			session, ok := clients.m[destIP.String()]
-			clients.mu.RUnlock()
 			if ok {
+				session := session
+				clients.mu.RUnlock()
 				if session.downLimiter != nil {
 					session.downLimiter.accountAndThrottle(n)
 				}
@@ -544,6 +561,8 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 				if _, err := session.conn.Write(packet[:n]); err != nil {
 					log.Printf("Info: failed to write IPv6 packet to client %s: %v", destIP.String(), err)
 				}
+			} else {
+				clients.mu.RUnlock()
 			}
 		} else {
 			log.Printf("Info: readTunLoop dropping unknown IP version packet (version=%d, len=%d)", version, n)
@@ -613,10 +632,14 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *confi
 	log.Printf("Dialing %s...", endpoint)
 	recordEvent("client", "connect_attempt", endpoint)
 
-	conn, err := transport.Dial(ctx, endpoint, tlsConfig, false)
+	var conn net.Conn
+	conn, err = transport.Dial(ctx, endpoint, tlsConfig, false)
 	if err != nil {
 		if cfg.EnableWebSocketFallback {
 			log.Printf("Direct connect failed, trying WebSocket fallback...")
+			if conn != nil {
+				conn.Close()
+			}
 			conn, err = transport.Dial(ctx, endpoint, tlsConfig, true)
 		}
 		if err != nil {

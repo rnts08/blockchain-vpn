@@ -1519,6 +1519,9 @@ func connectRPCWithConfig(cfg *config.Config) *rpcclient.Client {
 	if err != nil {
 		log.Fatalf("Failed to connect to RPC server at %s: %v\nHint: Ensure ordexcoind is running and the RPC credentials are correct.", connCfg.Host, err)
 	}
+	if client == nil {
+		log.Fatalf("Failed to connect to RPC server at %s: unexpected nil client", connCfg.Host)
+	}
 
 	// Check server warmup status if needed
 	if err := waitForServerReady(context.Background(), client); err != nil {

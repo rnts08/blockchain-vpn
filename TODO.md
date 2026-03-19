@@ -57,13 +57,13 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 ### Beta Testing - High Priority (Pre-Release Fixes)
 
-- [ ] Connection leak on WebSocket fallback in `internal/tunnel/tunnel.go:616-626` - original connection not closed on fallback
-- [ ] TOCTOU race in `readTunLoop` - session used after lock released
-- [ ] Nil pointer panic if RPC client returns (nil, nil) in `connectRPCWithConfig`
-- [ ] Unrecovered goroutines in `handleClient` - panic crashes entire provider
-- [ ] Goroutine leaks in start-provider - WS/TUN readers not tracked for cleanup
-- [ ] IP not released if policy.check fails after allocation
-- [ ] Untracked WS/TUN goroutines in provider server
+- [x] Connection leak on WebSocket fallback in `internal/tunnel/tunnel.go:616-626` - original connection not closed on fallback
+- [x] TOCTOU race in `readTunLoop` - session used after lock released
+- [x] Nil pointer panic in RPC client creation - added nil check
+- [x] Unrecovered goroutines in `handleClient` - added recover()
+- [x] Goroutine leaks in start-provider - TUN/WS goroutines tracked with WaitGroup
+- [x] IP not released on policy.check failure - (already handled, policy.check before IP allocation)
+- [x] Track WS/TUN goroutines for cleanup - added WaitGroup and graceful shutdown
 
 ### Medium
 

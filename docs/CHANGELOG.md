@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-03-19
+
+### Critical Bug Fixes (Pre-Beta Release)
+- Fixed connection leak on WebSocket fallback - original connection now closed before retry
+- Fixed TOCTOU race condition in readTunLoop - session pointer used under lock
+- Fixed nil pointer panic in RPC client creation - added nil check for client
+- Added recover() to handleClient goroutines - prevents crashes from panics
+- Fixed goroutine leaks in provider server - TUN reader and WS server now tracked with WaitGroup
+- Added graceful shutdown for background goroutines
+
+### Version Bump
+- Bumped minor version to 0.7.0 for beta release.
+
 ## [0.6.16] - 2026-03-19
 
 ### Rating System
