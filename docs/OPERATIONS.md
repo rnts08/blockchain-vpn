@@ -25,9 +25,13 @@ This document expands and explains all commands available for the BlockchainVPN 
       ```
 ## 2. Basic commands
 
-   * Status
-      ```bash
-         bcvpn status [--json]
+    * Interactive Setup (recommended for new users)
+       ```bash
+       bcvpn setup
+       ```
+    * Status
+       ```bash
+       bcvpn status [--json]
       ```
    * Events
       ```bash

@@ -140,6 +140,9 @@ func main() {
 			case "broadcast":
 				printRebroadcastHelp()
 				os.Exit(0)
+			case "setup":
+				printSetupHelp()
+				os.Exit(0)
 			}
 		}
 		printHelp()
@@ -218,6 +221,7 @@ func main() {
 	disconnectCmd := flag.NewFlagSet("disconnect", flag.ExitOnError)
 	restartProviderCmd := flag.NewFlagSet("restart-provider", flag.ExitOnError)
 	stopProviderCmd := flag.NewFlagSet("stop-provider", flag.ExitOnError)
+	setupCmd := flag.NewFlagSet("setup", flag.ExitOnError)
 
 	// Scan specific flags
 	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
@@ -741,6 +745,9 @@ func main() {
 	case "stop-provider":
 		stopProviderCmd.Parse(os.Args[2:])
 		handleStopProvider(cfg, configPath)
+	case "setup":
+		setupCmd.Parse(os.Args[2:])
+		handleSetup(configPath)
 	default:
 		fmt.Printf("unknown command: %s\n\n", os.Args[1])
 		printHelp()
@@ -947,6 +954,320 @@ func handleGenerateSendAddress(cfg *config.Config) {
 
 func handleGenerateReceiveAddress(cfg *config.Config) {
 	generateAddress(cfg)
+}
+
+func handleSetup(configPath string) {
+	cfg := &config.Config{}
+
+	fmt.Println()
+	fmt.Println(strings.Repeat("=", 60))
+	fmt.Println("BlockchainVPN Interactive Setup")
+	fmt.Println(strings.Repeat("=", 60))
+	fmt.Println()
+	fmt.Println("This wizard will help you configure BlockchainVPN for first use.")
+	fmt.Println("Press Enter to accept the default value shown in brackets.")
+	fmt.Println()
+
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Println("--- RPC Configuration ---")
+	fmt.Println()
+
+	defaultRPCHost := "localhost:25173"
+	fmt.Printf("RPC Host:port [%s]: ", defaultRPCHost)
+	rpcHost, _ := reader.ReadString('\n')
+	rpcHost = strings.TrimSpace(rpcHost)
+	if rpcHost == "" {
+		rpcHost = defaultRPCHost
+	}
+	cfg.RPC.Host = rpcHost
+
+	fmt.Printf("RPC Username [rpcuser]: ")
+	rpcUser, _ := reader.ReadString('\n')
+	rpcUser = strings.TrimSpace(rpcUser)
+	if rpcUser == "" {
+		rpcUser = "rpcuser"
+	}
+	cfg.RPC.User = rpcUser
+
+	fmt.Printf("RPC Password (leave empty to auto-generate): ")
+	rpcPass, _ := reader.ReadString('\n')
+	rpcPass = strings.TrimSpace(rpcPass)
+	if rpcPass == "" {
+		genPass, err := config.GenerateRandomRPCPassword()
+		if err != nil {
+			log.Fatalf("Failed to generate RPC password: %v", err)
+		}
+		rpcPass = genPass
+		fmt.Printf("Auto-generated password: %s\n", rpcPass)
+	}
+	cfg.RPC.Pass = rpcPass
+
+	fmt.Printf("Network [mainnet]: ")
+	network, _ := reader.ReadString('\n')
+	network = strings.TrimSpace(strings.ToLower(network))
+	if network == "" {
+		network = "mainnet"
+	}
+	cfg.RPC.Network = network
+
+	fmt.Println()
+	fmt.Println("--- Logging Configuration ---")
+	fmt.Println()
+	fmt.Printf("Log Format [text] (text/json): ")
+	logFormat, _ := reader.ReadString('\n')
+	logFormat = strings.TrimSpace(strings.ToLower(logFormat))
+	if logFormat == "" {
+		logFormat = "text"
+	}
+	cfg.Logging.Format = logFormat
+
+	fmt.Printf("Log Level [info] (debug/info/warn/error): ")
+	logLevel, _ := reader.ReadString('\n')
+	logLevel = strings.TrimSpace(strings.ToLower(logLevel))
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	cfg.Logging.Level = logLevel
+
+	fmt.Println()
+	fmt.Println("--- Security Configuration ---")
+	fmt.Println()
+	fmt.Printf("Key Storage Mode [file] (file/keychain/libsecret/dpapi/auto): ")
+	keyMode, _ := reader.ReadString('\n')
+	keyMode = strings.TrimSpace(strings.ToLower(keyMode))
+	if keyMode == "" {
+		keyMode = "file"
+	}
+	cfg.Security.KeyStorageMode = keyMode
+
+	fmt.Printf("TLS Min Version [1.3] (1.2/1.3): ")
+	tlsVer, _ := reader.ReadString('\n')
+	tlsVer = strings.TrimSpace(strings.ToLower(tlsVer))
+	if tlsVer == "" {
+		tlsVer = "1.3"
+	}
+	cfg.Security.TLSMinVersion = tlsVer
+
+	fmt.Printf("TLS Profile [modern] (modern/compat): ")
+	tlsProfile, _ := reader.ReadString('\n')
+	tlsProfile = strings.TrimSpace(strings.ToLower(tlsProfile))
+	if tlsProfile == "" {
+		tlsProfile = "modern"
+	}
+	cfg.Security.TLSProfile = tlsProfile
+
+	fmt.Println()
+	fmt.Println("--- Mode Selection ---")
+	fmt.Println()
+	fmt.Println("Do you want to configure as provider, client, or both?")
+	fmt.Println("  1) Client only")
+	fmt.Println("  2) Provider only")
+	fmt.Println("  3) Both provider and client")
+	fmt.Println()
+	fmt.Printf("Select [3]: ")
+
+	modeSel, _ := reader.ReadString('\n')
+	modeSel = strings.TrimSpace(modeSel)
+	if modeSel == "" {
+		modeSel = "3"
+	}
+
+	isClient := modeSel == "1" || modeSel == "3"
+	isProvider := modeSel == "2" || modeSel == "3"
+
+	if isClient {
+		fmt.Println()
+		fmt.Println("--- Client Configuration ---")
+		fmt.Println()
+		defaultClientInterface := "bcvpn1"
+		fmt.Printf("Interface Name [%s]: ", defaultClientInterface)
+		clientInterface, _ := reader.ReadString('\n')
+		clientInterface = strings.TrimSpace(clientInterface)
+		if clientInterface == "" {
+			clientInterface = defaultClientInterface
+		}
+		cfg.Client.InterfaceName = clientInterface
+
+		defaultClientTunIP := "10.10.0.2"
+		fmt.Printf("TUN IP [%s]: ", defaultClientTunIP)
+		clientTunIP, _ := reader.ReadString('\n')
+		clientTunIP = strings.TrimSpace(clientTunIP)
+		if clientTunIP == "" {
+			clientTunIP = defaultClientTunIP
+		}
+		cfg.Client.TunIP = clientTunIP
+
+		defaultClientTunSubnet := "24"
+		fmt.Printf("TUN Subnet Prefix [%s]: ", defaultClientTunSubnet)
+		clientTunSubnet, _ := reader.ReadString('\n')
+		clientTunSubnet = strings.TrimSpace(clientTunSubnet)
+		if clientTunSubnet == "" {
+			clientTunSubnet = defaultClientTunSubnet
+		}
+		cfg.Client.TunSubnet = clientTunSubnet
+
+		fmt.Printf("Enable Kill Switch [false] (true/false): ")
+		killSwitch, _ := reader.ReadString('\n')
+		killSwitch = strings.TrimSpace(strings.ToLower(killSwitch))
+		cfg.Client.EnableKillSwitch = killSwitch == "true"
+
+		fmt.Printf("Max Parallel Tunnels [1]: ")
+		maxTunnels, _ := reader.ReadString('\n')
+		maxTunnels = strings.TrimSpace(maxTunnels)
+		if maxTunnels == "" {
+			maxTunnels = "1"
+		}
+		fmt.Sscanf(maxTunnels, "%d", &cfg.Client.MaxParallelTunnels)
+	}
+
+	if isProvider {
+		fmt.Println()
+		fmt.Println("--- Provider Configuration ---")
+		fmt.Println()
+		defaultProviderInterface := "bcvpn0"
+		fmt.Printf("Interface Name [%s]: ", defaultProviderInterface)
+		providerInterface, _ := reader.ReadString('\n')
+		providerInterface = strings.TrimSpace(providerInterface)
+		if providerInterface == "" {
+			providerInterface = defaultProviderInterface
+		}
+		cfg.Provider.InterfaceName = providerInterface
+
+		defaultProviderListenPort := "51820"
+		fmt.Printf("Listen Port [%s]: ", defaultProviderListenPort)
+		providerPort, _ := reader.ReadString('\n')
+		providerPort = strings.TrimSpace(providerPort)
+		if providerPort == "" {
+			providerPort = defaultProviderListenPort
+		}
+		fmt.Sscanf(providerPort, "%d", &cfg.Provider.ListenPort)
+
+		fmt.Printf("Announce IP (leave empty for auto-detect): ")
+		providerIP, _ := reader.ReadString('\n')
+		providerIP = strings.TrimSpace(providerIP)
+		cfg.Provider.AnnounceIP = providerIP
+
+		fmt.Printf("Price in satoshis per session [1000]: ")
+		providerPrice, _ := reader.ReadString('\n')
+		providerPrice = strings.TrimSpace(providerPrice)
+		if providerPrice == "" {
+			providerPrice = "1000"
+		}
+		fmt.Sscanf(providerPrice, "%d", &cfg.Provider.Price)
+
+		fmt.Printf("Max Consumers (0=unlimited) [0]: ")
+		maxConsumers, _ := reader.ReadString('\n')
+		maxConsumers = strings.TrimSpace(maxConsumers)
+		if maxConsumers == "" {
+			maxConsumers = "0"
+		}
+		fmt.Sscanf(maxConsumers, "%d", &cfg.Provider.MaxConsumers)
+
+		defaultProviderTunIP := "10.0.0.1"
+		fmt.Printf("TUN IP [%s]: ", defaultProviderTunIP)
+		providerTunIP, _ := reader.ReadString('\n')
+		providerTunIP = strings.TrimSpace(providerTunIP)
+		if providerTunIP == "" {
+			providerTunIP = defaultProviderTunIP
+		}
+		cfg.Provider.TunIP = providerTunIP
+
+		defaultProviderTunSubnet := "24"
+		fmt.Printf("TUN Subnet Prefix [%s]: ", defaultProviderTunSubnet)
+		providerTunSubnet, _ := reader.ReadString('\n')
+		providerTunSubnet = strings.TrimSpace(providerTunSubnet)
+		if providerTunSubnet == "" {
+			providerTunSubnet = defaultProviderTunSubnet
+		}
+		cfg.Provider.TunSubnet = providerTunSubnet
+
+		fmt.Printf("Enable NAT Traversal [true] (true/false): ")
+		enableNAT, _ := reader.ReadString('\n')
+		enableNAT = strings.TrimSpace(strings.ToLower(enableNAT))
+		cfg.Provider.EnableNAT = enableNAT != "false"
+
+		fmt.Printf("Pricing Method [session] (session/time/data): ")
+		pricingMethod, _ := reader.ReadString('\n')
+		pricingMethod = strings.TrimSpace(strings.ToLower(pricingMethod))
+		if pricingMethod == "" {
+			pricingMethod = "session"
+		}
+		cfg.Provider.PricingMethod = pricingMethod
+
+		fmt.Printf("Bandwidth Limit (e.g., 10mbit, leave empty for unlimited) [0]: ")
+		bandwidthLimit, _ := reader.ReadString('\n')
+		bandwidthLimit = strings.TrimSpace(bandwidthLimit)
+		if bandwidthLimit == "" {
+			bandwidthLimit = "0"
+		}
+		cfg.Provider.BandwidthLimit = bandwidthLimit
+
+		keyPath, _ := config.DefaultProviderKeyPath()
+		cfg.Provider.PrivateKeyFile = keyPath
+
+		cfg.Provider.CertLifetimeHours = 720
+		cfg.Provider.CertRotateBeforeHours = 24
+		cfg.Provider.HealthCheckEnabled = true
+		cfg.Provider.HealthCheckInterval = "30s"
+		cfg.Provider.BandwidthMonitorInterval = "30s"
+		cfg.Provider.AnnouncementInterval = "24h"
+		cfg.Provider.ShutdownTimeout = "10s"
+		cfg.Provider.HeartbeatInterval = "5m"
+		cfg.Provider.MetricsListenAddr = "127.0.0.1:9090"
+	}
+
+	cfg.Client.TunIP = "10.10.0.2"
+	cfg.Client.TunSubnet = "24"
+	cfg.Client.DNSServers = []string{"1.1.1.1", "8.8.8.8"}
+	cfg.Provider.TunIP = "10.0.0.1"
+	cfg.Provider.TunSubnet = "24"
+	cfg.Provider.DNSServers = []string{"1.1.1.1", "8.8.8.8"}
+
+	fmt.Println()
+	fmt.Println(strings.Repeat("=", 60))
+	fmt.Println("Validating configuration...")
+	fmt.Println(strings.Repeat("=", 60))
+
+	if err := config.Validate(cfg); err != nil {
+		fmt.Printf("\nValidation failed:\n%v\n\n", err)
+		fmt.Print("Save anyway? (y/N): ")
+		save, _ := reader.ReadString('\n')
+		if strings.TrimSpace(strings.ToLower(save)) != "y" {
+			fmt.Println("Setup cancelled.")
+			return
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("Saving configuration...")
+
+	var out bytes.Buffer
+	encoder := json.NewEncoder(&out)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(cfg); err != nil {
+		log.Fatalf("Failed to encode config: %v", err)
+	}
+	if err := util.WriteFileAtomic(configPath, out.Bytes(), 0o644); err != nil {
+		log.Fatalf("Failed to write config: %v", err)
+	}
+
+	fmt.Println()
+	fmt.Printf("Configuration saved to: %s\n", configPath)
+	fmt.Println()
+	fmt.Println("Setup complete!")
+	fmt.Println()
+	fmt.Println("Next steps:")
+	if isProvider {
+		fmt.Println("  1. Run 'bcvpn generate-provider-key' to create your provider identity")
+		fmt.Println("  2. Run 'bcvpn start-provider' to start offering VPN services")
+	}
+	if isClient {
+		fmt.Println("  1. Run 'bcvpn scan' to discover available VPN providers")
+		fmt.Println("  2. Run 'bcvpn connect' to connect to a provider")
+	}
+	fmt.Println()
+	fmt.Println("For more help, run 'bcvpn help' or 'bcvpn doctor' to verify your setup.")
 }
 
 func handleGenerateTLSKeypair() {
@@ -2923,6 +3244,7 @@ Usage: bcvpn <command> [options]
 
 Commands:
   generate-config         Generate a default configuration file
+  setup                     Run interactive guided setup
   config                  Manage configuration (see 'bcvpn help config')
   version                 Show version information
   about                   Show about info and donation addresses
@@ -2965,10 +3287,11 @@ Subcommand Help:
   generate-config, version, about, status, events, doctor, diagnostics, 
   history, generate-send-address, generate-receive-address, generate-tls-keypair, 
   favorite, rate, generate-provider-key, disconnect, stop-provider, 
-  restart-provider, rotate-provider-key, rebroadcast.
+  restart-provider, rotate-provider-key, rebroadcast, setup.
 
 Examples:
   bcvpn generate-config               # Create default config.json
+  bcvpn setup                        # Run interactive setup wizard
   bcvpn scan                         # Find and connect to providers
   bcvpn connect 1.2.3.4 --port 51820 # Connect directly to provider
   bcvpn start-provider               # Start as a provider
@@ -3162,6 +3485,23 @@ Options:
 
 Example:
   bcvpn generate-config
+`)
+}
+
+func printSetupHelp() {
+	fmt.Print(`BlockchainVPN Setup
+
+Usage: bcvpn setup
+
+Start an interactive guided setup that walks you through configuration.
+You'll be asked about RPC, logging, security, and whether to configure
+as a provider or client. Sensible defaults are provided.
+
+Options:
+  None
+
+Example:
+  bcvpn setup
 `)
 }
 

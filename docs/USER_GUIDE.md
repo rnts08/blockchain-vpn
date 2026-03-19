@@ -13,6 +13,20 @@ This guide covers end-to-end CLI flows for both modes.
 
 ## 2. First Run
 
+### Option A: Guided Setup (Recommended for New Users)
+
+1. Build the CLI:
+   ```bash
+   go build -o bcvpn ./cmd/bcvpn
+   ```
+2. Run the interactive setup wizard:
+   ```bash
+   ./bcvpn setup
+   ```
+   This will guide you through RPC, logging, security, and provider/client configuration with sensible defaults.
+
+### Option B: Manual Configuration
+
 1. Build the CLI:
    ```bash
    go build -o bcvpn ./cmd/bcvpn
