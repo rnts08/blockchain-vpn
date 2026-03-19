@@ -14,6 +14,7 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 ## Priority: Medium
 
 - [x] Implement rating persistence (ratings.json) - stored in config dir as ratings.json
+- [x] Session persistence (session.json) - tracks last provider for rating prompt
 - [x] Add more scanner filters (min-score, limit, rescan) and sort alias bw
 - [x] Simplify default config generation to only include essential fields
 - [x] Improve error handling and user feedback for CLI commands (ongoing)
@@ -81,7 +82,7 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 - [ ] WebSocket origin validation
 - [ ] Symmetric NAT detection and handling
 - [ ] STUN integration for NAT type detection
-- [ ] Full blockchain rating broadcast integration
+ - [x] Full blockchain rating broadcast integration
 
 ---
 
