@@ -81,6 +81,30 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 ---
 
+## Beta PoC Readiness Analysis
+
+### Status: READY FOR BETA (with caveats)
+
+The following blocking issues were identified and addressed:
+
+- [x] Session spending limits ineffective - SetSessionStart() now called after payment
+- [x] All critical concurrency issues fixed (v0.7.0)
+
+### Non-Blocking Issues for Beta (Post-Beta Fixes)
+
+- [ ] No automatic reconnection on network disconnect (usability issue, not security)
+- [ ] Heartbeat announcements lack cryptographic signature (can be added post-beta)
+- [ ] Reputation scores not signature-verified (trust through network effect)
+- [ ] Direct connect command is stub-only (must use scan to connect)
+
+### Security Considerations (Acceptable for PoC)
+
+- TLS InsecureSkipVerify with custom certificate verification (by design for P2P auth)
+- Authorization extension proportional to payment amount (verified at payment processing)
+- Latency echo server unauthenticated (requires VPN port connection first)
+
+---
+
 ## Future Enhancements
 
 - [ ] **Provider bandwidth auto-detection** - Measure actual upload/download bandwidth at startup and advertise accurate speed (currently manual config required)

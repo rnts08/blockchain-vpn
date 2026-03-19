@@ -2049,6 +2049,7 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 		// Start spending manager for auto-recharge and limit monitoring
 		if spendingMgr != nil {
 			spendingMgr.Start(ctx)
+			spendingMgr.SetSessionStart() // Capture spending baseline for session limits
 			defer spendingMgr.Stop()
 		}
 	}

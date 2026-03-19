@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.1] - 2026-03-19
+
+### Bug Fixes
+- Fixed session spending limits ineffective - SetSessionStart() now called after payment
+- Session limits will now properly enforce per-session spending caps
+
+### Version Bump
+- Bumped patch version to 0.7.1.
+
 ## [0.7.0] - 2026-03-19
 
 ### Critical Bug Fixes (Pre-Beta Release)
