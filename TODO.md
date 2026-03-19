@@ -55,6 +55,16 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 - [x] `WriteFileAtomic` in `internal/util/atomic.go` - data loss on rename failure (defer removed temp file before rename could fail)
 - [x] Session timer race in `internal/tunnel/tunnel.go:398` - goroutine not synchronized after timer expiration
 
+### Beta Testing - High Priority (Pre-Release Fixes)
+
+- [ ] Connection leak on WebSocket fallback in `internal/tunnel/tunnel.go:616-626` - original connection not closed on fallback
+- [ ] TOCTOU race in `readTunLoop` - session used after lock released
+- [ ] Nil pointer panic if RPC client returns (nil, nil) in `connectRPCWithConfig`
+- [ ] Unrecovered goroutines in `handleClient` - panic crashes entire provider
+- [ ] Goroutine leaks in start-provider - WS/TUN readers not tracked for cleanup
+- [ ] IP not released if policy.check fails after allocation
+- [ ] Untracked WS/TUN goroutines in provider server
+
 ### Medium
 
 - [x] `EncodeCertFingerprintPayload` in `internal/protocol/vpn_protocol.go:622` - silently zeroes truncated fingerprints instead of returning error
