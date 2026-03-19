@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.7] - 2026-03-19
+
+### Testing
+- Added comprehensive unit tests for CLI filtering and sorting functions
+- Added benchmarks for critical path operations (filter, sort, score computation)
+- Fixed test for effectiveCountry to handle empty declared country
+
+### Version Bump
+- Bumped patch version to 0.6.7.
+
 ## [0.6.6] - 2026-03-19
 
 ### CLI
