@@ -1,12 +1,12 @@
 # Installation and Privilege Guide
 
-This guide covers installation and required OS privileges for `bcvpn` (CLI) and `bcvpn-gui` (desktop app).
+This guide covers installation and required OS privileges for the BlockchainVPN CLI.
 
 ## 1. Build
 
 Prerequisites:
 
-- Go 1.22+
+- Go 1.25+
 - A synced `ordexcoind` node with RPC enabled (`server=1`)
 - Recommended: `txindex=1` for faster scanning
 
@@ -14,21 +14,17 @@ Build commands:
 
 ```bash
 go build -o bcvpn ./cmd/bcvpn
-go build -o bcvpn-gui ./cmd/bcvpn-gui
 ```
 
 Cross-platform CLI builds:
 
 ```bash
+make build-cli-all
+# Or manually:
 GOOS=linux GOARCH=amd64 go build -o bcvpn-linux-amd64 ./cmd/bcvpn
 GOOS=darwin GOARCH=amd64 go build -o bcvpn-darwin-amd64 ./cmd/bcvpn
 GOOS=windows GOARCH=amd64 go build -o bcvpn-windows-amd64.exe ./cmd/bcvpn
 ```
-
-GUI note:
-
-- GUI cross-compilation can require target-specific OpenGL/cgo toolchains.
-- Build `cmd/bcvpn-gui` natively on the target OS for the most reliable result.
 
 ## 2. Config and Data Paths
 
@@ -43,6 +39,8 @@ Files:
 - `config.json`
 - `provider.key`
 - `history.json`
+- `session.json` (last session info for rating)
+- `ratings.json` (local ratings cache)
 
 Generate initial config:
 
@@ -204,15 +202,14 @@ Run in an elevated terminal ("Run as Administrator"):
 
 ## 5. Click-and-Run Behavior
 
-- GUI and CLI now preflight privilege requirements before provider start and before client payment/connection.
-- If privileges are missing, the operation is stopped before funds are spent and a clear error is shown.
-- GUI first-run wizard performs config, RPC, key, and privilege checks before loading the main tabs.
-- GUI includes a platform-specific "Relaunch Elevated" action to request admin/root rights and reopen automatically.
-- Configure runtime settings in:
-  - GUI provider/client panels (save settings to `config.json`)
-  - CLI config subcommands (`bcvpn config get/set/validate`) plus `bcvpn status` / `bcvpn status --json` for verification
-  - Logging settings (`logging.format`, `logging.level`) and overrides (`BCVPN_LOG_FORMAT`, `BCVPN_LOG_LEVEL`)
-  - Security settings (`security.key_storage_mode`, `security.revocation_cache_file`, `security.tls_min_version`, `security.tls_profile`, `security.metrics_auth_token`)
+CLI preflights privilege requirements before provider start and before client payment/connection. If privileges are missing, the operation is stopped before funds are spent and a clear error is shown.
+
+Configure runtime settings using:
+
+- CLI config subcommands: `bcvpn config get/set/validate`
+- Status verification: `bcvpn status` / `bcvpn status --json`
+- Logging settings: `logging.format`, `logging.level` and overrides (`BCVPN_LOG_FORMAT`, `BCVPN_LOG_LEVEL`)
+- Security settings: `security.key_storage_mode`, `security.revocation_cache_file`, `security.tls_min_version`, `security.tls_profile`, `security.metrics_auth_token`
 
 ## 6. Verify Runtime Status
 

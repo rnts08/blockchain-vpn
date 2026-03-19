@@ -228,12 +228,6 @@ Your provider endpoint is broadcast via OP_RETURN:
 ./bcvpn status
 ```
 
-### Update Price
-
-```bash
-./bcvpn update-price --price 500
-```
-
 ### Re-announce
 
 ```bash

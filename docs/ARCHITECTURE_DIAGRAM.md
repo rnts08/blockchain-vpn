@@ -146,7 +146,6 @@ CLIENT SIDE (scan → connect):
 └─────────────────────────────────────────────────────────────────────────────┘
 
 cmd/bcvpn/           → CLI entrypoint
-cmd/bcvpn-gui/       → GUI entrypoint (Fyne)
 
 internal/
  ├── auth/          → Certificate generation, authorization

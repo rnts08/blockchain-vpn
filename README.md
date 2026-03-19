@@ -2,7 +2,7 @@
 
 BlockchainVPN is a peer-to-peer VPN marketplace built on top of the OrdexCoin blockchain. It allows anyone to become a VPN provider by announcing their service on-chain, and allows clients to discover, pay for, and connect to these services in a decentralized, permissionless manner.
 
-Current version: `0.7.0`
+Current version: `0.7.1`
 
 ## 0. Support the development
 
@@ -350,7 +350,7 @@ To adapt this for another chain:
 - [x] On-chain service announcement and discovery protocol (`OP_RETURN` payloads).
 - [x] v2 provider metadata payload (bandwidth, country, capacity, availability flags) with scanner compatibility for v1/v2.
 - [x] Advanced scanner filtering (country, price, bandwidth, latency, slots) and multi-field sorting.
-- [x] Provider score/ranking algorithm and output in CLI/GUI.
+- [x] Provider score/ranking algorithm and output in CLI.
 - [x] Provider service announcement rebroadcasting and price update announcements.
 - [x] Provider heartbeat/availability broadcasts for freshness-aware discovery.
 - [x] TLS-over-TUN tunnel transport with cert identity bound to provider public key.
@@ -382,6 +382,7 @@ To adapt this for another chain:
 - [x] Scriptable CLI config subcommands (`config get/set/validate`).
 - [x] CLI config profile export/import (`config export`, `config import`).
 - [x] Runtime event timeline and diagnostics bundle export (`events`, `diagnostics`).
+- [x] Rating system with local persistence and blockchain broadcast on disconnect.
 
 ### How It Works
 
