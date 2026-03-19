@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.6] - 2026-03-19
+
+### CLI
+- Added `-a`/`--about` flag for quick access to about info
+- Added `broadcast` as alias for `rebroacast` command (as per OPERATIONS.md)
+- Added `--from`, `--to` (RFC3339 format), `--json`, and `--table` flags to history command
+- Updated main help to include all available detailed help commands
+
+### Version Bump
+- Bumped patch version to 0.6.6.
+
 ## [0.6.5] - 2026-03-19
 
 ### CLI

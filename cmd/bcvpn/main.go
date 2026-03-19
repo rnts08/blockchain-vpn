@@ -137,6 +137,9 @@ func main() {
 			case "rebroadcast":
 				printRebroadcastHelp()
 				os.Exit(0)
+			case "broadcast":
+				printRebroadcastHelp()
+				os.Exit(0)
 			}
 		}
 		printHelp()
@@ -145,6 +148,11 @@ func main() {
 
 	if len(os.Args) >= 2 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "version") {
 		fmt.Println(version.String())
+		os.Exit(0)
+	}
+
+	if len(os.Args) >= 2 && (os.Args[1] == "-a" || os.Args[1] == "--about") {
+		handleAbout(false)
 		os.Exit(0)
 	}
 
@@ -240,6 +248,10 @@ func main() {
 	connectStrictVerification := connectCmd.Bool("strict-verification", false, "Enable strict security verification")
 
 	historySinceLast := historyCmd.Bool("since-last-payment", false, "Show wallet transactions since the last recorded payment")
+	historyFrom := historyCmd.String("from", "", "Show transactions from this date/time (RFC3339 format)")
+	historyTo := historyCmd.String("to", "", "Show transactions to this date/time (RFC3339 format)")
+	historyJSON := historyCmd.Bool("json", false, "Output in machine-readable JSON format")
+	historyTable := historyCmd.Bool("table", false, "Output in table format")
 	startProviderKeyPassEnv := startProviderCmd.String("key-password-env", "", "Env var name containing provider key password (file mode)")
 	rebroadcastKeyPassEnv := rebroadcastCmd.String("key-password-env", "", "Env var name containing provider key password (file mode)")
 
@@ -443,6 +455,8 @@ func main() {
 		}
 
 	case "rebroadcast":
+		fallthrough
+	case "broadcast":
 		rebroadcastCmd.Parse(os.Args[2:])
 		if *rebroadcastDryRun {
 			fmt.Println("[Dry Run] Simulation: would re-broadcast service announcement on blockchain.")
@@ -665,12 +679,7 @@ func main() {
 
 	case "history":
 		historyCmd.Parse(os.Args[2:])
-
-		if *historySinceLast {
-			handleHistorySinceLast(cfg)
-		} else {
-			handleFullHistory()
-		}
+		handleHistory(cfg, *historySinceLast, *historyFrom, *historyTo, *historyJSON, *historyTable)
 
 	case "status":
 		statusCmd.Parse(os.Args[2:])
@@ -1998,6 +2007,87 @@ func handleFullHistory() {
 	}
 }
 
+func handleHistory(cfg *config.Config, sinceLast bool, from, to string, jsonMode, tableMode bool) {
+	if sinceLast {
+		handleHistorySinceLast(cfg)
+		return
+	}
+
+	if from != "" || to != "" {
+		handleHistoryDateRange(cfg, from, to, jsonMode, tableMode)
+		return
+	}
+
+	if jsonMode {
+		handleHistoryJSON()
+		return
+	}
+
+	handleFullHistory()
+}
+
+func handleHistoryDateRange(cfg *config.Config, from, to string, jsonMode, tableMode bool) {
+	var fromTime, toTime time.Time
+	var err error
+
+	if from != "" {
+		fromTime, err = time.Parse(time.RFC3339, from)
+		if err != nil {
+			log.Fatalf("Invalid --from date format. Use RFC3339 format (e.g., 2024-01-01T00:00:00Z): %v", err)
+		}
+	}
+	if to != "" {
+		toTime, err = time.Parse(time.RFC3339, to)
+		if err != nil {
+			log.Fatalf("Invalid --to date format. Use RFC3339 format (e.g., 2024-12-31T23:59:59Z): %v", err)
+		}
+	}
+
+	records, err := history.LoadHistory()
+	if err != nil {
+		log.Fatalf("Failed to load history: %v", err)
+	}
+
+	var filtered []history.PaymentRecord
+	for _, r := range records {
+		if from != "" && r.Timestamp.Before(fromTime) {
+			continue
+		}
+		if to != "" && r.Timestamp.After(toTime) {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+
+	if jsonMode {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(filtered)
+		return
+	}
+
+	if len(filtered) == 0 {
+		fmt.Println("No payment history found in the specified date range.")
+		return
+	}
+
+	fmt.Printf("%-25s %-15s %-40s %s\n", "Timestamp", "Amount (sats)", "Provider", "TxID")
+	fmt.Println(strings.Repeat("-", 120))
+	for _, r := range filtered {
+		fmt.Printf("%-25s %-15d %-40s %s\n", r.Timestamp.Format("2006-01-02 15:04:05"), r.Amount, r.Provider, r.TxID)
+	}
+}
+
+func handleHistoryJSON() {
+	records, err := history.LoadHistory()
+	if err != nil {
+		log.Fatalf("Failed to load history: %v", err)
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(records)
+}
+
 func handleHistorySinceLast(cfg *config.Config) {
 	records, err := history.LoadHistory()
 	if err != nil {
@@ -2606,10 +2696,15 @@ Commands:
 Options:
   -h, --help    Show this help message
   -v, --version Show version information
+  -a, --about   Show about info and donation addresses
 
 Subcommand Help:
   bcvpn help <command> for detailed usage of specific commands.
-  Detailed help available for: config, scan, start-provider, connect, generate-tls-keypair, favorite, rate.
+  Detailed help available for: config, scan, start-provider, connect, 
+  generate-config, version, about, status, events, doctor, diagnostics, 
+  history, generate-send-address, generate-receive-address, generate-tls-keypair, 
+  favorite, rate, generate-provider-key, disconnect, stop-provider, 
+  restart-provider, rotate-provider-key, rebroadcast.
 
 Examples:
   bcvpn generate-config               # Create default config.json
