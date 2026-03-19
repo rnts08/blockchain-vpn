@@ -16,12 +16,33 @@ import (
 
 	"blockchain-vpn/internal/auth"
 	"blockchain-vpn/internal/config"
+	"blockchain-vpn/internal/protocol"
 	"blockchain-vpn/internal/transport"
 	"blockchain-vpn/internal/util"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/songgao/water"
 )
+
+// PricingParams contains the pricing information for time/data-based billing.
+type PricingParams struct {
+	PricingMethod  uint8  // 0=session, 1=time, 2=data
+	PricePerUnit   uint64 // Price per billing unit in satoshis
+	TimeUnitSecs   uint32 // Time duration per billing cycle
+	DataUnitBytes  uint32 // Data amount per billing cycle
+	SessionTimeout uint32 // Maximum session duration
+}
+
+// NewPricingParamsFromEndpoint creates PricingParams from a VPNEndpoint.
+func NewPricingParamsFromEndpoint(ep *protocol.VPNEndpoint) *PricingParams {
+	return &PricingParams{
+		PricingMethod:  ep.PricingMethod,
+		PricePerUnit:   ep.Price,
+		TimeUnitSecs:   ep.TimeUnitSecs,
+		DataUnitBytes:  ep.DataUnitBytes,
+		SessionTimeout: ep.SessionTimeoutSecs,
+	}
+}
 
 // createTunInterface creates and configures a new TUN interface.
 func createTunInterface(ifaceName string, ip string, subnetMask string) (*water.Interface, error) {
@@ -492,7 +513,8 @@ func readTunLoop(iface *water.Interface, clients *ClientMap) {
 
 // ConnectToProvider connects to a provider and sets up the client-side tunnel.
 // If spendingMgr is provided, it will be used for spending limit checks and auto-recharge.
-func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *config.SecurityConfig, localPrivKey *btcec.PrivateKey, serverPubKey *btcec.PublicKey, endpoint string, expected ClientSecurityExpectations, spendingMgr *SpendingManager) error {
+// The pricingParams are used for time/data-based billing (can be nil for session billing).
+func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *config.SecurityConfig, localPrivKey *btcec.PrivateKey, serverPubKey *btcec.PublicKey, endpoint string, expected ClientSecurityExpectations, spendingMgr *SpendingManager, pricingParams *PricingParams) error {
 	if err := EnsureElevatedPrivileges(); err != nil {
 		recordRuntimeError(err)
 		return fmt.Errorf("client requires automatic networking privileges: %w", err)
@@ -619,9 +641,71 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *confi
 	log.Printf("Successfully connected to %s. Tunnel is active.", endpoint)
 	recordEvent("client", "connected", endpoint)
 
-	// Forward packets
-	go copyStreamWithControl(conn, iface, func(n int) { recordTraffic(int64(n), 0) }, nil)
-	copyStreamWithControl(iface, conn, func(n int) { recordTraffic(0, int64(n)) }, nil) // Block on this one until connection closes
+	var usageMeter *UsageMeter
+	var renewalDone chan struct{}
+	if spendingMgr != nil && pricingParams != nil && pricingParams.PricingMethod != protocol.PricingMethodSession {
+		usageMeter = &UsageMeter{
+			startTime:      time.Now(),
+			pricingMethod:  pricingParams.PricingMethod,
+			pricePerUnit:   pricingParams.PricePerUnit,
+			timeUnitSecs:   pricingParams.TimeUnitSecs,
+			dataUnitBytes:  pricingParams.DataUnitBytes,
+			maxSessionSecs: int(pricingParams.SessionTimeout),
+		}
+		renewalDone = make(chan struct{})
+		go func() {
+			defer close(renewalDone)
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			lastPaidCost := pricingParams.PricePerUnit
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if spendingMgr.ShouldDisconnect() {
+						log.Printf("Spending limit reached. Disconnecting.")
+						conn.Close()
+						return
+					}
+					if usageMeter.ShouldRenewPayment(lastPaidCost, 80) {
+						cost := usageMeter.CurrentCost()
+						if err := spendingMgr.RecordPayment(cost); err != nil {
+							log.Printf("Failed to record payment for renewal: %v", err)
+						} else {
+							log.Printf("Auto-renewed payment: %d sats (total cost: %d)", cost-lastPaidCost, cost)
+							lastPaidCost = cost
+						}
+					}
+				}
+			}
+		}()
+	}
+
+	connectedDone := make(chan struct{})
+	go copyStreamWithControl(conn, iface, func(n int) {
+		recordTraffic(int64(n), 0)
+		if usageMeter != nil {
+			usageMeter.AddTraffic(uint64(n), 0)
+		}
+	}, nil)
+	go func() {
+		defer close(connectedDone)
+		copyStreamWithControl(iface, conn, func(n int) {
+			recordTraffic(0, int64(n))
+			if usageMeter != nil {
+				usageMeter.AddTraffic(0, uint64(n))
+			}
+		}, nil)
+	}()
+
+	select {
+	case <-ctx.Done():
+	case <-connectedDone:
+	}
+	if renewalDone != nil {
+		<-renewalDone
+	}
 	recordEvent("client", "disconnected", endpoint)
 
 	return nil

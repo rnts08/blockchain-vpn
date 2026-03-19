@@ -28,12 +28,12 @@ func TestMultiTunnelManager_AddDuplicate(t *testing.T) {
 		TunSubnet:     "24",
 	}
 
-	err := m.Add("test-id", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+	err := m.Add("test-id", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 	if err != nil {
 		t.Fatalf("first Add failed: %v", err)
 	}
 
-	err = m.Add("test-id", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+	err = m.Add("test-id", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 	if err == nil {
 		t.Error("expected error for duplicate ID")
 	}
@@ -52,7 +52,7 @@ func TestMultiTunnelManager_ActiveCount(t *testing.T) {
 		t.Errorf("expected 0 active tunnels, got %d", m.ActiveCount())
 	}
 
-	err := m.Add("id1", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+	err := m.Add("id1", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -76,8 +76,8 @@ func TestMultiTunnelManager_List(t *testing.T) {
 		t.Errorf("expected empty list, got %d items", len(list))
 	}
 
-	m.Add("id1", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
-	m.Add("id2", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+	m.Add("id1", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
+	m.Add("id2", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 
 	list = m.List()
 	if len(list) != 2 {
@@ -100,7 +100,7 @@ func TestMultiTunnelManager_Cancel(t *testing.T) {
 		TunSubnet:     "24",
 	}
 
-	err := m.Add("test-id", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+	err := m.Add("test-id", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -137,9 +137,9 @@ func TestMultiTunnelManager_CancelAll(t *testing.T) {
 		TunSubnet:     "24",
 	}
 
-	m.Add("id1", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
-	m.Add("id2", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
-	m.Add("id3", "eth2", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+	m.Add("id1", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
+	m.Add("id2", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
+	m.Add("id3", "eth2", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 
 	if m.ActiveCount() != 3 {
 		t.Fatalf("expected 3 active tunnels")
@@ -168,7 +168,7 @@ func TestMultiTunnelManager_ConcurrentAdd(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			m.Add("id", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+			m.Add("id", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 		}(i)
 	}
 	wg.Wait()

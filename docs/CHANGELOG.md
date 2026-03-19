@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.11] - 2026-03-19
+
+### Architecture Fixes - Auto-Settlement System
+- Added `PricingParams` struct and `NewPricingParamsFromEndpoint()` for time/data-based billing
+- Integrated `UsageMeter` in `ConnectToProvider` to track traffic for billing renewal
+- Added payment renewal goroutine that checks `ShouldRenewPayment()` every 5 seconds
+- Added `spendingMgr.ShouldDisconnect()` check to disconnect when spending limit reached
+- Added `spendingMgr.Start()` call after payment confirmation for auto-recharge support
+- Traffic callbacks now call `usageMeter.AddTraffic()` to track bytes for data-based billing
+
+### Version Bump
+- Bumped patch version to 0.6.11.
+
 ## [0.6.10] - 2026-03-19
 
 ### Bug Fixes

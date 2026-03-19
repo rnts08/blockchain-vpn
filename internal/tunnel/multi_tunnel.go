@@ -49,6 +49,7 @@ func (m *MultiTunnelManager) Add(
 	endpointAddr string,
 	expectations ClientSecurityExpectations,
 	spendingMgr *SpendingManager, // optional, can be nil
+	pricingParams *PricingParams, // optional, for time/data billing
 ) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -90,6 +91,7 @@ func (m *MultiTunnelManager) Add(
 			endpointAddr,
 			expectations,
 			spendingMgr,
+			pricingParams,
 		)
 		if tunnel.err != nil {
 			log.Printf("[MultiTunnel] Tunnel %s stopped with error: %v", id, tunnel.err)

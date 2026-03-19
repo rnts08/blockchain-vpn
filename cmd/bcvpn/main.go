@@ -1801,6 +1801,12 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 
 		// Record successful payment in spending manager (already did pre-check, now finalize)
 		spendingMgr.AddCredits(0) // trigger log if needed
+
+		// Start spending manager for auto-recharge and limit monitoring
+		if spendingMgr != nil {
+			spendingMgr.Start(ctx)
+			defer spendingMgr.Stop()
+		}
 	}
 
 	peerPubKey := selectedEndpoint.Endpoint.PublicKey
@@ -1816,6 +1822,7 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 			ExpectedBandwidthKB: selectedEndpoint.AdvertisedBandwidthKB,
 			ThroughputProbePort: selectedEndpoint.Endpoint.ThroughputProbePort,
 		}
+		pricingParams := tunnel.NewPricingParamsFromEndpoint(selectedEndpoint.Endpoint)
 		if err := mgr.Add(
 			"session-interactive",
 			clientCfg.InterfaceName,
@@ -1826,6 +1833,7 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 			endpointAddr,
 			expected,
 			spendingMgr,
+			pricingParams,
 		); err != nil {
 			log.Fatalf("Failed to add tunnel: %v", err)
 		}
