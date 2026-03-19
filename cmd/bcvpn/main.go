@@ -275,6 +275,11 @@ func main() {
 	rebroadcastDryRun := rebroadcastCmd.Bool("dry-run", false, "Simulate announcement without making real transaction")
 	generateProviderKeyDryRun := generateProviderKeyCmd.Bool("dry-run", false, "Show what would be generated without creating files")
 
+	if len(os.Args) < 2 {
+		printHelp()
+		os.Exit(0)
+	}
+
 	switch os.Args[1] {
 	case "start-provider":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
