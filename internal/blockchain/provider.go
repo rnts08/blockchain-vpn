@@ -252,11 +252,12 @@ func StartEchoServer(ctx context.Context, port int) error {
 
 // PaymentMonitorCfg holds configuration for the payment monitor to interpret payments.
 type PaymentMonitorCfg struct {
-	Price          uint64
-	PricingMethod  string
-	TimeUnitSecs   uint32
-	DataUnitBytes  uint32
-	MaxSessionSecs int
+	Price                 uint64
+	PricingMethod         string
+	TimeUnitSecs          uint32
+	DataUnitBytes         uint32
+	MaxSessionSecs        int
+	RequiredConfirmations int // Minimum confirmations before authorizing peer (default: 1)
 }
 
 // MonitorPayments checks for incoming transactions to the wallet.
@@ -357,6 +358,15 @@ func GetProviderAddresses(client *rpcclient.Client) ([]string, error) {
 func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid string, amount float64, confirmations int64, authManager *auth.AuthManager, pmCfg PaymentMonitorCfg, payments *paymentTracker) {
 	if confirmations < 0 {
 		payments.handleRemovedTx(txid, authManager)
+		return
+	}
+
+	minConfirmations := pmCfg.RequiredConfirmations
+	if minConfirmations <= 0 {
+		minConfirmations = 1 // Default to 1 confirmation for security
+	}
+	if confirmations < int64(minConfirmations) {
+		log.Printf("Payment %s: waiting for confirmations (%d/%d)", txid, confirmations, minConfirmations)
 		return
 	}
 

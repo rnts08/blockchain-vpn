@@ -365,9 +365,10 @@ func main() {
 		}()
 		// Build payment monitor configuration from provider settings
 		pmCfg := blockchain.PaymentMonitorCfg{
-			Price:          cfg.Provider.Price,
-			PricingMethod:  strings.ToLower(strings.TrimSpace(cfg.Provider.PricingMethod)),
-			MaxSessionSecs: cfg.Provider.MaxSessionDurationSecs,
+			Price:                 cfg.Provider.Price,
+			PricingMethod:         strings.ToLower(strings.TrimSpace(cfg.Provider.PricingMethod)),
+			MaxSessionSecs:        cfg.Provider.MaxSessionDurationSecs,
+			RequiredConfirmations: cfg.Provider.PaymentRequiredConfirmations,
 		}
 		// Parse billing units based on pricing method
 		switch pmCfg.PricingMethod {
@@ -1794,10 +1795,21 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 			log.Fatalf("Cannot proceed: automatic networking privileges are required before payment: %v", err)
 		}
 		fmt.Printf("Sending payment of %d sats to provider...\n", selectedEndpoint.Endpoint.Price)
-		_, err = blockchain.SendPayment(client, providerAddr, selectedEndpoint.Endpoint.Price, localKey.PubKey())
+		txHash, err := blockchain.SendPayment(client, providerAddr, selectedEndpoint.Endpoint.Price, localKey.PubKey())
 		if err != nil {
 			log.Fatalf("Failed to send payment: %v", err)
 		}
+		fmt.Printf("Payment sent: %s\n", txHash.String())
+
+		// Wait for payment to be confirmed (provider requires confirmations before authorizing)
+		fmt.Printf("Waiting for payment confirmation...\n")
+		waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		if _, err := blockchain.WaitForConfirmations(waitCtx, client, txHash, 1, 10*time.Second); err != nil {
+			waitCancel()
+			log.Fatalf("Payment not confirmed in time: %v", err)
+		}
+		waitCancel()
+		fmt.Printf("Payment confirmed!\n")
 
 		// Record successful payment in spending manager (already did pre-check, now finalize)
 		spendingMgr.AddCredits(0) // trigger log if needed

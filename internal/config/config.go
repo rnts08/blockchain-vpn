@@ -49,42 +49,43 @@ type SecurityConfig struct {
 }
 
 type ProviderConfig struct {
-	InterfaceName               string   `json:"interface_name"`
-	ListenPort                  int      `json:"listen_port"`
-	AutoRotatePort              bool     `json:"auto_rotate_port"` // Automatically rotate to unprivileged port if bind fails
-	AnnounceIP                  string   `json:"announce_ip"`
-	Country                     string   `json:"country"` // 2-letter country code (e.g., "US"). Leave empty to auto-detect.
-	Price                       uint64   `json:"price_sats_per_session"`
-	MaxConsumers                int      `json:"max_consumers"` // 0 means unlimited
-	PrivateKeyFile              string   `json:"private_key_file"`
-	BandwidthLimit              string   `json:"bandwidth_limit"`     // e.g. "10mbit", "0" or empty = auto-test
-	BandwidthAutoTest           bool     `json:"bandwidth_auto_test"` // Run speed test to determine max bandwidth
-	DNSServers                  []string `json:"dns_servers"`         // Custom DNS servers (e.g., ["1.1.1.1", "8.8.8.8"])
-	EnableNAT                   bool     `json:"enable_nat"`
-	EnableEgressNAT             bool     `json:"enable_egress_nat"`
-	NATOutboundInterface        string   `json:"nat_outbound_interface"`
-	NATTraversalMethod          string   `json:"nat_traversal_method"` // "auto", "upnp", "natpmp", "none"
-	IsolationMode               string   `json:"isolation_mode"`       // "none" or "sandbox"
-	AllowlistFile               string   `json:"allowlist_file"`
-	DenylistFile                string   `json:"denylist_file"`
-	CertLifetimeHours           int      `json:"cert_lifetime_hours"`
-	CertRotateBeforeHours       int      `json:"cert_rotate_before_hours"`
-	HealthCheckEnabled          bool     `json:"health_check_enabled"`
-	HealthCheckInterval         string   `json:"health_check_interval"` // e.g. "30s"
-	BandwidthMonitorInterval    string   `json:"bandwidth_monitor_interval"`
-	AnnouncementInterval        string   `json:"announcement_interval"` // e.g. "24h"
-	TunIP                       string   `json:"tun_ip"`
-	TunSubnet                   string   `json:"tun_subnet"`
-	MetricsListenAddr           string   `json:"metrics_listen_addr"`       // e.g. "127.0.0.1:9090"
-	MaxSessionDurationSecs      int      `json:"max_session_duration_secs"` // 0 = no limit
-	AnnouncementFeeTargetBlocks int      `json:"announcement_fee_target_blocks"`
-	AnnouncementFeeMode         string   `json:"announcement_fee_mode"` // "conservative" or "economical"
-	ThroughputProbePort         int      `json:"throughput_probe_port"` // 0 = disable provider-assisted probes
-	WebSocketFallbackPort       int      `json:"websocket_fallback_port"`
-	HeartbeatInterval           string   `json:"heartbeat_interval"`       // e.g. "5m"
-	PaymentMonitorInterval      string   `json:"payment_monitor_interval"` // e.g. "1m"
-	ShutdownTimeout             string   `json:"shutdown_timeout"`         // e.g. "10s"
-	PIDFile                     string   `json:"pid_file"`                 // Path to PID file (default: config dir/provider.pid)
+	InterfaceName                string   `json:"interface_name"`
+	ListenPort                   int      `json:"listen_port"`
+	AutoRotatePort               bool     `json:"auto_rotate_port"` // Automatically rotate to unprivileged port if bind fails
+	AnnounceIP                   string   `json:"announce_ip"`
+	Country                      string   `json:"country"` // 2-letter country code (e.g., "US"). Leave empty to auto-detect.
+	Price                        uint64   `json:"price_sats_per_session"`
+	MaxConsumers                 int      `json:"max_consumers"` // 0 means unlimited
+	PrivateKeyFile               string   `json:"private_key_file"`
+	BandwidthLimit               string   `json:"bandwidth_limit"`     // e.g. "10mbit", "0" or empty = auto-test
+	BandwidthAutoTest            bool     `json:"bandwidth_auto_test"` // Run speed test to determine max bandwidth
+	DNSServers                   []string `json:"dns_servers"`         // Custom DNS servers (e.g., ["1.1.1.1", "8.8.8.8"])
+	EnableNAT                    bool     `json:"enable_nat"`
+	EnableEgressNAT              bool     `json:"enable_egress_nat"`
+	NATOutboundInterface         string   `json:"nat_outbound_interface"`
+	NATTraversalMethod           string   `json:"nat_traversal_method"` // "auto", "upnp", "natpmp", "none"
+	IsolationMode                string   `json:"isolation_mode"`       // "none" or "sandbox"
+	AllowlistFile                string   `json:"allowlist_file"`
+	DenylistFile                 string   `json:"denylist_file"`
+	CertLifetimeHours            int      `json:"cert_lifetime_hours"`
+	CertRotateBeforeHours        int      `json:"cert_rotate_before_hours"`
+	HealthCheckEnabled           bool     `json:"health_check_enabled"`
+	HealthCheckInterval          string   `json:"health_check_interval"` // e.g. "30s"
+	BandwidthMonitorInterval     string   `json:"bandwidth_monitor_interval"`
+	AnnouncementInterval         string   `json:"announcement_interval"` // e.g. "24h"
+	TunIP                        string   `json:"tun_ip"`
+	TunSubnet                    string   `json:"tun_subnet"`
+	MetricsListenAddr            string   `json:"metrics_listen_addr"`       // e.g. "127.0.0.1:9090"
+	MaxSessionDurationSecs       int      `json:"max_session_duration_secs"` // 0 = no limit
+	AnnouncementFeeTargetBlocks  int      `json:"announcement_fee_target_blocks"`
+	AnnouncementFeeMode          string   `json:"announcement_fee_mode"` // "conservative" or "economical"
+	ThroughputProbePort          int      `json:"throughput_probe_port"` // 0 = disable provider-assisted probes
+	WebSocketFallbackPort        int      `json:"websocket_fallback_port"`
+	HeartbeatInterval            string   `json:"heartbeat_interval"`             // e.g. "5m"
+	PaymentMonitorInterval       string   `json:"payment_monitor_interval"`       // e.g. "1m"
+	PaymentRequiredConfirmations int      `json:"payment_required_confirmations"` // Min confirmations before granting access (0-6, default 1)
+	ShutdownTimeout              string   `json:"shutdown_timeout"`               // e.g. "10s"
+	PIDFile                      string   `json:"pid_file"`                       // Path to PID file (default: config dir/provider.pid)
 
 	// New fields for flexible pricing
 	PricingMethod   string `json:"pricing_method"`    // "session", "time", "data"

@@ -262,3 +262,32 @@ func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amou
 
 	return txHash, nil
 }
+
+// WaitForConfirmations waits for a transaction to reach the specified number of confirmations.
+// It polls the blockchain and returns when the threshold is met or the context is cancelled.
+func WaitForConfirmations(ctx context.Context, client *rpcclient.Client, txHash *chainhash.Hash, requiredConfirmations int, pollInterval time.Duration) (int64, error) {
+	if requiredConfirmations <= 0 {
+		requiredConfirmations = 1
+	}
+	if pollInterval <= 0 {
+		pollInterval = 10 * time.Second
+	}
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-ticker.C:
+			tx, err := client.GetTransaction(txHash)
+			if err != nil {
+				continue
+			}
+			if tx.Confirmations >= int64(requiredConfirmations) {
+				return tx.Confirmations, nil
+			}
+		}
+	}
+}

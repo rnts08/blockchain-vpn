@@ -416,8 +416,45 @@ func handleClient(ctx context.Context, conn net.Conn, cfg *config.ProviderConfig
 			}
 		}
 
+		// Check if client has data quota (non-zero means quota-limited)
+		dataQuotaRemaining := authManager.GetPeerDataRemaining(pk)
+		hasDataQuota := dataQuotaRemaining != ^uint64(0) && dataQuotaRemaining > 0
+
 		sessionTimer := time.NewTimer(time.Until(expiration))
 		done := make(chan struct{})
+
+		// Start quota monitoring goroutine if client has data quota
+		var quotaDone chan struct{}
+		if hasDataQuota {
+			quotaDone = make(chan struct{})
+			lastTrackedBytes := int64(0)
+			go func() {
+				defer close(quotaDone)
+				quotaCheckTicker := time.NewTicker(1 * time.Second)
+				defer quotaCheckTicker.Stop()
+				for {
+					select {
+					case <-quotaCheckTicker.C:
+						currentBytes := session.stats.TotalBytes()
+						bytesSinceLastCheck := currentBytes - lastTrackedBytes
+						if bytesSinceLastCheck > 0 {
+							remaining := authManager.ConsumeData(pk, uint64(bytesSinceLastCheck))
+							lastTrackedBytes = currentBytes
+							if remaining == 0 {
+								log.Printf("Data quota exhausted for client %s. Disconnecting.", hex.EncodeToString(pk.SerializeCompressed()))
+								c.Close()
+								return
+							}
+							if remaining < 1_000_000 {
+								log.Printf("Warning: data quota running low for client %s (%d bytes remaining)", hex.EncodeToString(pk.SerializeCompressed()), remaining)
+							}
+						}
+					case <-done:
+						return
+					}
+				}
+			}()
+		}
 
 		go func(sess *clientSession) {
 			copyStreamWithControl(iface, c, sess.stats.addUpstream, sess.upstreamLimiter)
@@ -432,6 +469,9 @@ func handleClient(ctx context.Context, conn net.Conn, cfg *config.ProviderConfig
 		}
 		if !sessionTimer.Stop() {
 			<-sessionTimer.C
+		}
+		if quotaDone != nil {
+			<-quotaDone
 		}
 		<-done
 		log.Printf(

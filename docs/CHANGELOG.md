@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.12] - 2026-03-19
+
+### Critical Security & Architecture Fixes
+- Added confirmation requirement in provider payment processing - providers now wait for minimum confirmations before authorizing clients (configurable via `payment_required_confirmations`)
+- Fixed data quota enforcement - provider now consumes data quota during sessions and disconnects clients when quota is exhausted
+- Added `WaitForConfirmations` function and integrated into client flow - client now waits for payment confirmation before connecting
+
+### Version Bump
+- Bumped patch version to 0.6.12.
+
 ## [0.6.11] - 2026-03-19
 
 ### Architecture Fixes - Auto-Settlement System

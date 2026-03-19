@@ -28,6 +28,9 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 - [x] `UsageMeter` not integrated - payment renewal non-functional
 - [x] `ConnectToProvider` didn't use spendingMgr - no ongoing payment monitoring
 - [x] No traffic tracking for time/data-based billing renewal
+- [x] Provider authorized on 0-conf - security risk (now requires confirmation check)
+- [x] Data quota never consumed on provider side - quota enforcement non-functional
+- [x] Client connected immediately after payment - no wait for authorization
 
 ### Critical - Bug Fixes
 

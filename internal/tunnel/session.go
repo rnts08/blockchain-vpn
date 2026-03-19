@@ -31,6 +31,10 @@ func (s *sessionStats) addDownstream(n int) {
 	s.downstreamBytes.Add(int64(n))
 }
 
+func (s *sessionStats) TotalBytes() int64 {
+	return s.upstreamBytes.Load() + s.downstreamBytes.Load()
+}
+
 type rateEnforcer struct {
 	bytesPerSecond int64
 	startedAt      time.Time
