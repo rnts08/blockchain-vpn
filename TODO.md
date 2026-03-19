@@ -31,6 +31,9 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 - [x] Provider authorized on 0-conf - security risk (now requires confirmation check)
 - [x] Data quota never consumed on provider side - quota enforcement non-functional
 - [x] Client connected immediately after payment - no wait for authorization
+- [x] Country auto-detection for providers when config is empty
+- [x] Added `AnnounceRating` function for blockchain rating broadcast (infrastructure ready)
+- [x] Added `--broadcast` flag to rate command
 
 ### Critical - Bug Fixes
 
@@ -53,6 +56,16 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 - [x] `containsAt` test helper in `internal/crypto/crypto_test.go:106` - use strings.Contains
 - [ ] `runPowerShell` in `internal/crypto/keystore.go:360` - inherits full process environment (intentional for PowerShell)
 - [ ] Cleanup errors silently ignored in `internal/nat/nat.go:67,107` (acceptable pattern)
+
+---
+
+## Future Enhancements
+
+- [ ] NAT traversal method selection via config (`NATTraversalMethod` config option unused)
+- [ ] WebSocket origin validation (currently allows all origins)
+- [ ] Symmetric NAT detection and handling
+- [ ] STUN integration for NAT type detection
+- [ ] Full blockchain rating broadcast integration (infrastructure exists, needs key management)
 
 ---
 

@@ -25,6 +25,20 @@ func EncodeReputationPayload(payload *ReputationPayload) ([]byte, error) {
 		return nil, fmt.Errorf("invalid reputation payload")
 	}
 
+	return encodeReputationPayloadImpl(payload, true)
+}
+
+// EncodeReputationPayloadWithoutSignature serializes a reputation record without the signature field.
+// This is used when creating a signature over the payload.
+func EncodeReputationPayloadWithoutSignature(payload *ReputationPayload) ([]byte, error) {
+	if payload == nil || payload.SubjectPublicKey == nil {
+		return nil, fmt.Errorf("invalid reputation payload")
+	}
+
+	return encodeReputationPayloadImpl(payload, false)
+}
+
+func encodeReputationPayloadImpl(payload *ReputationPayload, includeSig bool) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.Write(ReputationPayloadMagic)
 
@@ -44,10 +58,12 @@ func EncodeReputationPayload(payload *ReputationPayload) ([]byte, error) {
 	buf.Write(srcBytes)
 
 	// Write signature length (2 bytes) + signature
-	sigLen := uint16(len(payload.Signature))
-	buf.WriteByte(byte(sigLen >> 8))
-	buf.WriteByte(byte(sigLen & 0xFF))
-	buf.Write(payload.Signature)
+	if includeSig {
+		sigLen := uint16(len(payload.Signature))
+		buf.WriteByte(byte(sigLen >> 8))
+		buf.WriteByte(byte(sigLen & 0xFF))
+		buf.Write(payload.Signature)
+	}
 
 	return buf.Bytes(), nil
 }

@@ -213,6 +213,7 @@ func main() {
 	generateTLSKeypairCmd := flag.NewFlagSet("generate-tls-keypair", flag.ExitOnError)
 	favoriteCmd := flag.NewFlagSet("favorite", flag.ExitOnError)
 	rateCmd := flag.NewFlagSet("rate", flag.ExitOnError)
+	rateBroadcast := rateCmd.Bool("broadcast", false, "Also broadcast rating on blockchain (requires RPC configured)")
 	generateProviderKeyCmd := flag.NewFlagSet("generate-provider-key", flag.ExitOnError)
 	disconnectCmd := flag.NewFlagSet("disconnect", flag.ExitOnError)
 	restartProviderCmd := flag.NewFlagSet("restart-provider", flag.ExitOnError)
@@ -722,7 +723,7 @@ func main() {
 		handleFavorite(cfg, configPath)
 	case "rate":
 		rateCmd.Parse(os.Args[2:])
-		handleRate(cfg, configPath)
+		handleRate(cfg, configPath, *rateBroadcast)
 	case "generate-provider-key":
 		generateProviderKeyCmd.Parse(os.Args[2:])
 		handleGenerateProviderKey(cfg, *generateProviderKeyDryRun)
@@ -1047,7 +1048,7 @@ type ratingEntry struct {
 	Timestamp      string `json:"timestamp"`
 }
 
-func handleRate(cfg *config.Config, configPath string) {
+func handleRate(cfg *config.Config, configPath string, broadcastOnChain bool) {
 	if len(os.Args) < 4 {
 		log.Fatal("Usage: bcvpn rate <provider-pubkey> <rating> [comment]")
 	}
@@ -1107,7 +1108,14 @@ func handleRate(cfg *config.Config, configPath string) {
 	if err := os.WriteFile(ratingsPath, data, 0o644); err != nil {
 		log.Fatalf("Failed to write ratings: %v", err)
 	}
-	log.Printf("Rating for %s: %d/5 saved.", pubkey, rating)
+	fmt.Printf("Rating for %s: %d/5 saved.\n", pubkey, rating)
+
+	// Broadcast on-chain if requested and RPC is configured
+	if broadcastOnChain && cfg != nil && strings.TrimSpace(cfg.RPC.Host) != "" {
+		// TODO: Implement full blockchain rating broadcast
+		// Requires: RPC connection, client key management, signing infrastructure
+		fmt.Println("Note: Blockchain rating broadcast requires additional integration (TODO)")
+	}
 }
 
 func handleDisconnect() {
@@ -1643,6 +1651,18 @@ func buildProviderEndpoint(providerCfg *config.ProviderConfig, announceIP net.IP
 		maxConsumers = uint16(providerCfg.MaxConsumers)
 	}
 
+	// Determine country code - use config or auto-detect
+	countryCode := strings.ToUpper(strings.TrimSpace(providerCfg.Country))
+	if countryCode == "" {
+		if loc, err := geoip.AutoLocate(); err == nil {
+			countryCode = loc.CountryCode
+			log.Printf("Auto-detected country: %s", countryCode)
+		} else {
+			log.Printf("Warning: Could not auto-detect country: %v", err)
+			countryCode = "ZZ" // Unknown
+		}
+	}
+
 	// Determine pricing method and units
 	var pricingMethod uint8 = protocol.PricingMethodSession
 	timeUnitSecs := uint32(0)
@@ -1682,7 +1702,7 @@ func buildProviderEndpoint(providerCfg *config.ProviderConfig, announceIP net.IP
 		PublicKey:             providerKey.PubKey(),
 		AdvertisedBandwidthKB: bandwidthKB,
 		MaxConsumers:          maxConsumers,
-		CountryCode:           strings.ToUpper(strings.TrimSpace(providerCfg.Country)),
+		CountryCode:           countryCode,
 		AvailabilityFlags:     protocol.AvailabilityFlagAvailable,
 		PricingMethod:         pricingMethod,
 		TimeUnitSecs:          timeUnitSecs,

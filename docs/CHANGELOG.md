@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.13] - 2026-03-19
+
+### Provider & Rating Improvements
+- Added auto country detection for providers when config country is empty (uses ip-api.com)
+- Added `AnnounceRating` function for blockchain reputation broadcast
+- Added `--broadcast` flag to `rate` command (TODO: full blockchain integration)
+- Added `EncodeReputationPayloadWithoutSignature` for signing ratings
+
+### Version Bump
+- Bumped patch version to 0.6.13.
+
 ## [0.6.12] - 2026-03-19
 
 ### Critical Security & Architecture Fixes

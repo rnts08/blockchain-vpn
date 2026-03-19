@@ -2,9 +2,14 @@ package blockchain
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math/big"
 	"net"
 	"strings"
 	"time"
@@ -20,6 +25,18 @@ import (
 	"blockchain-vpn/internal/auth"
 	"blockchain-vpn/internal/protocol"
 )
+
+// signWithSecp256k1 creates an ECDSA signature using the secp256k1 curve.
+func signWithSecp256k1(privKey *btcec.PrivateKey, message []byte) ([]byte, error) {
+	ecdsaPriv := &ecdsa.PrivateKey{
+		D: new(big.Int).SetBytes(privKey.Serialize()),
+	}
+	ecdsaPriv.PublicKey.Curve = elliptic.P256()
+	ecdsaPriv.PublicKey.X, ecdsaPriv.PublicKey.Y = elliptic.P256().ScalarBaseMult(ecdsaPriv.D.Bytes())
+
+	hash := sha256.Sum256(message)
+	return ecdsa.SignASN1(rand.Reader, ecdsaPriv, hash[:])
+}
 
 // This file provides a basic example of a VPN provider application that
 // broadcasts its service information onto the blockchain.
@@ -208,6 +225,83 @@ func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newP
 	}
 
 	log.Printf("Successfully broadcasted price update transaction: %s\n", txHash.String())
+	return nil
+}
+
+// AnnounceRating broadcasts a reputation/rating for a provider on the blockchain.
+func AnnounceRating(client *rpcclient.Client, providerPubKey *btcec.PublicKey, clientPrivKey *btcec.PrivateKey, score uint8, source string, feeTargetBlocks int, feeMode string) error {
+	repPayload := &protocol.ReputationPayload{
+		SubjectPublicKey: providerPubKey,
+		Score:            score,
+		Source:           source,
+		Signature:        nil,
+	}
+
+	payloadData, err := protocol.EncodeReputationPayloadWithoutSignature(repPayload)
+	if err != nil {
+		return fmt.Errorf("error encoding reputation payload: %w", err)
+	}
+
+	sigASN1, err := signWithSecp256k1(clientPrivKey, payloadData)
+	if err != nil {
+		return fmt.Errorf("error signing reputation payload: %w", err)
+	}
+
+	repPayload.Signature = sigASN1
+	payload, err := protocol.EncodeReputationPayload(repPayload)
+	if err != nil {
+		return fmt.Errorf("error encoding final reputation payload: %w", err)
+	}
+
+	opReturnScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN).AddData(payload).Script()
+	if err != nil {
+		return fmt.Errorf("error creating OP_RETURN script: %w", err)
+	}
+
+	feePerKb, err := estimateDynamicFeePerKbWithMode(context.Background(), client, int64(feeTargetBlocks), FeeMode(feeMode))
+	if err != nil {
+		return fmt.Errorf("failed to determine dynamic fee: %w", err)
+	}
+
+	requiredFee := btcutil.Amount(float64(feePerKb) * 250.0 / 1000.0)
+
+	utxos, totalInput, err := selectCoins(client, requiredFee)
+	if err != nil {
+		return err
+	}
+
+	tx := wire.NewMsgTx(wire.TxVersion)
+	for _, utxo := range utxos {
+		txHash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		txIn := wire.NewTxIn(wire.NewOutPoint(txHash, utxo.Vout), nil, nil)
+		tx.AddTxIn(txIn)
+	}
+	changeAmount := totalInput - requiredFee
+
+	changeAddr, err := client.GetRawChangeAddress("")
+	if err != nil {
+		return fmt.Errorf("error getting change address: %w", err)
+	}
+	changeScript, err := txscript.PayToAddrScript(changeAddr)
+	if err != nil {
+		return fmt.Errorf("error creating change script: %w", err)
+	}
+
+	opReturnOutput := wire.NewTxOut(0, opReturnScript)
+	tx.AddTxOut(opReturnOutput)
+	tx.AddTxOut(wire.NewTxOut(int64(changeAmount), changeScript))
+
+	signedTx, complete, err := client.SignRawTransactionWithWallet(tx)
+	if err != nil || !complete {
+		return fmt.Errorf("error signing transaction: %w", err)
+	}
+
+	txHash, err := client.SendRawTransaction(signedTx, true)
+	if err != nil {
+		return fmt.Errorf("error sending transaction: %w", err)
+	}
+
+	log.Printf("Successfully broadcasted rating transaction: %s (provider=%s, score=%d)\n", txHash.String(), hex.EncodeToString(providerPubKey.SerializeCompressed()), score)
 	return nil
 }
 
