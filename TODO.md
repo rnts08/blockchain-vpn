@@ -20,6 +20,29 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 - [x] Add detailed help subcommands for all major commands (generate-send-address, favorite, rate, etc.) - comprehensive help added
 - [x] Document demo/testing workflow with regtest ordexcoind - see TESTING.md
 
+## Issues Found During Code Review (Beta Testing Prep)
+
+### Critical
+
+- [x] `EncodePaymentPayload` in `internal/protocol/vpn_protocol.go:476` - panics if `clientPubKey` is nil (missing nil check, unlike other similar functions)
+- [x] `GetConfigField`/`SetConfigField` in `internal/config/config_registry.go:87,96` - missing nil check for `cfg` parameter
+- [x] `DecodeReputationPayload` in `internal/protocol/reputation.go:86` - potential out-of-bounds read when reading signature length
+
+### Medium
+
+- [ ] `EncodeCertFingerprintPayload` in `internal/protocol/vpn_protocol.go:622` - silently zeroes truncated fingerprints instead of returning error
+- [ ] NAT-PMP goroutine in `internal/nat/nat.go:136` - may send on channel after context cancellation
+- [ ] Unsafe type assertion in `internal/config/config_registry.go:139` - `.([]string)` could panic
+
+### Low
+
+- [ ] `runPowerShell` in `internal/crypto/keystore.go:360` - inherits full process environment unnecessarily
+- [ ] `containsAt` test helper in `internal/crypto/crypto_test.go:106` - uses recursion, prefer `strings.Contains`
+- [ ] Manual close in `internal/config/port.go:43` - use defer for robustness
+- [ ] Cleanup errors silently ignored in `internal/nat/nat.go:67,107`
+
+---
+
 ## Priority: Low
 
 - [ ] Review and optimize test coverage gaps

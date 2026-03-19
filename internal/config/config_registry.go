@@ -85,6 +85,9 @@ func buildFieldRegistry() []ConfigField {
 }
 
 func GetConfigField(cfg *Config, key string) (any, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config cannot be nil")
+	}
 	for _, f := range configFieldRegistry {
 		if f.Path == key {
 			return getFieldValue(cfg, f.Parent, f.FieldName)
@@ -94,6 +97,9 @@ func GetConfigField(cfg *Config, key string) (any, error) {
 }
 
 func SetConfigField(cfg *Config, key string, value string) error {
+	if cfg == nil {
+		return fmt.Errorf("config cannot be nil")
+	}
 	for _, f := range configFieldRegistry {
 		if f.Path == key {
 			return setFieldValue(cfg, f.Parent, f.FieldName, f.Type, value)
@@ -138,6 +144,7 @@ func getFieldValue(cfg *Config, parent, fieldName string) (any, error) {
 		if field.Type().Elem().Kind() == reflect.String {
 			return field.Interface().([]string), nil
 		}
+		return nil, fmt.Errorf("unsupported slice type %v", field.Type().Elem())
 	}
 	return nil, fmt.Errorf("unsupported field type %v", field.Kind())
 }

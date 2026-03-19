@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.8] - 2026-03-19
+
+### Security Fixes
+- Added nil check in `EncodePaymentPayload` to prevent panic on nil public key
+- Added nil check in `GetConfigField`/`SetConfigField` to prevent panic on nil config
+- Fixed bounds check in `DecodeReputationPayload` to prevent potential out-of-bounds read
+- Added error return for unsupported slice types in config registry
+
+### Version Bump
+- Bumped patch version to 0.6.8.
+
 ## [0.6.7] - 2026-03-19
 
 ### Testing

@@ -474,6 +474,9 @@ func normalizeCountryCode(v string) string {
 
 // EncodePaymentPayload creates the OP_RETURN data for a payment transaction.
 func EncodePaymentPayload(clientPubKey *btcec.PublicKey) ([]byte, error) {
+	if clientPubKey == nil {
+		return nil, fmt.Errorf("client public key cannot be nil")
+	}
 	buf := new(bytes.Buffer)
 	if err := binary.Write(buf, binary.BigEndian, uint32(PaymentMagicBytes)); err != nil {
 		return nil, err

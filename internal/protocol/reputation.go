@@ -76,7 +76,7 @@ func DecodeReputationPayload(data []byte) (*ReputationPayload, error) {
 	srcLen := int(data[offset])
 	offset++
 
-	if len(data) < offset+srcLen+2 {
+	if len(data) < offset+2+srcLen {
 		return nil, fmt.Errorf("payload too short for source")
 	}
 	srcBytes := data[offset : offset+srcLen]
