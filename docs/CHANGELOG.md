@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.14] - 2026-03-19
+
+### Quality Assurance & Trust Features
+- Added `ConnectionQuality` struct for detailed quality reporting
+- Added `CheckConnectionQuality()` function for comprehensive connection verification
+- Changed bandwidth threshold from 50% to 75% (as per P2P trust requirements)
+- Quality checks now cover: egress IP, DNS leak, country, bandwidth
+- Quality score (0-100%) with warnings logged for failed checks
+- Strict verification mode fails on any quality warning
+
+### Version Bump
+- Bumped patch version to 0.6.14.
+
 ## [0.6.13] - 2026-03-19
 
 ### Provider & Rating Improvements

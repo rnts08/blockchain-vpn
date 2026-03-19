@@ -670,13 +670,23 @@ func ConnectToProvider(ctx context.Context, cfg *config.ClientConfig, sec *confi
 	expected.ProviderHost = providerHost
 	expected.StrictVerification = cfg.StrictVerification
 	expected.VerifyThroughputAfter = cfg.VerifyThroughputAfterSetup
+	expected.QualityThreshold = 0.75 // 75% minimum quality
 	checkCtx, cancelChecks := context.WithTimeout(context.Background(), 20*time.Second)
-	if err := runClientPostConnectChecks(checkCtx, expected, preConnectIP); err != nil {
-		cancelChecks()
+	quality, err := runClientPostConnectChecks(checkCtx, expected, preConnectIP)
+	cancelChecks()
+	if err != nil {
 		recordRuntimeError(err)
 		return err
 	}
-	cancelChecks()
+
+	// Store quality result for potential refund decision
+	if quality != nil && !quality.Passed {
+		log.Printf("Connection quality warning: tunnel may not meet advertised specs")
+		log.Printf("Quality score: %.0f%% (threshold: %.0f%%)", quality.QualityScore*100, quality.QualityThreshold*100)
+		for _, warning := range quality.Warnings {
+			log.Printf("  - %s", warning)
+		}
+	}
 
 	log.Printf("Successfully connected to %s. Tunnel is active.", endpoint)
 	recordEvent("client", "connected", endpoint)

@@ -19,6 +19,129 @@ type ClientSecurityExpectations struct {
 	StrictVerification    bool
 	VerifyThroughputAfter bool
 	ThroughputProbePort   uint16
+	QualityThreshold      float32 // Minimum quality percentage (0.0-1.0), default 0.75 (75%)
+}
+
+// ConnectionQuality represents the result of connection quality checks.
+type ConnectionQuality struct {
+	EgressIPVerified    bool
+	DNSLeakPassed       bool
+	CountryVerified     bool
+	BandwidthKB         uint32 // Measured bandwidth in Kbps
+	ExpectedBandwidthKB uint32
+	BandwidthPercentage float32 // Actual as percentage of expected (0.0-1.0+)
+	QualityScore        float32 // Overall quality 0.0-1.0
+	QualityThreshold    float32 // Minimum acceptable quality (0.0-1.0)
+	Passed              bool
+	Warnings            []string
+}
+
+// CheckConnectionQuality runs all quality checks and returns a detailed quality report.
+func CheckConnectionQuality(ctx context.Context, expected ClientSecurityExpectations, preConnectIP net.IP) (*ConnectionQuality, error) {
+	quality := &ConnectionQuality{
+		ExpectedBandwidthKB: expected.ExpectedBandwidthKB,
+		QualityScore:        1.0, // Start at 100%
+		Warnings:            []string{},
+	}
+	quality.QualityThreshold = expected.QualityThreshold
+	if quality.QualityThreshold <= 0 {
+		quality.QualityThreshold = 0.75 // Default 75%
+	}
+
+	checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	postConnectIP, err := getPublicIPFn()
+	if err != nil {
+		quality.Warnings = append(quality.Warnings, fmt.Sprintf("could not determine post-connect egress IP: %v", err))
+	} else {
+		quality.EgressIPVerified = preConnectIP == nil || !preConnectIP.Equal(postConnectIP)
+		if !quality.EgressIPVerified {
+			quality.Warnings = append(quality.Warnings, "egress IP did not change - tunnel may not be active")
+			quality.QualityScore -= 0.3
+		}
+	}
+
+	// DNS leak check
+	if err := checkDNSLeakHeuristic(checkCtx, postConnectIP, false); err != nil {
+		quality.Warnings = append(quality.Warnings, fmt.Sprintf("DNS leak detected: %v", err))
+		quality.DNSLeakPassed = false
+		quality.QualityScore -= 0.2
+	} else {
+		quality.DNSLeakPassed = true
+	}
+
+	// Country check
+	if expected.ExpectedCountry != "" && expected.ExpectedCountry != "N/A" {
+		if err := checkCountryHeuristic(postConnectIP, expected.ExpectedCountry, false); err != nil {
+			quality.Warnings = append(quality.Warnings, fmt.Sprintf("country mismatch: %v", err))
+			quality.CountryVerified = false
+			quality.QualityScore -= 0.1
+		} else {
+			quality.CountryVerified = true
+		}
+	} else {
+		quality.CountryVerified = true // Skip if no expectation
+	}
+
+	// Bandwidth verification
+	if expected.VerifyThroughputAfter && expected.ExpectedBandwidthKB > 0 && expected.ThroughputProbePort > 0 {
+		measured, err := measureThroughputFn(checkCtx, fmt.Sprintf("%s:%d", expected.ProviderHost, expected.ThroughputProbePort))
+		if err != nil {
+			quality.Warnings = append(quality.Warnings, fmt.Sprintf("bandwidth verification failed: %v", err))
+			quality.QualityScore -= 0.3
+		} else {
+			quality.BandwidthKB = measured
+			if expected.ExpectedBandwidthKB > 0 {
+				quality.BandwidthPercentage = float32(measured) / float32(expected.ExpectedBandwidthKB)
+				if quality.BandwidthPercentage < quality.QualityThreshold {
+					quality.Warnings = append(quality.Warnings,
+						fmt.Sprintf("bandwidth %.0f%% of expected (%d Kbps vs %d Kbps)",
+							quality.BandwidthPercentage*100, measured, expected.ExpectedBandwidthKB))
+					quality.QualityScore -= 0.3
+				}
+			}
+		}
+	}
+
+	// Clamp quality score
+	if quality.QualityScore < 0 {
+		quality.QualityScore = 0
+	}
+
+	quality.Passed = quality.QualityScore >= quality.QualityThreshold
+
+	return quality, nil
+}
+
+func runClientPostConnectChecks(ctx context.Context, expected ClientSecurityExpectations, preConnectIP net.IP) (*ConnectionQuality, error) {
+	log.Printf("Running post-connect security checks...")
+	checkDNSReachability(ctx)
+	checkDNSConfiguredServers()
+
+	quality, err := CheckConnectionQuality(ctx, expected, preConnectIP)
+	if err != nil {
+		return quality, err
+	}
+
+	// Log warnings
+	for _, warning := range quality.Warnings {
+		log.Printf("Security check warning: %s", warning)
+	}
+
+	// In strict mode, fail on any warning
+	if expected.StrictVerification && len(quality.Warnings) > 0 {
+		return quality, fmt.Errorf("strict verification failed: %s", quality.Warnings[0])
+	}
+
+	// Log final result
+	if quality.Passed {
+		log.Printf("Connection quality: %.0f%% (passed threshold of %.0f%%)", quality.QualityScore*100, quality.QualityThreshold*100)
+	} else {
+		log.Printf("Connection quality: %.0f%% (below threshold of %.0f%%) - refund recommended", quality.QualityScore*100, quality.QualityThreshold*100)
+	}
+
+	return quality, nil
 }
 
 var (
@@ -26,38 +149,6 @@ var (
 	autoLocateFn        = geoip.AutoLocate
 	measureThroughputFn = MeasureProviderThroughputKbps
 )
-
-func runClientPostConnectChecks(ctx context.Context, expected ClientSecurityExpectations, preConnectIP net.IP) error {
-	log.Printf("Running post-connect security checks...")
-	checkDNSReachability(ctx)
-	checkDNSConfiguredServers()
-
-	postConnectIP, err := getPublicIPFn()
-	if err != nil {
-		if expected.StrictVerification {
-			return fmt.Errorf("strict verification failed: could not determine post-connect egress IP: %w", err)
-		}
-		log.Printf("Security check warning: could not determine post-connect egress IP: %v", err)
-		return nil
-	}
-	log.Printf("Security check: detected egress IP %s", postConnectIP.String())
-
-	if err := verifyEgressIP(preConnectIP, postConnectIP, expected); err != nil {
-		return err
-	}
-	if err := checkDNSLeakHeuristic(ctx, postConnectIP, expected.StrictVerification); err != nil {
-		return err
-	}
-	if err := checkCountryHeuristic(postConnectIP, expected.ExpectedCountry, expected.StrictVerification); err != nil {
-		return err
-	}
-	if expected.VerifyThroughputAfter && expected.ExpectedBandwidthKB > 0 {
-		if err := verifyProviderThroughput(ctx, expected.ProviderHost, expected, expected.StrictVerification); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 func checkDNSReachability(ctx context.Context) {
 	resolveCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
@@ -207,15 +298,15 @@ func verifyProviderThroughput(ctx context.Context, endpointHost string, expected
 		return nil
 	}
 	log.Printf("Security check: measured provider-assisted downstream throughput %d Kbps", measured)
-	threshold := float64(expected.ExpectedBandwidthKB) * 0.50
+	threshold := float64(expected.ExpectedBandwidthKB) * 0.75
 	if float64(measured) < threshold {
-		msg := fmt.Sprintf("measured throughput %d Kbps below expected threshold %.0f Kbps", measured, threshold)
+		msg := fmt.Sprintf("measured throughput %d Kbps below expected threshold %.0f Kbps (75%% of advertised)", measured, threshold)
 		if strict {
 			return fmt.Errorf("strict verification failed: %s", msg)
 		}
 		log.Printf("Security check warning: %s", msg)
 		return nil
 	}
-	log.Printf("Security check: provider throughput verification passed against advertised %d Kbps", expected.ExpectedBandwidthKB)
+	log.Printf("Security check: provider throughput verification passed against advertised %d Kbps (75%% threshold)", expected.ExpectedBandwidthKB)
 	return nil
 }

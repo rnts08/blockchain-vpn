@@ -61,11 +61,16 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 ## Future Enhancements
 
-- [ ] NAT traversal method selection via config (`NATTraversalMethod` config option - UPnP/NAT-PMP work, just config unused)
-- [ ] WebSocket origin validation (currently allows all origins - security hardening)
+- [ ] **Provider bandwidth auto-detection** - Measure actual upload/download bandwidth at startup and advertise accurate speed (currently manual config required)
+- [x] Bandwidth verification between client/provider (75% threshold now enforced)
+- [x] DNS leak detection (implemented in client_security_checks.go)
+- [x] Connection quality scoring (ConnectionQuality struct with quality score)
+- [ ] Refund flow integration - client can disconnect and request refund when quality < 75%
+- [ ] NAT traversal method selection via config
+- [ ] WebSocket origin validation
 - [ ] Symmetric NAT detection and handling
 - [ ] STUN integration for NAT type detection
-- [ ] Full blockchain rating broadcast integration (infrastructure exists, needs key management)
+- [ ] Full blockchain rating broadcast integration
 
 ---
 
