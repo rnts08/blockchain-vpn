@@ -27,12 +27,15 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 - [x] `EncodePaymentPayload` in `internal/protocol/vpn_protocol.go:476` - panics if `clientPubKey` is nil (missing nil check, unlike other similar functions)
 - [x] `GetConfigField`/`SetConfigField` in `internal/config/config_registry.go:87,96` - missing nil check for `cfg` parameter
 - [x] `DecodeReputationPayload` in `internal/protocol/reputation.go:86` - potential out-of-bounds read when reading signature length
+- [x] `WriteFileAtomic` in `internal/util/atomic.go` - data loss on rename failure (defer removed temp file before rename could fail)
 
 ### Medium
 
 - [x] `EncodeCertFingerprintPayload` in `internal/protocol/vpn_protocol.go:622` - silently zeroes truncated fingerprints instead of returning error
 - [x] NAT-PMP goroutine in `internal/nat/nat.go:136` - may send on channel after context cancellation
 - [x] Unsafe type assertion in `internal/config/config_registry.go:139` - `.([]string)` could panic
+- [x] Session timer race in `internal/tunnel/tunnel.go:398` - goroutine not synchronized after timer expiration
+- [x] GeoIP lookup error silently ignored in `internal/geoip/enrich.go:49`
 
 ### Low
 

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.10] - 2026-03-19
+
+### Bug Fixes
+- Fixed data loss in `WriteFileAtomic` - now only removes temp file on error after rename fails
+- Fixed session timer race condition in tunnel - now waits for goroutine to finish after timer expiration
+- Added logging for GeoIP lookup errors instead of silently ignoring them
+
+### Version Bump
+- Bumped patch version to 0.6.10.
+
 ## [0.6.9] - 2026-03-19
 
 ### Bug Fixes

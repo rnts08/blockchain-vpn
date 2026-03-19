@@ -46,9 +46,11 @@ func EnrichEndpoints(announcements []*blockchain.ProviderAnnouncement) []*Enrich
 			defer wg.Done()
 
 			// GeoIP Lookup
-			record, _ := db.Country(announcement.Endpoint.IP)
+			record, err := db.Country(announcement.Endpoint.IP)
 			country := "N/A"
-			if record != nil && record.Country.IsoCode != "" {
+			if err != nil {
+				log.Printf("GeoIP lookup failed for %s: %v", announcement.Endpoint.IP, err)
+			} else if record != nil && record.Country.IsoCode != "" {
 				country = record.Country.IsoCode
 			}
 

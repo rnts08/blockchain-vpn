@@ -412,6 +412,7 @@ func handleClient(ctx context.Context, conn net.Conn, cfg *config.ProviderConfig
 		if !sessionTimer.Stop() {
 			<-sessionTimer.C
 		}
+		<-done
 		log.Printf(
 			"Session stats client=%s duration=%s upstream_bytes=%d downstream_bytes=%d",
 			hex.EncodeToString(pk.SerializeCompressed()),
