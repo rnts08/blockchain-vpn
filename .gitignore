@@ -35,4 +35,4 @@ go.work.sum
 # Don't push _attic code
 _attic
 _attic/*
-bcvpn
+/bcvpn
