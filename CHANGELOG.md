@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.6] - 2026-03-20
+
+### Feature: Blockchain-Agnostic Support
+- Modified `detectChain()` to gracefully handle unknown blockchain genesis hashes
+- Added `paramsFromNetwork()` helper function to resolve chain params from network config
+- Updated `GetProviderPaymentAddress()` to handle nil chainParams for unknown blockchains
+- Added `stringAddress` type implementing `btcutil.Address` interface for unknown chains
+- `bcvpn scan` now uses configured `rpc.network` value as fallback when genesis hash is unrecognized
+- Enables support for custom Bitcoin-like blockchains (e.g., OrdexCoin)
+
+---
+
 ## [0.7.5] - 2026-03-20
 
 ### Feature: Provider Bandwidth Auto-Detection

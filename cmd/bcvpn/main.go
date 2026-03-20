@@ -536,7 +536,7 @@ func main() {
 			log.Fatalf("Failed to get genesis block hash from RPC: %v", err)
 		}
 
-		chainParams := detectChain(genesisHash)
+		chainParams := detectChain(genesisHash, cfg.RPC.Network)
 
 		cachePath, err := blockchain.DefaultScanCachePath()
 		if err != nil {
@@ -2418,7 +2418,7 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 	}
 }
 
-func detectChain(genesisHash *chainhash.Hash) *chaincfg.Params {
+func detectChain(genesisHash *chainhash.Hash, network string) *chaincfg.Params {
 	switch *genesisHash {
 	case *chaincfg.MainNetParams.GenesisHash:
 		log.Println("Detected chain: Bitcoin Mainnet")
@@ -2433,8 +2433,39 @@ func detectChain(genesisHash *chainhash.Hash) *chaincfg.Params {
 		log.Println("Detected chain: Bitcoin Simnet")
 		return &chaincfg.SimNetParams
 	default:
-		log.Fatalf("Unknown blockchain. Genesis hash %s does not match any known Bitcoin chain.", genesisHash.String())
-		return nil
+		// Unknown chain - try to use configured network or fall back to mainnet
+		chain := strings.ToLower(strings.TrimSpace(network))
+		if chain == "" || chain == "auto" {
+			chain = "mainnet"
+		}
+		switch chain {
+		case "testnet", "testnet3", "testnet4":
+			log.Printf("Warning: unknown genesis hash %s, using Testnet3 params (configured network: %s)", genesisHash.String(), network)
+			return &chaincfg.TestNet3Params
+		case "regtest", "regression":
+			log.Printf("Warning: unknown genesis hash %s, using Regtest params (configured network: %s)", genesisHash.String(), network)
+			return &chaincfg.RegressionNetParams
+		case "simnet":
+			log.Printf("Warning: unknown genesis hash %s, using Simnet params (configured network: %s)", genesisHash.String(), network)
+			return &chaincfg.SimNetParams
+		default:
+			log.Printf("Warning: unknown genesis hash %s, using Mainnet params (configured network: %s)", genesisHash.String(), network)
+			return &chaincfg.MainNetParams
+		}
+	}
+}
+
+// paramsFromNetwork returns chaincfg params for a given network name.
+func paramsFromNetwork(network string) *chaincfg.Params {
+	switch strings.ToLower(strings.TrimSpace(network)) {
+	case "testnet", "testnet3", "testnet4":
+		return &chaincfg.TestNet3Params
+	case "regtest", "regression":
+		return &chaincfg.RegressionNetParams
+	case "simnet":
+		return &chaincfg.SimNetParams
+	default:
+		return &chaincfg.MainNetParams
 	}
 }
 

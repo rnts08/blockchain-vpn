@@ -43,6 +43,8 @@ func GetPaymentVerification(advertisedPrice uint64, amountSatoshis uint64) (uint
 
 // GetProviderPaymentAddress inspects the announcement transaction to find the
 // address that funded it. This is considered the provider's payment address.
+// If params is nil (unknown blockchain), returns the raw address string as a
+// stringAddress wrapper that implements btcutil.Address.
 func GetProviderPaymentAddress(client *rpcclient.Client, announcementTxID string, params *chaincfg.Params) (btcutil.Address, error) {
 	txHash, err := chainhash.NewHashFromStr(announcementTxID)
 	if err != nil {
@@ -90,11 +92,31 @@ func GetProviderPaymentAddress(client *rpcclient.Client, announcementTxID string
 	}
 
 	// The first address is the provider's payment address.
-	addr, err := btcutil.DecodeAddress(spentVout.ScriptPubKey.Addresses[0], params)
+	rawAddr := spentVout.ScriptPubKey.Addresses[0]
+	if params == nil {
+		// Unknown blockchain - return raw address string wrapped as stringAddress
+		return newStringAddress(rawAddr), nil
+	}
+	addr, err := btcutil.DecodeAddress(rawAddr, params)
 	if err != nil {
 		return nil, fmt.Errorf("could not decode provider address: %w", err)
 	}
 	return addr, nil
+}
+
+// stringAddress wraps a raw address string to implement btcutil.Address interface.
+// This is used when chain params are unknown (blockchain-agnostic mode).
+type stringAddress string
+
+func (s stringAddress) String() string                 { return string(s) }
+func (s stringAddress) EncodeAddress() string          { return string(s) }
+func (s stringAddress) ScriptAddress() []byte          { return nil }
+func (s stringAddress) IsValid() bool                  { return len(s) > 0 }
+func (s stringAddress) IsForNet(*chaincfg.Params) bool { return true }
+
+// newStringAddress creates a stringAddress wrapper from a raw address string.
+func newStringAddress(addr string) btcutil.Address {
+	return stringAddress(addr)
 }
 
 // selectCoins selects a set of unspent transaction outputs (UTXOs) that sum up
