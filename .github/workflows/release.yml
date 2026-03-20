@@ -20,11 +20,6 @@ jobs:
           go-version: '1.25.x'
           cache: true
 
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev libxcursor-dev libxinerama-dev libxrandr-dev libxi-dev libasound2-dev libvulkan-dev
-
       - name: Verify Dependencies
         run: go mod verify
 
@@ -59,11 +54,6 @@ jobs:
           go-version: '1.25.x'
           cache: true
 
-      - name: Install GUI Build Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev libxcursor-dev libxinerama-dev libxrandr-dev libxi-dev libasound2-dev libvulkan-dev
-
       - name: Build CLI (Cross-Platform)
         run: |
           mkdir -p dist
@@ -82,17 +72,10 @@ jobs:
           # Windows
           GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/bcvpn-windows-amd64.exe ./cmd/bcvpn
 
-      - name: Build GUI (Linux)
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          COMMIT=$(git rev-parse --short HEAD)
-          LDFLAGS="-X blockchain-vpn/internal/version.Version=$VERSION -X blockchain-vpn/internal/version.GitCommit=$COMMIT -X blockchain-vpn/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/bcvpn-gui-linux-amd64 ./cmd/bcvpn-gui
-
       - name: Package Release
         run: |
           cd dist
-          for f in bcvpn-linux-* bcvpn-darwin-* bcvpn-gui-linux-*; do
+          for f in bcvpn-linux-* bcvpn-darwin-*; do
             tar -czvf "${f}.tar.gz" "$f"
           done
           for f in *.exe; do
