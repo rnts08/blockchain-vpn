@@ -44,8 +44,8 @@ tidy:
 	$(GO) mod tidy
 
 ## Cleanup
-clean:
-	rm -f $(BINARY_NAME) \
+clean:-
+	rm -f $(BINARY_NAME) $(BINARY_NAME).exe \
 		$(BINARY_NAME)-linux-amd64 \
 		$(BINARY_NAME)-darwin-amd64 \
 		$(BINARY_NAME)-windows-amd64.exe

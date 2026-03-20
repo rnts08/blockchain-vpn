@@ -4,7 +4,7 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 ## Priority: High
 
-- [ ] No automatic reconnection on network disconnect (usability issue, not security)
+- [x] No automatic reconnection on network disconnect (usability issue, not security)
 - [ ] Heartbeat announcements lack cryptographic signature (can be added post-beta)
 - [ ] Reputation scores not signature-verified (trust through network effect)
 - [ ] Direct connect command is stub-only (must use scan to connect)

@@ -120,6 +120,12 @@ type ClientConfig struct {
 	AutoRechargeThreshold  uint64 `json:"auto_recharge_threshold"`   // Sats remaining before auto-recharge triggers
 	AutoRechargeAmount     uint64 `json:"auto_recharge_amount"`      // Sats to add on auto-recharge
 	AutoRechargeMinBalance uint64 `json:"auto_recharge_min_balance"` // Minimum balance to maintain
+
+	// Auto-reconnect
+	AutoReconnectEnabled     bool   `json:"auto_reconnect_enabled"`      // Enable automatic reconnection on disconnect
+	AutoReconnectMaxAttempts int    `json:"auto_reconnect_max_attempts"` // Max reconnection attempts (0 = infinite)
+	AutoReconnectInterval    string `json:"auto_reconnect_interval"`     // Base interval between retries (e.g., "5s", "30s")
+	AutoReconnectMaxInterval string `json:"auto_reconnect_max_interval"` // Max interval cap (e.g., "5m")
 }
 
 const AppConfigDirName = "blockchain-vpn"

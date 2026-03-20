@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.4] - 2026-03-20
+
+### Feature: Automatic Reconnection
+- Added automatic reconnection on network disconnect
+- New CLI flags: `--auto-reconnect`, `--auto-reconnect-max-attempts`, `--auto-reconnect-interval`, `--auto-reconnect-max-interval`
+- Added `AddWithReconnect` method to `MultiTunnelManager`
+- Added `ReconnectConfig` and `tunnelParams` types for managing reconnection state
+- Implemented exponential backoff for reconnection attempts
+- Configuration fields added: `AutoReconnectEnabled`, `AutoReconnectMaxAttempts`, `AutoReconnectInterval`, `AutoReconnectMaxInterval`
+
+### Unit Tests
+- Added `TestParseAutoReconnectInterval` test
+- Added `TestMultiTunnelManager_ReconnectInfoStored` test
+- Added `TestMultiTunnelManager_CancelClearsReconnectInfo` test
+
+---
+
 ## [0.7.3] - 2026-03-20
 
 ### Test Coverage Improvements

@@ -250,6 +250,10 @@ func main() {
 	connectTunIP := connectCmd.String("tun-ip", "", "Client TUN IP address")
 	connectKillSwitch := connectCmd.Bool("kill-switch", false, "Enable kill switch")
 	connectStrictVerification := connectCmd.Bool("strict-verification", false, "Enable strict security verification")
+	connectAutoReconnect := connectCmd.Bool("auto-reconnect", false, "Enable automatic reconnection on disconnect")
+	connectAutoReconnectMaxAttempts := connectCmd.Int("auto-reconnect-max-attempts", 0, "Maximum reconnection attempts (0 = infinite)")
+	connectAutoReconnectInterval := connectCmd.String("auto-reconnect-interval", "5s", "Base interval between reconnection attempts")
+	connectAutoReconnectMaxInterval := connectCmd.String("auto-reconnect-max-interval", "5m", "Maximum interval between reconnection attempts")
 
 	historySinceLast := historyCmd.Bool("since-last-payment", false, "Show wallet transactions since the last recorded payment")
 	historyFrom := historyCmd.String("from", "", "Show transactions from this date/time (RFC3339 format)")
@@ -622,7 +626,7 @@ func main() {
 		}
 		fmt.Println()
 
-		interactiveConnect(ctx, client, chainParams, filteredEndpoints, &cfg.Client, &cfg.Security, *scanDryRun)
+		interactiveConnect(ctx, client, chainParams, filteredEndpoints, &cfg.Client, &cfg.Security, *scanDryRun, *connectAutoReconnect, *connectAutoReconnectMaxAttempts, *connectAutoReconnectInterval, *connectAutoReconnectMaxInterval)
 
 	case "connect":
 		if len(os.Args) < 3 {
@@ -2224,7 +2228,7 @@ func parseBandwidthLimitToKbps(v string) uint32 {
 	return kbps
 }
 
-func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainParams *chaincfg.Params, endpoints []*geoip.EnrichedVPNEndpoint, clientCfg *config.ClientConfig, secCfg *config.SecurityConfig, dryRun bool) {
+func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainParams *chaincfg.Params, endpoints []*geoip.EnrichedVPNEndpoint, clientCfg *config.ClientConfig, secCfg *config.SecurityConfig, dryRun bool, autoReconnect bool, autoReconnectMaxAttempts int, autoReconnectInterval string, autoReconnectMaxInterval string) {
 	// Write client PID file for management (stop/disconnect)
 	dir, err := config.AppConfigDir()
 	if err != nil {
@@ -2350,19 +2354,43 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 			ThroughputProbePort: selectedEndpoint.Endpoint.ThroughputProbePort,
 		}
 		pricingParams := tunnel.NewPricingParamsFromEndpoint(selectedEndpoint.Endpoint)
-		if err := mgr.Add(
-			"session-interactive",
-			clientCfg.InterfaceName,
-			clientCfg,
-			secCfg,
-			localKey,
-			peerPubKey,
-			endpointAddr,
-			expected,
-			spendingMgr,
-			pricingParams,
-		); err != nil {
-			log.Fatalf("Failed to add tunnel: %v", err)
+
+		if autoReconnect {
+			clientCfg.AutoReconnectEnabled = true
+			clientCfg.AutoReconnectMaxAttempts = autoReconnectMaxAttempts
+			clientCfg.AutoReconnectInterval = autoReconnectInterval
+			clientCfg.AutoReconnectMaxInterval = autoReconnectMaxInterval
+
+			if err := mgr.AddWithReconnect(
+				"session-interactive",
+				clientCfg.InterfaceName,
+				clientCfg,
+				secCfg,
+				localKey,
+				peerPubKey,
+				endpointAddr,
+				expected,
+				spendingMgr,
+				pricingParams,
+			); err != nil {
+				log.Fatalf("Failed to add tunnel with reconnect: %v", err)
+			}
+			fmt.Println("Auto-reconnect enabled. Will attempt to reconnect on disconnect.")
+		} else {
+			if err := mgr.Add(
+				"session-interactive",
+				clientCfg.InterfaceName,
+				clientCfg,
+				secCfg,
+				localKey,
+				peerPubKey,
+				endpointAddr,
+				expected,
+				spendingMgr,
+				pricingParams,
+			); err != nil {
+				log.Fatalf("Failed to add tunnel: %v", err)
+			}
 		}
 
 		// Wait indefinitely until cancelled or the tunnel errors out (handled by mgr)

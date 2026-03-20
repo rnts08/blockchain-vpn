@@ -191,3 +191,95 @@ func TestActiveTunnel_String(t *testing.T) {
 		t.Errorf("expected Interface 'eth0', got %s", tunnel.Interface)
 	}
 }
+
+func TestParseAutoReconnectInterval(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected time.Duration
+	}{
+		{"5s", 5 * time.Second},
+		{"30s", 30 * time.Second},
+		{"1m", 1 * time.Minute},
+		{"5m", 5 * time.Minute},
+		{"1h", 1 * time.Hour},
+		{"", 0},
+		{"invalid", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := parseAutoReconnectInterval(tt.input)
+			if result != tt.expected {
+				t.Errorf("parseAutoReconnectInterval(%q) = %v, want %v", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMultiTunnelManager_ReconnectInfoStored(t *testing.T) {
+	m := NewMultiTunnelManager()
+
+	clientCfg := &config.ClientConfig{
+		InterfaceName:        "bcvpn1",
+		TunIP:                "10.10.0.2",
+		TunSubnet:            "24",
+		AutoReconnectEnabled: true,
+	}
+
+	m.mu.Lock()
+	m.reconnectInfo["test-id"] = &tunnelParams{
+		interfaceName: "eth0",
+		clientCfg:     clientCfg,
+		endpointAddr:  "192.168.1.1:51820",
+	}
+	m.mu.Unlock()
+
+	m.mu.RLock()
+	info, exists := m.reconnectInfo["test-id"]
+	m.mu.RUnlock()
+
+	if !exists {
+		t.Fatal("expected reconnect info to exist")
+	}
+	if info.endpointAddr != "192.168.1.1:51820" {
+		t.Errorf("expected endpoint 192.168.1.1:51820, got %s", info.endpointAddr)
+	}
+	if info.clientCfg.AutoReconnectEnabled != true {
+		t.Error("expected AutoReconnectEnabled to be true")
+	}
+}
+
+func TestMultiTunnelManager_CancelClearsReconnectInfo(t *testing.T) {
+	m := NewMultiTunnelManager()
+
+	clientCfg := &config.ClientConfig{
+		InterfaceName:        "bcvpn1",
+		TunIP:                "10.10.0.2",
+		TunSubnet:            "24",
+		AutoReconnectEnabled: true,
+	}
+
+	err := m.Add("test-id", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
+	if err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	m.mu.Lock()
+	m.reconnectInfo["test-id"] = &tunnelParams{
+		interfaceName: "eth0",
+		clientCfg:     clientCfg,
+	}
+	m.mu.Unlock()
+
+	m.Cancel("test-id")
+
+	time.Sleep(100 * time.Millisecond)
+
+	m.mu.RLock()
+	_, exists := m.reconnectInfo["test-id"]
+	m.mu.RUnlock()
+
+	if exists {
+		t.Error("expected reconnect info to be cleared after Cancel")
+	}
+}
