@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.5] - 2026-03-20
+
+### Feature: Provider Bandwidth Auto-Detection
+- Implemented `MeasureLocalBandwidthKbps` function for self-contained TCP loopback bandwidth testing
+- Wired up `BandwidthAutoTest` config field to run speed test at provider startup
+- Updated `buildProviderEndpoint` to accept measured bandwidth parameter
+- Added context cancellation support for graceful shutdown
+- Added unit tests for bandwidth measurement
+
+---
+
 ## [0.7.4] - 2026-03-20
 
 ### Feature: Automatic Reconnection

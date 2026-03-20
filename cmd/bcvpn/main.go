@@ -331,7 +331,19 @@ func main() {
 			defer natCleanup()
 		}
 
-		endpoint := buildProviderEndpoint(&cfg.Provider, announceIP, announcePort, providerKey)
+		// Measure bandwidth if auto-test is enabled
+		var measuredBandwidthKB uint32
+		if cfg.Provider.BandwidthAutoTest {
+			log.Printf("Running bandwidth auto-test...")
+			if bw, err := tunnel.MeasureLocalBandwidthKbps(ctx); err != nil {
+				log.Printf("Warning: bandwidth auto-test failed: %v (advertising configured limit)", err)
+			} else {
+				measuredBandwidthKB = bw
+				log.Printf("Bandwidth auto-test result: %d Kbps", measuredBandwidthKB)
+			}
+		}
+
+		endpoint := buildProviderEndpoint(&cfg.Provider, announceIP, announcePort, providerKey, measuredBandwidthKB)
 
 		var providerWG sync.WaitGroup
 		providerWG.Add(5)
@@ -500,7 +512,7 @@ func main() {
 			defer natCleanup()
 		}
 
-		endpoint := buildProviderEndpoint(&cfg.Provider, announceIP, announcePort, providerKey)
+		endpoint := buildProviderEndpoint(&cfg.Provider, announceIP, announcePort, providerKey, 0)
 
 		log.Println("Re-broadcasting service announcement...")
 		if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode); err != nil {
@@ -2134,8 +2146,13 @@ func determineAnnounceDetails(ctx context.Context, cfg *config.ProviderConfig) (
 	return ip, announcePort, nil, nil
 }
 
-func buildProviderEndpoint(providerCfg *config.ProviderConfig, announceIP net.IP, announcePort int, providerKey *btcec.PrivateKey) *protocol.VPNEndpoint {
-	bandwidthKB := parseBandwidthLimitToKbps(providerCfg.BandwidthLimit)
+func buildProviderEndpoint(providerCfg *config.ProviderConfig, announceIP net.IP, announcePort int, providerKey *btcec.PrivateKey, measuredBandwidthKB uint32) *protocol.VPNEndpoint {
+	var bandwidthKB uint32
+	if providerCfg.BandwidthAutoTest && measuredBandwidthKB > 0 {
+		bandwidthKB = measuredBandwidthKB
+	} else {
+		bandwidthKB = parseBandwidthLimitToKbps(providerCfg.BandwidthLimit)
+	}
 	maxConsumers := uint16(0)
 	if providerCfg.MaxConsumers > 0 && providerCfg.MaxConsumers <= 65535 {
 		maxConsumers = uint16(providerCfg.MaxConsumers)

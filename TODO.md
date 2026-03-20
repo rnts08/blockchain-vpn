@@ -11,7 +11,7 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 ## Priority: Medium
 
-- [ ] **Provider bandwidth auto-detection** - Measure actual upload/download bandwidth at startup and advertise accurate speed (currently manual config required)
+- [x] **Provider bandwidth auto-detection** - Measure actual upload/download bandwidth at startup and advertise accurate speed (currently manual config required)
 - [ ] Refund flow integration - client can disconnect and request refund when quality < 75%
 - [ ] NAT traversal method selection via config
 - [ ] WebSocket origin validation
