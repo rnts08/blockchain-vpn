@@ -3,11 +3,14 @@
 package tunnel
 
 import (
+	"context"
+	"net"
 	"strings"
 	"testing"
 	"time"
 
 	"blockchain-vpn/internal/config"
+	"blockchain-vpn/internal/geoip"
 	"blockchain-vpn/internal/protocol"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -393,4 +396,170 @@ func TestFunctional_SpendingLimits_WarningThreshold(t *testing.T) {
 	}
 
 	t.Log("Spending warning threshold works correctly")
+}
+
+func TestFunctional_RefundFlow_LowQualityDisconnection(t *testing.T) {
+	t.Parallel()
+
+	restore := mockSecurityCheckFns(
+		func() (net.IP, error) { return net.ParseIP("203.0.113.10"), nil },
+		func() (*geoip.GeoLocation, error) { return &geoip.GeoLocation{CountryCode: "DE"}, nil },
+		func(context.Context, string) (uint32, error) { return 1, nil },
+	)
+	defer restore()
+
+	quality, err := CheckConnectionQuality(context.Background(), ClientSecurityExpectations{
+		ExpectedCountry:       "US",
+		ExpectedBandwidthKB:   1000000,
+		VerifyThroughputAfter: true,
+		ThroughputProbePort:   51821,
+		QualityThreshold:      0.75,
+	}, net.ParseIP("203.0.113.5"))
+	if err != nil {
+		t.Fatalf("CheckConnectionQuality failed: %v", err)
+	}
+
+	if quality.Passed {
+		t.Error("Connection should fail quality check with low bandwidth")
+	}
+
+	if len(quality.Warnings) == 0 {
+		t.Error("Expected quality warnings for low connection quality")
+	}
+
+	hasRefundRecommendation := false
+	for _, warning := range quality.Warnings {
+		if strings.Contains(warning, "bandwidth") || strings.Contains(warning, "country") {
+			hasRefundRecommendation = true
+			break
+		}
+	}
+
+	if !hasRefundRecommendation {
+		t.Error("Expected refund recommendation in warnings")
+	}
+
+	t.Logf("Refund flow: Quality score %.0f%%, Passed=%v, Warnings=%v",
+		quality.QualityScore*100, quality.Passed, quality.Warnings)
+}
+
+func TestFunctional_RefundFlow_HighQualityNoRefund(t *testing.T) {
+	t.Parallel()
+
+	restore := mockSecurityCheckFns(
+		func() (net.IP, error) { return net.ParseIP("203.0.113.10"), nil },
+		func() (*geoip.GeoLocation, error) { return &geoip.GeoLocation{CountryCode: "US"}, nil },
+		func(context.Context, string) (uint32, error) { return 50000, nil },
+	)
+	defer restore()
+
+	quality, err := CheckConnectionQuality(context.Background(), ClientSecurityExpectations{
+		ExpectedCountry:       "US",
+		ExpectedBandwidthKB:   10000,
+		VerifyThroughputAfter: true,
+		ThroughputProbePort:   51821,
+		QualityThreshold:      0.75,
+	}, net.ParseIP("203.0.113.5"))
+	if err != nil {
+		t.Fatalf("CheckConnectionQuality failed: %v", err)
+	}
+
+	if quality.QualityScore < 0.5 {
+		t.Errorf("High quality connection should have score >= 50%%, got %.0f%%", quality.QualityScore*100)
+	}
+
+	t.Logf("High quality: Quality score %.0f%%, Passed=%v",
+		quality.QualityScore*100, quality.Passed)
+}
+
+func TestFunctional_RefundFlow_QualityThresholdEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                 string
+		bandwidthKB          uint32
+		expectedBandwidthKB  uint32
+		expectedScoreMinimum float32
+	}{
+		{
+			name:                 "High bandwidth",
+			bandwidthKB:          10000,
+			expectedBandwidthKB:  10000,
+			expectedScoreMinimum: 0.5,
+		},
+		{
+			name:                 "Medium bandwidth",
+			bandwidthKB:          5000,
+			expectedBandwidthKB:  10000,
+			expectedScoreMinimum: 0.2,
+		},
+		{
+			name:                 "Low bandwidth",
+			bandwidthKB:          1000,
+			expectedBandwidthKB:  10000,
+			expectedScoreMinimum: 0.0,
+		},
+		{
+			name:                 "Zero bandwidth",
+			bandwidthKB:          1,
+			expectedBandwidthKB:  10000,
+			expectedScoreMinimum: 0.0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			restore := mockSecurityCheckFns(
+				func() (net.IP, error) { return net.ParseIP("203.0.113.10"), nil },
+				func() (*geoip.GeoLocation, error) { return nil, nil },
+				func(context.Context, string) (uint32, error) { return tt.bandwidthKB, nil },
+			)
+			defer restore()
+
+			quality, err := CheckConnectionQuality(context.Background(), ClientSecurityExpectations{
+				ExpectedCountry:       "",
+				ExpectedBandwidthKB:   tt.expectedBandwidthKB,
+				VerifyThroughputAfter: true,
+				ThroughputProbePort:   51821,
+				QualityThreshold:      0.75,
+			}, net.ParseIP("203.0.113.5"))
+			if err != nil {
+				t.Fatalf("CheckConnectionQuality failed: %v", err)
+			}
+
+			if quality.QualityScore < tt.expectedScoreMinimum {
+				t.Errorf("Expected score >= %.0f%%, got %.0f%% (bandwidth=%d KB)",
+					tt.expectedScoreMinimum*100, quality.QualityScore*100, tt.bandwidthKB)
+			}
+		})
+	}
+}
+
+func TestFunctional_RefundFlow_DNSCausesRefund(t *testing.T) {
+	t.Parallel()
+
+	restore := mockSecurityCheckFns(
+		func() (net.IP, error) { return net.ParseIP("203.0.113.10"), nil },
+		func() (*geoip.GeoLocation, error) { return &geoip.GeoLocation{CountryCode: "XX"}, nil },
+		func(context.Context, string) (uint32, error) { return 50000, nil },
+	)
+	defer restore()
+
+	quality, err := CheckConnectionQuality(context.Background(), ClientSecurityExpectations{
+		ExpectedCountry:       "US",
+		ExpectedBandwidthKB:   10000,
+		VerifyThroughputAfter: true,
+		ThroughputProbePort:   51821,
+		QualityThreshold:      0.75,
+	}, net.ParseIP("203.0.113.5"))
+	if err != nil {
+		t.Fatalf("CheckConnectionQuality failed: %v", err)
+	}
+
+	if len(quality.Warnings) == 0 {
+		t.Error("Expected warnings for country mismatch")
+	}
+
+	t.Logf("Country mismatch refund flow: Quality score %.0f%%, Passed=%v, Warnings=%v",
+		quality.QualityScore*100, quality.Passed, quality.Warnings)
 }

@@ -130,3 +130,57 @@ func TestPaymentRecordFields(t *testing.T) {
 		t.Error("Timestamp should not be zero")
 	}
 }
+
+func TestPaymentRecordZeroAmount(t *testing.T) {
+	record := PaymentRecord{
+		TxID:      "tx_zero",
+		Provider:  "provider",
+		Amount:    0,
+		Timestamp: time.Now(),
+	}
+
+	if record.Amount != 0 {
+		t.Errorf("expected 0 amount, got %d", record.Amount)
+	}
+}
+
+func TestPaymentRecordLargeAmount(t *testing.T) {
+	record := PaymentRecord{
+		TxID:      "tx_large",
+		Provider:  "provider",
+		Amount:    1_000_000_000,
+		Timestamp: time.Now(),
+	}
+
+	if record.Amount != 1_000_000_000 {
+		t.Errorf("expected 1_000_000_000, got %d", record.Amount)
+	}
+}
+
+func TestDecodeHistoryPartial(t *testing.T) {
+	partial := []byte(`[{"txid": "tx_partial", "provider": "addr", "amount": 100, "timestamp": "2024-01-15T10:00:00Z"}]`)
+	records, err := decodeHistory(bytes.NewReader(partial))
+	if err != nil {
+		t.Fatalf("decodeHistory failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].TxID != "tx_partial" {
+		t.Errorf("expected tx_partial, got %s", records[0].TxID)
+	}
+}
+
+func TestDecodeHistoryMissingFields(t *testing.T) {
+	missing := []byte(`[{"txid": "tx_missing"}]`)
+	records, err := decodeHistory(bytes.NewReader(missing))
+	if err != nil {
+		t.Fatalf("decodeHistory failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].TxID != "tx_missing" {
+		t.Errorf("expected tx_missing, got %s", records[0].TxID)
+	}
+}

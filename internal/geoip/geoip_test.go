@@ -84,6 +84,15 @@ func TestMeasureLatencyTimeout(t *testing.T) {
 	}
 }
 
+func TestGeoLocationInvalidJSON(t *testing.T) {
+	invalidJSON := []byte(`not valid json`)
+	var loc GeoLocation
+	err := json.Unmarshal(invalidJSON, &loc)
+	if err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}
+
 func TestEnrichedVPNEndpoint(t *testing.T) {
 	ann := &blockchain.ProviderAnnouncement{}
 	enriched := &EnrichedVPNEndpoint{
@@ -97,5 +106,77 @@ func TestEnrichedVPNEndpoint(t *testing.T) {
 	}
 	if enriched.Latency != 50*time.Millisecond {
 		t.Errorf("expected latency 50ms, got %v", enriched.Latency)
+	}
+}
+
+func TestEnrichEndpointsEmpty(t *testing.T) {
+	t.Parallel()
+
+	announcements := []*blockchain.ProviderAnnouncement{}
+	enriched := EnrichEndpoints(announcements)
+
+	if len(enriched) != 0 {
+		t.Errorf("expected 0 enriched endpoints, got %d", len(enriched))
+	}
+}
+
+func TestGeoLocationAllFields(t *testing.T) {
+	data := `{
+		"status": "success",
+		"country": "Germany",
+		"countryCode": "DE",
+		"region": "BY",
+		"regionName": "Bavaria",
+		"city": "Munich",
+		"zip": "80331",
+		"lat": 48.1371,
+		"lon": 11.5764,
+		"timezone": "Europe/Berlin",
+		"isp": "Deutsche Telekom",
+		"org": "Telekom Deutschland GmbH",
+		"as": "AS3320",
+		"query": "8.8.8.8"
+	}`
+
+	var loc GeoLocation
+	if err := json.Unmarshal([]byte(data), &loc); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if loc.Country != "Germany" {
+		t.Errorf("expected country 'Germany', got %q", loc.Country)
+	}
+	if loc.Region != "BY" {
+		t.Errorf("expected region 'BY', got %q", loc.Region)
+	}
+	if loc.RegionName != "Bavaria" {
+		t.Errorf("expected regionName 'Bavaria', got %q", loc.RegionName)
+	}
+	if loc.City != "Munich" {
+		t.Errorf("expected city 'Munich', got %q", loc.City)
+	}
+	if loc.Zip != "80331" {
+		t.Errorf("expected zip '80331', got %q", loc.Zip)
+	}
+	if loc.Lon != 11.5764 {
+		t.Errorf("expected lon 11.5764, got %f", loc.Lon)
+	}
+	if loc.Timezone != "Europe/Berlin" {
+		t.Errorf("expected timezone 'Europe/Berlin', got %q", loc.Timezone)
+	}
+	if loc.ISP != "Deutsche Telekom" {
+		t.Errorf("expected ISP 'Deutsche Telekom', got %q", loc.ISP)
+	}
+	if loc.Org != "Telekom Deutschland GmbH" {
+		t.Errorf("expected org 'Telekom Deutschland GmbH', got %q", loc.Org)
+	}
+	if loc.AS != "AS3320" {
+		t.Errorf("expected AS 'AS3320', got %q", loc.AS)
+	}
+}
+
+func TestGeoIPDatabasePath(t *testing.T) {
+	if GeoIPDatabasePath != "GeoLite2-Country.mmdb" {
+		t.Errorf("expected GeoIPDatabasePath 'GeoLite2-Country.mmdb', got %q", GeoIPDatabasePath)
 	}
 }

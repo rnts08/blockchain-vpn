@@ -277,7 +277,7 @@ func loadSecretKeychain(service, account string) (string, error) {
 		if strings.Contains(msg, "could not be found") {
 			return "", errKeyNotFound
 		}
-		return "", fmt.Errorf("keychain lookup failed: %s", strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("keychain lookup failed: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -293,7 +293,7 @@ func saveSecretKeychain(service, account, secret string) error {
 func loadSecretLibsecret(service, account string) (string, error) {
 	out, err := runCommand("secret-tool", "", "lookup", "service", service, "account", account)
 	if err != nil {
-		return "", fmt.Errorf("libsecret lookup failed: %s", strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("libsecret lookup failed: %w", err)
 	}
 	val := strings.TrimSpace(string(out))
 	if val == "" {

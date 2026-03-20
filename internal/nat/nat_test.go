@@ -99,3 +99,45 @@ func TestExternalIPNil(t *testing.T) {
 		t.Error("expected nil IP")
 	}
 }
+
+func TestPortMappingResultIPv6(t *testing.T) {
+	result := &PortMappingResult{
+		ExternalIP: net.ParseIP("2001:db8::1"),
+		TCPPort:    8080,
+		UDPPort:    8080,
+		Cleanup:    nil,
+	}
+
+	if !result.ExternalIP.IsGlobalUnicast() {
+		t.Error("expected global unicast IP")
+	}
+}
+
+func TestPortMappingResultDifferentPorts(t *testing.T) {
+	result := &PortMappingResult{
+		ExternalIP: net.ParseIP("203.0.113.1"),
+		TCPPort:    443,
+		UDPPort:    1194,
+		Cleanup:    nil,
+	}
+
+	if result.TCPPort == result.UDPPort {
+		t.Error("TCP and UDP ports should be different")
+	}
+}
+
+func TestPortMappingResultAllPorts(t *testing.T) {
+	result := &PortMappingResult{
+		ExternalIP: net.ParseIP("192.168.1.100"),
+		TCPPort:    1,
+		UDPPort:    65535,
+		Cleanup:    nil,
+	}
+
+	if result.TCPPort != 1 {
+		t.Errorf("expected TCP port 1, got %d", result.TCPPort)
+	}
+	if result.UDPPort != 65535 {
+		t.Errorf("expected UDP port 65535, got %d", result.UDPPort)
+	}
+}

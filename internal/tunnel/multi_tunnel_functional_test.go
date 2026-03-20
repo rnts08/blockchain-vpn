@@ -22,7 +22,7 @@ func TestFunctional_MultiTunnelConcurrent_Connection(t *testing.T) {
 		TunSubnet:     "24",
 	}
 
-	err := m.Add("tunnel-1", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+	err := m.Add("tunnel-1", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 	if err != nil {
 		t.Fatalf("First Add failed: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestFunctional_MultiTunnelConcurrent_Connection(t *testing.T) {
 		t.Errorf("Expected 1 active tunnel, got %d", m.ActiveCount())
 	}
 
-	err = m.Add("tunnel-2", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+	err = m.Add("tunnel-2", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 	if err != nil {
 		t.Fatalf("Second Add failed: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestFunctional_MultiTunnelConcurrent_MultipleProviders(t *testing.T) {
 	providerCount := 5
 	for i := 0; i < providerCount; i++ {
 		id := fmt.Sprintf("provider-tunnel-%d", i)
-		err := m.Add(id, "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+		err := m.Add(id, "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 		if err != nil {
 			t.Fatalf("Add failed for provider %d: %v", i, err)
 		}
@@ -100,12 +100,12 @@ func TestFunctional_MultiTunnelConcurrent_DuplicateID(t *testing.T) {
 		TunSubnet:     "24",
 	}
 
-	err := m.Add("same-id", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+	err := m.Add("same-id", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 	if err != nil {
 		t.Fatalf("First Add failed: %v", err)
 	}
 
-	err = m.Add("same-id", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+	err = m.Add("same-id", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 	if err == nil {
 		t.Error("Expected error for duplicate tunnel ID")
 	}
@@ -127,9 +127,9 @@ func TestFunctional_MultiTunnelConcurrent_CancelSpecific(t *testing.T) {
 		TunSubnet:     "24",
 	}
 
-	m.Add("tunnel-1", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
-	m.Add("tunnel-2", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
-	m.Add("tunnel-3", "eth2", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+	m.Add("tunnel-1", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
+	m.Add("tunnel-2", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
+	m.Add("tunnel-3", "eth2", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 
 	if m.ActiveCount() != 3 {
 		t.Fatalf("Expected 3 active tunnels, got %d", m.ActiveCount())
@@ -174,7 +174,7 @@ func TestFunctional_MultiTunnelConcurrent_ConcurrentAdd(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			m.Add("concurrent-tunnel", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+			m.Add("concurrent-tunnel", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 		}(i)
 	}
 
@@ -197,9 +197,9 @@ func TestFunctional_MultiTunnelConcurrent_ListInterfaces(t *testing.T) {
 		TunSubnet:     "24",
 	}
 
-	m.Add("tunnel-us", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
-	m.Add("tunnel-eu", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
-	m.Add("tunnel-asia", "eth2", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil)
+	m.Add("tunnel-us", "eth0", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
+	m.Add("tunnel-eu", "eth1", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
+	m.Add("tunnel-asia", "eth2", clientCfg, nil, nil, nil, "", ClientSecurityExpectations{}, nil, nil)
 
 	list := m.List()
 

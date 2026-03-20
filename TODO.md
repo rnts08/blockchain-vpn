@@ -20,12 +20,13 @@ This document tracks the remaining tasks and improvements for the BlockchainVPN 
 
 ### Low
 
+- [x] Test coverage improvements completed (0.7.3)
+- [x] Refund flow integration tests added
+- [x] Heartbeat signature verification tests added
+- [x] Benchmark tests for critical paths added
 - [ ] `runPowerShell` in `internal/crypto/keystore.go:360` - inherits full process environment (intentional for PowerShell)
 - [ ] Cleanup errors silently ignored in `internal/nat/nat.go:67,107` (acceptable pattern)
-- [ ] Review and optimize test coverage gaps
-- [ ] Add more integration tests for edge cases
 - [ ] Performance optimization for tunnel establishment
-- [ ] Add benchmarks for critical paths
 - [ ] Consider UI enhancements (though CLI only)
 - [ ] Explore multi-chain support beyond OrdexCoin
 

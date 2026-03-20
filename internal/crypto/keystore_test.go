@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -145,5 +146,137 @@ func TestLoadOrCreateProviderKey_SecureStoreMock(t *testing.T) {
 
 	if !bytes.Equal(key1.Serialize(), key2.Serialize()) {
 		t.Errorf("keys do not match")
+	}
+}
+
+func TestRotateProviderKey_FileMode(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "keystore-rotate-test")
+	defer os.RemoveAll(tmpDir)
+	keyPath := filepath.Join(tmpDir, "provider.key")
+
+	oldPass := []byte("oldpassword123")
+	newPass := []byte("newpassword456")
+
+	_, err := GenerateAndEncryptKey(keyPath, oldPass)
+	if err != nil {
+		t.Fatalf("failed to create initial key: %v", err)
+	}
+
+	err = RotateProviderKey(keyPath, oldPass, newPass, "file", "")
+	if err != nil {
+		t.Fatalf("RotateProviderKey failed: %v", err)
+	}
+
+	loadedKey, err := LoadAndDecryptKey(keyPath, newPass)
+	if err != nil {
+		t.Fatalf("failed to load rotated key with new password: %v", err)
+	}
+	if loadedKey == nil {
+		t.Fatal("expected loaded key to be non-nil")
+	}
+
+	_, err = LoadAndDecryptKey(keyPath, oldPass)
+	if err == nil {
+		t.Error("old password should no longer work after rotation")
+	}
+}
+
+func TestRotateProviderKey_FileModeBackupCreated(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "keystore-backup-test")
+	defer os.RemoveAll(tmpDir)
+	keyPath := filepath.Join(tmpDir, "provider.key")
+
+	_, _ = GenerateAndEncryptKey(keyPath, []byte("oldpass"))
+
+	err := RotateProviderKey(keyPath, []byte("oldpass"), []byte("newpass"), "file", "")
+	if err != nil {
+		t.Fatalf("RotateProviderKey failed: %v", err)
+	}
+
+	entries, _ := os.ReadDir(tmpDir)
+	var backupFound bool
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "provider.key.bak-") {
+			backupFound = true
+			break
+		}
+	}
+	if !backupFound {
+		t.Error("expected backup file to be created with .bak- timestamp suffix")
+	}
+}
+
+func TestRotateProviderKey_FileModeWrongPassword(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "keystore-wrongpass-test")
+	defer os.RemoveAll(tmpDir)
+	keyPath := filepath.Join(tmpDir, "provider.key")
+
+	_, _ = GenerateAndEncryptKey(keyPath, []byte("correctold"))
+
+	err := RotateProviderKey(keyPath, []byte("wrongold"), []byte("newpass"), "file", "")
+	if err == nil {
+		t.Error("expected error for wrong old password")
+	}
+}
+
+func TestRotateProviderKey_FileModeEmptyPassword(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "keystore-emptypass-test")
+	defer os.RemoveAll(tmpDir)
+	keyPath := filepath.Join(tmpDir, "provider.key")
+
+	_, _ = GenerateAndEncryptKey(keyPath, []byte("password"))
+
+	err := RotateProviderKey(keyPath, []byte(""), []byte("newpass"), "file", "")
+	if err == nil {
+		t.Error("expected error for empty old password")
+	}
+
+	err = RotateProviderKey(keyPath, []byte("password"), []byte(""), "file", "")
+	if err == nil {
+		t.Error("expected error for empty new password")
+	}
+}
+
+func TestRotateProviderKey_SecureStoreMock(t *testing.T) {
+	origLookup := commandLookup
+	origGOOS := currentGOOS
+	origRun := runCommand
+	defer func() {
+		commandLookup = origLookup
+		currentGOOS = origGOOS
+		runCommand = origRun
+	}()
+
+	tmpDir, _ := os.MkdirTemp("", "keystore-sstore-rotate")
+	defer os.RemoveAll(tmpDir)
+	keyPath := filepath.Join(tmpDir, "provider.key")
+
+	currentGOOS = "linux"
+	commandLookup = func(name string) bool { return name == "secret-tool" }
+
+	var storedSecret = strings.Repeat("11", 32)
+	runCommand = func(name string, stdin string, args ...string) ([]byte, error) {
+		if name == "secret-tool" {
+			if args[0] == "store" {
+				storedSecret = stdin
+				return []byte(""), nil
+			}
+			if args[0] == "lookup" {
+				return []byte(storedSecret), nil
+			}
+		}
+		return nil, fmt.Errorf("unknown command")
+	}
+
+	err := RotateProviderKey(keyPath, nil, nil, "libsecret", "TestRotateSvc")
+	if err != nil {
+		t.Fatalf("RotateProviderKey (secure store) failed: %v", err)
+	}
+
+	if storedSecret == "" {
+		t.Fatal("expected secret to be stored")
+	}
+	if len(storedSecret) != 64 {
+		t.Errorf("expected 64-char hex key, got %d chars", len(storedSecret))
 	}
 }

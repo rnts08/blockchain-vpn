@@ -124,8 +124,8 @@ func LoadAndDecryptKey(path string, password []byte) (*btcec.PrivateKey, error) 
 		return nil, fmt.Errorf("invalid decrypted key length: got %d bytes", len(decrypted))
 	}
 
-	key, keyErr := btcec.PrivKeyFromBytes(decrypted)
-	if key == nil || keyErr != nil {
+	key, _ := btcec.PrivKeyFromBytes(decrypted)
+	if key == nil {
 		return nil, fmt.Errorf("invalid private key bytes: decryption may have yielded invalid data")
 	}
 	return key, nil

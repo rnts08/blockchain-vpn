@@ -58,3 +58,32 @@ func TestResolveTLSPolicyInvalidCipher(t *testing.T) {
 		t.Fatal("expected invalid cipher error")
 	}
 }
+
+func TestResolveTLSPolicyModernExplicit(t *testing.T) {
+	p, err := ResolveTLSPolicy("1.3", "modern", nil)
+	if err != nil {
+		t.Fatalf("resolve modern policy: %v", err)
+	}
+	if p.MinVersionLabel != "1.3" {
+		t.Errorf("expected min version 1.3, got %s", p.MinVersionLabel)
+	}
+	if p.Profile != "modern" {
+		t.Errorf("expected profile modern, got %s", p.Profile)
+	}
+	if len(p.CipherSuites) != 0 {
+		t.Errorf("expected no explicit cipher suites for modern profile (tls13), got %d", len(p.CipherSuites))
+	}
+}
+
+func TestResolveTLSPolicyWhitespaceTrimming(t *testing.T) {
+	p, err := ResolveTLSPolicy("  1.2  ", "  compat  ", nil)
+	if err != nil {
+		t.Fatalf("resolve policy with whitespace: %v", err)
+	}
+	if p.MinVersionLabel != "1.2" {
+		t.Errorf("expected min version 1.2, got %s", p.MinVersionLabel)
+	}
+	if p.Profile != "compat" {
+		t.Errorf("expected profile compat, got %s", p.Profile)
+	}
+}

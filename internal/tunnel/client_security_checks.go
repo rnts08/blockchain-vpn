@@ -73,7 +73,7 @@ func CheckConnectionQuality(ctx context.Context, expected ClientSecurityExpectat
 
 	// Country check
 	if expected.ExpectedCountry != "" && expected.ExpectedCountry != "N/A" {
-		if err := checkCountryHeuristic(postConnectIP, expected.ExpectedCountry, false); err != nil {
+		if err := checkCountryHeuristic(postConnectIP, expected.ExpectedCountry, expected.StrictVerification); err != nil {
 			quality.Warnings = append(quality.Warnings, fmt.Sprintf("country mismatch: %v", err))
 			quality.CountryVerified = false
 			quality.QualityScore -= 0.1
@@ -248,8 +248,8 @@ func checkCountryHeuristic(egressIP net.IP, expectedCountry string, strict bool)
 	}
 
 	loc, err := autoLocateFn()
-	if err != nil {
-		msg := fmt.Sprintf("could not geolocate egress IP %s: %v", egressIP.String(), err)
+	if err != nil || loc == nil {
+		msg := fmt.Sprintf("could not geolocate egress IP: %v", err)
 		if strict {
 			return fmt.Errorf("strict verification failed: %s", msg)
 		}

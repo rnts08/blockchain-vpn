@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/asn1"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -35,7 +36,25 @@ func signWithSecp256k1(privKey *btcec.PrivateKey, message []byte) ([]byte, error
 	ecdsaPriv.PublicKey.X, ecdsaPriv.PublicKey.Y = elliptic.P256().ScalarBaseMult(ecdsaPriv.D.Bytes())
 
 	hash := sha256.Sum256(message)
-	return ecdsa.SignASN1(rand.Reader, ecdsaPriv, hash[:])
+	sig, err := ecdsa.SignASN1(rand.Reader, ecdsaPriv, hash[:])
+	if err != nil {
+		return nil, err
+	}
+	return sig, nil
+}
+
+// ecdsaSignature represents an ECDSA signature with r and s values.
+type ecdsaSignature struct {
+	R, S *big.Int
+}
+
+// verifyASN1Signature verifies an ASN.1 encoded ECDSA signature.
+func verifyASN1Signature(pub *ecdsa.PublicKey, hash, sigASN1 []byte) bool {
+	var sig ecdsaSignature
+	if _, err := asn1.Unmarshal(sigASN1, &sig); err != nil {
+		return false
+	}
+	return ecdsa.Verify(pub, hash, sig.R, sig.S)
 }
 
 // This file provides a basic example of a VPN provider application that

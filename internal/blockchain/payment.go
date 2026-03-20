@@ -2,6 +2,7 @@ package blockchain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -266,6 +267,12 @@ func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amou
 // WaitForConfirmations waits for a transaction to reach the specified number of confirmations.
 // It polls the blockchain and returns when the threshold is met or the context is cancelled.
 func WaitForConfirmations(ctx context.Context, client *rpcclient.Client, txHash *chainhash.Hash, requiredConfirmations int, pollInterval time.Duration) (int64, error) {
+	if client == nil {
+		return 0, errors.New("client is nil")
+	}
+	if txHash == nil {
+		return 0, errors.New("txHash is nil")
+	}
 	if requiredConfirmations <= 0 {
 		requiredConfirmations = 1
 	}
