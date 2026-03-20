@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"blockchain-vpn/internal/auth"
@@ -193,7 +194,7 @@ func main() {
 		logLevel = env
 	}
 	obs.ConfigureLogging(logFormat, logLevel, "bcvpn-cli")
-	_ = tunnel.RecoverPendingNetworkState()
+	tunnel.RecoverPendingNetworkStateAndCleanupStaleInterfaces()
 
 	// Subcommands
 	scanCmd := flag.NewFlagSet("scan", flag.ExitOnError)
@@ -287,7 +288,7 @@ func main() {
 
 	switch os.Args[1] {
 	case "start-provider":
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
 		startProviderCmd.Parse(os.Args[2:])
@@ -547,7 +548,7 @@ func main() {
 		log.Println("Service announcement re-broadcasted successfully.")
 
 	case "scan":
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
 		scanCmd.Parse(os.Args[2:])
@@ -2488,7 +2489,19 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 		fmt.Println("Press Ctrl+C to disconnect.")
 		<-ctx.Done()
 		fmt.Println("Shutting down tunnel...")
-		mgr.CancelAll()
+
+		// Run cleanup in goroutine with timeout to ensure process exits
+		cleanupDone := make(chan struct{})
+		go func() {
+			mgr.CancelAll()
+			close(cleanupDone)
+		}()
+		select {
+		case <-cleanupDone:
+			fmt.Println("Tunnel shutdown complete.")
+		case <-time.After(10 * time.Second):
+			log.Printf("Warning: tunnel cleanup timed out after 10s, forcing exit")
+		}
 	}
 }
 

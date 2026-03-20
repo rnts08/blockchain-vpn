@@ -3,6 +3,7 @@ package tunnel
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -87,5 +88,16 @@ func RecoverPendingNetworkState() error {
 		return fmt.Errorf("failed to recover pending network state: %w", err)
 	}
 	clearCleanupMarker()
+	return nil
+}
+
+func RecoverPendingNetworkStateAndCleanupStaleInterfaces() error {
+	if err := RecoverPendingNetworkState(); err != nil {
+		log.Printf("Warning: RecoverPendingNetworkState: %v", err)
+	}
+	tunPrefixes := []string{"bcvpn", "bcvpn-", "tun"}
+	if err := cleanupStaleTunInterfaces(tunPrefixes); err != nil {
+		log.Printf("Warning: cleanupStaleTunInterfaces: %v", err)
+	}
 	return nil
 }

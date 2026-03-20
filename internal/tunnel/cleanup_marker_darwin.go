@@ -14,3 +14,8 @@ func recoverPendingNetworkStateFromMarker(m *networkCleanupMarker) error {
 	}
 	return nil
 }
+
+func cleanupStaleTunInterfaces(prefixes []string) error {
+	_ = prefixes
+	return nil
+}

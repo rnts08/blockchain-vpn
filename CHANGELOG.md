@@ -2,7 +2,92 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.7.12] - 2026-03-20
+## [0.8.0] - 2026-03-20
+
+### Breaking Changes
+- **Blockchain RPC**: All blockchain announce/send functions now require an `addressType` parameter
+- **Breaking change**: `AnnounceService`, `AnnounceHeartbeat`, `AnnouncePriceUpdate`, `AnnounceRating`, and `SendPayment` signatures updated
+
+### Feature: Blockchain-Agnostic Support
+- Modified `detectChain()` to gracefully handle unknown blockchain genesis hashes
+- Added `paramsFromNetwork()` helper function to resolve chain params from network config
+- Updated `GetProviderPaymentAddress()` to handle nil chainParams for unknown blockchains
+- Added `stringAddress` type implementing `btcutil.Address` interface for unknown chains
+- `bcvpn scan` now uses configured `rpc.network` value as fallback when genesis hash is unrecognized
+- Enables support for custom Bitcoin-like blockchains (e.g., OrdexCoin)
+
+### Feature: Auto-Detect Wallet Address Type
+- Added `DetectAddressType()` function that probes UTXOs to determine wallet address type
+- Added `AddressType` field to both `ProviderConfig` and `ClientConfig` ("auto", "p2pkh", "p2sh", "bech32", "bech32m")
+- Auto-detects address type from existing UTXOs via scriptPubKey analysis (76a914...88ac = P2PKH, a914...87 = P2SH, 0014... = bech32, 0020... = bech32m)
+- Also inspects UTXO address string prefix ('o' = P2PKH for OrdexCoin)
+- Falls back to probing with `getrawchangeaddress` then `getnewaddress`
+- Fixes "unknown address type ''" error on OrdexCoin and other non-bech32 chains
+
+### Feature: Automatic Reconnection
+- Added automatic reconnection on network disconnect
+- New CLI flags: `--auto-reconnect`, `--auto-reconnect-max-attempts`, `--auto-reconnect-interval`, `--auto-reconnect-max-interval`
+- Added `AddWithReconnect` method to `MultiTunnelManager`
+- Implemented exponential backoff for reconnection attempts
+
+### Feature: Provider Bandwidth Auto-Detection
+- Implemented `MeasureLocalBandwidthKbps` function for self-contained TCP loopback bandwidth testing
+- Wired up `BandwidthAutoTest` config field to run speed test at provider startup
+
+### Fix: Scanner Performance and Defaults
+- Changed default `--startblock` to -1000 (last 1000 blocks from tip)
+- Added support for negative startblock values (relative to tip)
+- Removed verbose log spam for non-VPN transactions during scan
+
+### Fix: Fee Target Clamping
+- Added `clampFeeTarget()` to ensure fee target is always between 1-1008
+- Defaults to 6 blocks when target is 0 or invalid
+- Fixes "estimateSmartFee error -8: invalid config_target" error
+
+### Fix: Minimum Fee Fallback for New Chains
+- `estimateDynamicFeePerKbWithMode` now returns a minimum feerate (1000 sats/KB) when fee estimation fails
+- Fallback is triggered when `EstimateSmartFee` and `GetNetworkInfo` return no valid feerate
+- Handles fresh chains with no fee history (e.g., OrdexCoin at genesis)
+
+### Fix: Provider Key Password Masking
+- Provider key password input now masked using terminal echo suppression
+- Password characters not echoed to terminal during input (uses `golang.org/x/term`)
+
+### Fix: NAT Traversal Timeout
+- Added 10-second timeout to NAT traversal (UPnP/NAT-PMP discovery)
+- Prevents indefinite hang when no NAT/router is available or UPnP is disabled
+
+### Fix: Use RawRequest for sendrawtransaction
+- Call `sendrawtransaction` via `RawRequest` with minimal params `[hex]`
+- Bypasses btcd/rpcclient `SendRawTransaction` which sends incompatible parameters
+- OrdexCoin's modified RPC rejects the standard `[hex, allowHighFees]` signature
+
+### Fix: Use UTXO ScriptPubKey for Change Output
+- Change output now uses the first UTXO's `scriptPubKey` directly instead of re-encoding via `PayToAddrScript`
+- Added `selectCoinsForTx()` helper that returns UTXOs, total, and change script in one call
+- Bypasses address encoding/decoding entirely — works for any blockchain
+- Fixes "error creating change script" on unknown chain address formats
+
+### Fix: Skip Initial Heartbeat
+- Removed immediate heartbeat broadcast on provider startup
+- Heartbeats now start at the configured interval after the service announcement
+- Prevents "txn-mempool-conflict" errors when heartbeat competes with announcement for same UTXO
+
+### Fix: Graceful Shutdown
+- Both provider and scan commands now handle `SIGTERM` in addition to `SIGINT`
+- Client tunnel shutdown now has a 10-second timeout to prevent indefinite hang
+- Added `RecoverPendingNetworkStateAndCleanupStaleInterfaces()` to clean up orphaned TUN interfaces on startup
+- Cleans up `bcvpn*` interfaces from crashed sessions via `netlink.LinkDel`
+
+### Test Coverage
+- Added unit tests for `sendRawTransaction` with mock HTTP RPC server
+- Added unit tests for `clampFeeTarget` (9 test cases)
+- Added unit tests for script class detection (P2PKH, P2SH, P2WPKH, P2WSH, null data)
+- Added unit tests for NAT timeout behavior
+
+---
+
+## [0.7.5] - 2026-03-20
 
 ### Fix: Minimum Fee Fallback for New Chains
 - `estimateDynamicFeePerKbWithMode` now returns a minimum feerate (1000 sats/KB) when fee estimation fails
@@ -59,55 +144,6 @@ All notable changes to this project will be documented in this file.
 - `SendPayment` now accepts addressType
 - `GetNewAddress` and `GetRawChangeAddress` now use detected address type
 - `NewSpendingManager` now accepts addressType
-
----
-
-## [0.7.7] - 2026-03-20
-
-### Fix: Scanner Performance and Defaults
-- Changed default `--startblock` to -1000 (last 1000 blocks from tip)
-- Added support for negative startblock values (relative to tip)
-- Removed verbose log spam for non-VPN transactions during scan
-
----
-
-## [0.7.6] - 2026-03-20
-
-### Feature: Blockchain-Agnostic Support
-- Modified `detectChain()` to gracefully handle unknown blockchain genesis hashes
-- Added `paramsFromNetwork()` helper function to resolve chain params from network config
-- Updated `GetProviderPaymentAddress()` to handle nil chainParams for unknown blockchains
-- Added `stringAddress` type implementing `btcutil.Address` interface for unknown chains
-- `bcvpn scan` now uses configured `rpc.network` value as fallback when genesis hash is unrecognized
-- Enables support for custom Bitcoin-like blockchains (e.g., OrdexCoin)
-
----
-
-## [0.7.5] - 2026-03-20
-
-### Feature: Provider Bandwidth Auto-Detection
-- Implemented `MeasureLocalBandwidthKbps` function for self-contained TCP loopback bandwidth testing
-- Wired up `BandwidthAutoTest` config field to run speed test at provider startup
-- Updated `buildProviderEndpoint` to accept measured bandwidth parameter
-- Added context cancellation support for graceful shutdown
-- Added unit tests for bandwidth measurement
-
----
-
-## [0.7.4] - 2026-03-20
-
-### Feature: Automatic Reconnection
-- Added automatic reconnection on network disconnect
-- New CLI flags: `--auto-reconnect`, `--auto-reconnect-max-attempts`, `--auto-reconnect-interval`, `--auto-reconnect-max-interval`
-- Added `AddWithReconnect` method to `MultiTunnelManager`
-- Added `ReconnectConfig` and `tunnelParams` types for managing reconnection state
-- Implemented exponential backoff for reconnection attempts
-- Configuration fields added: `AutoReconnectEnabled`, `AutoReconnectMaxAttempts`, `AutoReconnectInterval`, `AutoReconnectMaxInterval`
-
-### Unit Tests
-- Added `TestParseAutoReconnectInterval` test
-- Added `TestMultiTunnelManager_ReconnectInfoStored` test
-- Added `TestMultiTunnelManager_CancelClearsReconnectInfo` test
 
 ---
 
