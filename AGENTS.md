@@ -8,7 +8,6 @@ This document provides coding standards and commands for agentic tools operating
 
 ### Quick Reference (Makefile)
 - `make build` - Build CLI binary for current platform
-- `make build-gui` - Build GUI binary for current platform  
 - `make build-cli-all` - Cross-compile CLI for Linux, macOS, Windows
 - `make test` - Run unit tests with verbose output
 - `make test-functional` - Run functional tests (requires -tags)
@@ -97,6 +96,25 @@ import (
 ├── Makefile              # Build/test targets (use these!)
 ├── go.mod                # Go dependencies (Go 1.25.x)
 ├── cmd/                  # Main applications
+│   └── bcvpn/           # CLI entrypoint
+├── internal/            # Internal packages (not importable externally)
+│   ├── auth/            # Authorization & cert management
+│   ├── blockchain/      # RPC, provider, scanner, payment
+│   ├── config/          # Configuration loading and management
+│   ├── crypto/          # Keystore & encryption
+│   ├── geoip/           # GeoIP lookups
+│   ├── history/         # Payment history
+│   ├── nat/             # UPnP & NAT-PMP
+│   ├── obs/             # Observability (logging, metrics)
+│   ├── protocol/        # VPN protocol encoding/decoding
+│   ├── tunnel/          # Core VPN logic (TUN, TLS, networking)
+│   └── util/            # Utilities
+└── docs/                # User and developer documentation
+```
+.
+├── Makefile              # Build/test targets (use these!)
+├── go.mod                # Go dependencies (Go 1.25.x)
+├── cmd/                  # Main applications
 │   ├── bcvpn/           # CLI entrypoint
 │   └── bcvpn-gui/       # GUI entrypoint  
 ├── internal/            # Internal packages (not importable externally)
@@ -138,6 +156,15 @@ func TestFunctionName(t *testing.T) {
 ### Table-Driven Tests
 - Prefer table-driven tests using `t.Run` subtests
 - Provide clear failure messages with `t.Errorf` or `t.Fatalf`
+
+#### Coverage Requirements
+- **All new features must include unit tests** covering the primary code paths
+- **Bug fixes must include regression tests** to prevent recurrence
+- **Refactors should improve or maintain test coverage** — never reduce coverage without adding new tests elsewhere
+- When modifying existing code, **extend test coverage for edge cases** discovered during development
+- Aim for >80% coverage on critical packages: `blockchain`, `tunnel`, `config`
+
+**Important**: The `TODO.md` tracks test coverage improvements as explicit tasks. Do not consider a feature complete until tests are written.
 
 ---
 

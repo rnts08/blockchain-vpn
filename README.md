@@ -121,7 +121,7 @@ Clients purchase access by sending a transaction to the provider's address (deri
     *   RPC must be enabled (`server=1`).
     *   Transaction indexing (`txindex=1`) is recommended for faster scanning but not strictly required for basic operation.
 *   Elevated privileges are required on Linux/macOS/Windows to configure TUN, routes, DNS, and provider NAT features.
-*   **GeoIP Database**: Download `GeoLite2-Country.mmdb` from MaxMind and place it in the project root for country detection.
+*   **Optional**: GeoIP Database (`GeoLite2-Country.mmdb`) for country detection. If not present, country data will be unavailable.
 *   See [docs/INSTALL.md](docs/INSTALL.md) for OS-specific installation and privilege setup.
 
 ### Installation
@@ -138,7 +138,7 @@ Or use `Makefile` targets:
 make build
 ```
 
-**Note:** GUI and TUI builds are no longer supported. They have been moved to the `_attic` folder for archival purposes. See `_attic/README.md` if you wish to experiment with them.
+**Note:** Only the CLI (`bcvpn`) is actively maintained. GUI/TUI interfaces have been moved to the `_attic` folder and are not supported.
 
 ### Configuration
 
@@ -164,7 +164,11 @@ Sample `config.json`:
   "rpc": {
     "host": "localhost:25173",
     "user": "yourrpcuser",
-    "pass": "yourrpcpassword"
+    "pass": "yourrpcpassword",
+    "network": "mainnet",
+    "token_symbol": "OXC",
+    "min_relay_fee": 1000,
+    "default_fee_kb": 1000
   },
   "logging": {
     "format": "text",
@@ -181,15 +185,19 @@ Sample `config.json`:
   "provider": {
     "interface_name": "bcvpn0",
     "listen_port": 51820,
+    "auto_rotate_port": false,
     "announce_ip": "",
     "country": "",
     "price_sats_per_session": 1000,
     "max_consumers": 0,
     "private_key_file": "<APP_CONFIG_DIR>/provider.key",
     "bandwidth_limit": "10mbit",
+    "bandwidth_auto_test": false,
+    "dns_servers": ["1.1.1.1", "8.8.8.8"],
     "enable_nat": true,
     "enable_egress_nat": false,
     "nat_outbound_interface": "",
+    "nat_traversal_method": "auto",
     "isolation_mode": "none",
     "allowlist_file": "",
     "denylist_file": "",
@@ -199,8 +207,23 @@ Sample `config.json`:
     "health_check_interval": "30s",
     "metrics_listen_addr": "127.0.0.1:9090",
     "bandwidth_monitor_interval": "30s",
+    "announcement_interval": "24h",
     "tun_ip": "10.10.0.1",
-    "tun_subnet": "24"
+    "tun_subnet": "24",
+    "max_session_duration_secs": 0,
+    "announcement_fee_target_blocks": 0,
+    "announcement_fee_mode": "conservative",
+    "address_type": "auto",
+    "throughput_probe_port": 0,
+    "websocket_fallback_port": 0,
+    "heartbeat_interval": "5m",
+    "payment_monitor_interval": "1m",
+    "payment_required_confirmations": 1,
+    "shutdown_timeout": "10s",
+    "pid_file": "",
+    "pricing_method": "session",
+    "billing_time_unit": "hour",
+    "billing_data_unit": "GB"
   },
   "client": {
     "interface_name": "bcvpn1",
@@ -209,8 +232,13 @@ Sample `config.json`:
     "enable_kill_switch": false,
     "metrics_listen_addr": "127.0.0.1:9091",
     "strict_verification": false,
-    "verify_throughput_after_connect": true
-  }
+    "verify_throughput_after_connect": true,
+    "auto_reconnect_enabled": false,
+    "auto_reconnect_max_attempts": 0,
+    "auto_reconnect_interval": "5s",
+    "auto_reconnect_max_interval": "5m"
+  },
+  "demo_mode": false
 }
 ```
 
@@ -387,18 +415,27 @@ To adapt this for another chain:
 - [x] Spending limits with auto-recharge support for clients.
 - [x] Time-based and data-based billing models alongside session billing.
 - [x] WebSocket fallback transport for NAT-restricted networks.
+- [x] Automatic client reconnection with exponential backoff on network disconnect.
+- [x] Provider bandwidth auto-detection at startup to advertise accurate speed.
+- [x] Blockchain-agnostic RPC support for Bitcoin-derived chains (auto-detect chain, flexible fee estimation).
+- [x] Wallet address type auto-detection (p2pkh, p2sh, bech32, bech32m).
+- [x] NAT traversal timeout to prevent indefinite hangs.
+- [x] Password input masking for provider key unlock.
+- [x] Graceful shutdown handling (SIGTERM/SIGINT) with cleanup of TUN, NAT, routing, DNS.
+- [x] Blockchain-agnostic public API — plain Go types (`uint64`, `string`, `FeeConfig`) instead of btcd-specific types.
+- [x] Configurable RPC cookie directory for different blockchain data locations.
+- [x] Configurable minimum relay fee and default fee per KB fallback.
 
 ### Known Limitations (Post-Beta)
 
-- [ ] No automatic reconnection on network disconnect (single network blip ends session)
 - [ ] Heartbeat announcements lack cryptographic signature
 - [ ] Reputation scores not signature-verified (trust through network effect)
 - [ ] Direct connect command is stub-only (use scan to connect)
-- [ ] Provider bandwidth auto-detection not implemented (manual config required)
 - [ ] Refund flow not implemented
 - [ ] NAT traversal method selection via config not implemented
 - [ ] WebSocket origin validation not implemented
 - [ ] STUN integration for NAT type detection not implemented
+- [ ] GeoIP database not bundled (must be downloaded separately from MaxMind)
 
 ### How It Works
 
@@ -420,8 +457,33 @@ To adapt this for another chain:
 
 ## 7. Project File Layout
 
-The project is organized into the following directory structure. Please ensure your files are moved to the correct locations. 
+The project is organized into the following directory structure:
 
+```
+.
+├── Makefile              # Build/test targets
+├── README.md
+├── VERSION               # Semantic version
+├── CHANGELOG.md
+├── AGENTS.md             # Guidelines for agentic tools
+├── TODO.md               # Implementation plan
+├── docs/                 # Documentation
+├── cmd/
+│   └── bcvpn/            # CLI entrypoint
+│       └── main.go
+├── internal/
+│   ├── auth/             # Authorization & cert management
+│   ├── blockchain/       # Blockchain RPC, provider, scanner, payment
+│   ├── config/           # Configuration loading and validation
+│   ├── crypto/           # Keystore & encryption
+│   ├── geoip/            # GeoIP lookups (optional)
+│   ├── history/          # Payment history
+│   ├── nat/              # UPnP & NAT-PMP
+│   ├── obs/              # Observability (logging, metrics)
+│   ├── protocol/         # VPN protocol encoding/decoding
+│   ├── tunnel/           # Core VPN logic (TUN, TLS, networking)
+│   └── util/             # Utilities
+└── go.mod
 ```
 .
 ├── Makefile
