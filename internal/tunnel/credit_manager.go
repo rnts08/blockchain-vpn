@@ -43,11 +43,12 @@ type SpendingManager struct {
 	providerAddr   btcutil.Address
 	localKey       *btcec.PrivateKey
 	providerPubKey *btcec.PublicKey
+	addressType    string
 	stopped        chan struct{}
 }
 
 // NewSpendingManager creates a SpendingManager from client config.
-func NewSpendingManager(cfg *config.ClientConfig, client *rpcclient.Client, providerAddr btcutil.Address, localKey *btcec.PrivateKey, providerPubKey *btcec.PublicKey) *SpendingManager {
+func NewSpendingManager(cfg *config.ClientConfig, client *rpcclient.Client, providerAddr btcutil.Address, localKey *btcec.PrivateKey, providerPubKey *btcec.PublicKey, addressType string) *SpendingManager {
 	sm := &SpendingManager{
 		balance:           0,
 		minBalance:        cfg.AutoRechargeMinBalance,
@@ -58,6 +59,7 @@ func NewSpendingManager(cfg *config.ClientConfig, client *rpcclient.Client, prov
 		providerAddr:      providerAddr,
 		localKey:          localKey,
 		providerPubKey:    providerPubKey,
+		addressType:       addressType,
 		rechargeInterval:  30 * time.Second,
 		stopped:           make(chan struct{}),
 
@@ -125,7 +127,7 @@ func (sm *SpendingManager) checkAndRecharge(ctx context.Context) {
 		log.Printf("Spending manager: balance %d sats below threshold %d sats, recharging...",
 			sm.balance, sm.rechargeThreshold)
 
-		txHash, err := blockchain.SendPayment(sm.client, sm.providerAddr, sm.rechargeAmount, sm.localKey.PubKey())
+		txHash, err := blockchain.SendPayment(sm.client, sm.providerAddr, sm.rechargeAmount, sm.localKey.PubKey(), sm.addressType)
 		if err != nil {
 			log.Printf("Spending manager: failed to send recharge payment: %v", err)
 			return

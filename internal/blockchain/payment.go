@@ -188,7 +188,7 @@ func deterministicSelectCoins(unspent []btcjson.ListUnspentResult, targetAmount 
 }
 
 // SendPayment sends the specified amount to the provider's address.
-func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amountSatoshis uint64, clientPubKey *btcec.PublicKey) (*chainhash.Hash, error) {
+func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amountSatoshis uint64, clientPubKey *btcec.PublicKey, addressType string) (*chainhash.Hash, error) {
 	// 1. Create the OP_RETURN script with the client's public key.
 	paymentPayload, err := protocol.EncodePaymentPayload(clientPubKey)
 	if err != nil {
@@ -250,7 +250,7 @@ func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amou
 	// Or we can just use the conservative estimate from before.
 	changeAmount := totalInput - btcutil.Amount(amountSatoshis) - requiredFee
 
-	changeAddr, err := client.GetRawChangeAddress("")
+	changeAddr, err := client.GetRawChangeAddress(addressType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get change address: %w", err)
 	}

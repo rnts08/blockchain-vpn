@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.8] - 2026-03-20
+
+### Fix: Auto-Detect Wallet Address Type
+- Added `DetectAddressType()` function that probes UTXOs to determine wallet address type
+- Added `AddressType` field to both `ProviderConfig` and `ClientConfig` ("auto", "p2pkh", "p2sh", "bech32", "bech32m")
+- Auto-detects address type from existing UTXOs via scriptPubKey analysis, falls back to probing with getrawchangeaddress
+- All wallet operations now use detected/configured address type instead of empty string
+- Fixes "unknown address type ''" error on OrdexCoin and other non-bech32 chains
+
+### Fix: Fee Target Clamping
+- Added `clampFeeTarget()` to ensure fee target is always between 1-1008
+- Defaults to 6 blocks when target is 0 or invalid
+- Fixes "estimateSmartFee error -8: invalid config_target" error
+
+### Affected Functions
+- `AnnounceService`, `AnnounceHeartbeat`, `AnnouncePriceUpdate`, `AnnounceRating` now accept addressType
+- `SendPayment` now accepts addressType
+- `GetNewAddress` and `GetRawChangeAddress` now use detected address type
+- `NewSpendingManager` now accepts addressType
+
+---
+
 ## [0.7.7] - 2026-03-20
 
 ### Fix: Scanner Performance and Defaults

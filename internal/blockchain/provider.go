@@ -57,12 +57,67 @@ func verifyASN1Signature(pub *ecdsa.PublicKey, hash, sigASN1 []byte) bool {
 	return ecdsa.Verify(pub, hash, sig.R, sig.S)
 }
 
+// DetectAddressType probes the node to determine the appropriate address type for wallet
+// operations. It first checks existing UTXOs, then falls back to probing with getrawchangeaddress.
+// Returns the address type string ("p2pkh", "bech32", etc.) or an error.
+func DetectAddressType(client *rpcclient.Client) (string, error) {
+	candidateTypes := []string{"p2pkh", "p2sh", "bech32", "bech32m"}
+
+	unspent, err := client.ListUnspentMin(0)
+	if err == nil && len(unspent) > 0 {
+		for _, utxo := range unspent {
+			if utxo.ScriptPubKey == "" {
+				continue
+			}
+			hexBytes, err := hex.DecodeString(utxo.ScriptPubKey)
+			if err != nil || len(hexBytes) < 2 {
+				continue
+			}
+			scriptClass := txscript.GetScriptClass(hexBytes)
+			switch scriptClass {
+			case txscript.PubKeyHashTy:
+				return "p2pkh", nil
+			case txscript.ScriptHashTy:
+				return "p2sh", nil
+			case txscript.WitnessV0PubKeyHashTy:
+				return "bech32", nil
+			case txscript.WitnessV0ScriptHashTy:
+				return "bech32m", nil
+			case txscript.WitnessV1TaprootTy:
+				return "bech32m", nil
+			}
+			hexLower := strings.ToLower(utxo.ScriptPubKey)
+			if strings.HasPrefix(hexLower, "76a9") {
+				return "p2pkh", nil
+			}
+			if strings.HasPrefix(hexLower, "a914") {
+				return "p2sh", nil
+			}
+			if strings.HasPrefix(hexLower, "0014") {
+				return "bech32", nil
+			}
+			if strings.HasPrefix(hexLower, "0020") {
+				return "bech32m", nil
+			}
+		}
+	}
+
+	for _, addrType := range candidateTypes {
+		_, err := client.GetRawChangeAddress(addrType)
+		if err == nil {
+			return addrType, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not detect address type: no usable UTXOs found and all address type probes failed")
+}
+
 // This file provides a basic example of a VPN provider application that
 // broadcasts its service information onto the blockchain.
 
 // AnnounceService uses the provided RPC client to broadcast a transaction
 // with an OP_RETURN output containing the VPN service details.
-func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, feeTargetBlocks int, feeMode string) error {
+func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, feeTargetBlocks int, feeMode string, addressType string) error {
 	// 4. Encode endpoint data into OP_RETURN payload (v2 metadata-first format).
 	payload, err := endpoint.EncodePayloadV2()
 	if err != nil {
@@ -104,7 +159,7 @@ func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, f
 	opReturnOutput := wire.NewTxOut(0, opReturnScript)
 	changeAmount := totalInput - requiredFee
 
-	changeAddr, err := client.GetRawChangeAddress("")
+	changeAddr, err := client.GetRawChangeAddress(addressType)
 	if err != nil {
 		return fmt.Errorf("error getting change address: %w", err)
 	}
@@ -135,7 +190,7 @@ func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, f
 }
 
 // AnnounceHeartbeat broadcasts provider availability flags for discovery freshness.
-func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags uint8) error {
+func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags uint8, addressType string) error {
 	payload, err := protocol.EncodeHeartbeatPayload(pubKey, flags)
 	if err != nil {
 		return fmt.Errorf("error encoding heartbeat payload: %w", err)
@@ -161,7 +216,7 @@ func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags 
 		tx.AddTxIn(wire.NewTxIn(wire.NewOutPoint(txHash, utxo.Vout), nil, nil))
 	}
 	changeAmount := totalInput - requiredFee
-	changeAddr, err := client.GetRawChangeAddress("")
+	changeAddr, err := client.GetRawChangeAddress(addressType)
 	if err != nil {
 		return fmt.Errorf("error getting change address: %w", err)
 	}
@@ -185,7 +240,7 @@ func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags 
 }
 
 // AnnouncePriceUpdate broadcasts a lightweight transaction to update the provider's price.
-func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newPrice uint64, feeTargetBlocks int, feeMode string) error {
+func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newPrice uint64, feeTargetBlocks int, feeMode string, addressType string) error {
 	payload, err := protocol.EncodePriceUpdatePayload(pubKey, newPrice)
 	if err != nil {
 		return fmt.Errorf("error encoding price update payload: %w", err)
@@ -218,7 +273,7 @@ func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newP
 	}
 	changeAmount := totalInput - requiredFee
 
-	changeAddr, err := client.GetRawChangeAddress("")
+	changeAddr, err := client.GetRawChangeAddress(addressType)
 	if err != nil {
 		return fmt.Errorf("error getting change address: %w", err)
 	}
@@ -248,7 +303,7 @@ func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newP
 }
 
 // AnnounceRating broadcasts a reputation/rating for a provider on the blockchain.
-func AnnounceRating(client *rpcclient.Client, providerPubKey *btcec.PublicKey, clientPrivKey *btcec.PrivateKey, score uint8, source string, feeTargetBlocks int, feeMode string) error {
+func AnnounceRating(client *rpcclient.Client, providerPubKey *btcec.PublicKey, clientPrivKey *btcec.PrivateKey, score uint8, source string, feeTargetBlocks int, feeMode string, addressType string) error {
 	repPayload := &protocol.ReputationPayload{
 		SubjectPublicKey: providerPubKey,
 		Score:            score,
@@ -297,7 +352,7 @@ func AnnounceRating(client *rpcclient.Client, providerPubKey *btcec.PublicKey, c
 	}
 	changeAmount := totalInput - requiredFee
 
-	changeAddr, err := client.GetRawChangeAddress("")
+	changeAddr, err := client.GetRawChangeAddress(addressType)
 	if err != nil {
 		return fmt.Errorf("error getting change address: %w", err)
 	}

@@ -316,6 +316,20 @@ func main() {
 		client := connectRPCWithConfig(cfg)
 		defer client.Shutdown()
 
+		addressType := cfg.Provider.AddressType
+		if strings.ToLower(addressType) == "auto" || addressType == "" {
+			detected, err := blockchain.DetectAddressType(client)
+			if err != nil {
+				log.Printf("Warning: could not auto-detect address type: %v (using p2pkh fallback)", err)
+				addressType = "p2pkh"
+			} else {
+				addressType = detected
+				log.Printf("Auto-detected wallet address type: %s", addressType)
+			}
+		} else {
+			log.Printf("Using configured address type: %s", addressType)
+		}
+
 		authManager := auth.NewAuthManager()
 
 		providerKey, err := getProviderKey(cfg, *startProviderKeyPassEnv)
@@ -351,7 +365,7 @@ func main() {
 			defer providerWG.Done()
 			ticker := time.NewTicker(24 * time.Hour)
 			defer ticker.Stop()
-			if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode); err != nil {
+			if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode, addressType); err != nil {
 				log.Printf("Initial service announcement failed: %v", err)
 			}
 			for {
@@ -359,7 +373,7 @@ func main() {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode); err != nil {
+					if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode, addressType); err != nil {
 						log.Printf("Scheduled re-announcement failed: %v", err)
 					}
 				}
@@ -374,7 +388,7 @@ func main() {
 			hbTicker := time.NewTicker(hbInterval)
 			defer hbTicker.Stop()
 
-			if err := blockchain.AnnounceHeartbeat(client, providerKey.PubKey(), protocol.AvailabilityFlagAvailable); err != nil {
+			if err := blockchain.AnnounceHeartbeat(client, providerKey.PubKey(), protocol.AvailabilityFlagAvailable, addressType); err != nil {
 				log.Printf("Initial heartbeat broadcast failed: %v", err)
 			}
 			for {
@@ -382,7 +396,7 @@ func main() {
 				case <-ctx.Done():
 					return
 				case <-hbTicker.C:
-					if err := blockchain.AnnounceHeartbeat(client, providerKey.PubKey(), protocol.AvailabilityFlagAvailable); err != nil {
+					if err := blockchain.AnnounceHeartbeat(client, providerKey.PubKey(), protocol.AvailabilityFlagAvailable, addressType); err != nil {
 						log.Printf("Scheduled heartbeat broadcast failed: %v", err)
 					}
 				}
@@ -499,6 +513,20 @@ func main() {
 		client := connectRPCWithConfig(cfg)
 		defer client.Shutdown()
 
+		addressType := cfg.Provider.AddressType
+		if strings.ToLower(addressType) == "auto" || addressType == "" {
+			detected, err := blockchain.DetectAddressType(client)
+			if err != nil {
+				log.Printf("Warning: could not auto-detect address type: %v (using p2pkh fallback)", err)
+				addressType = "p2pkh"
+			} else {
+				addressType = detected
+				log.Printf("Auto-detected wallet address type: %s", addressType)
+			}
+		} else {
+			log.Printf("Using configured address type: %s", addressType)
+		}
+
 		providerKey, err := getProviderKey(cfg, *rebroadcastKeyPassEnv)
 		if err != nil {
 			log.Fatalf("Failed to get provider key: %v", err)
@@ -515,7 +543,7 @@ func main() {
 		endpoint := buildProviderEndpoint(&cfg.Provider, announceIP, announcePort, providerKey, 0)
 
 		log.Println("Re-broadcasting service announcement...")
-		if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode); err != nil {
+		if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode, addressType); err != nil {
 			log.Fatalf("Service announcement failed: %v", err)
 		}
 		log.Println("Service announcement re-broadcasted successfully.")
@@ -530,6 +558,20 @@ func main() {
 		}
 		client := connectRPCWithConfig(cfg)
 		defer client.Shutdown()
+
+		addressType := cfg.Client.AddressType
+		if strings.ToLower(addressType) == "auto" || addressType == "" {
+			detected, err := blockchain.DetectAddressType(client)
+			if err != nil {
+				log.Printf("Warning: could not auto-detect address type: %v (using p2pkh fallback)", err)
+				addressType = "p2pkh"
+			} else {
+				addressType = detected
+				log.Printf("Auto-detected wallet address type: %s", addressType)
+			}
+		} else {
+			log.Printf("Using configured address type: %s", addressType)
+		}
 
 		genesisHash, err := client.GetBlockHash(0)
 		if err != nil {
@@ -638,7 +680,7 @@ func main() {
 		}
 		fmt.Println()
 
-		interactiveConnect(ctx, client, chainParams, filteredEndpoints, &cfg.Client, &cfg.Security, *scanDryRun, *connectAutoReconnect, *connectAutoReconnectMaxAttempts, *connectAutoReconnectInterval, *connectAutoReconnectMaxInterval)
+		interactiveConnect(ctx, client, chainParams, addressType, filteredEndpoints, &cfg.Client, &cfg.Security, *scanDryRun, *connectAutoReconnect, *connectAutoReconnectMaxAttempts, *connectAutoReconnectInterval, *connectAutoReconnectMaxInterval)
 
 	case "connect":
 		if len(os.Args) < 3 {
@@ -961,7 +1003,18 @@ func requiredNetworkingTools(goos string) []string {
 func generateAddress(cfg *config.Config) {
 	client := connectRPCWithConfig(cfg)
 	defer client.Shutdown()
-	addr, err := client.GetNewAddress("")
+
+	addressType := cfg.Client.AddressType
+	if strings.ToLower(addressType) == "auto" || addressType == "" {
+		detected, err := blockchain.DetectAddressType(client)
+		if err != nil {
+			addressType = "p2pkh"
+		} else {
+			addressType = detected
+		}
+	}
+
+	addr, err := client.GetNewAddress(addressType)
 	if err != nil {
 		log.Fatalf("Failed to generate new address: %v", err)
 	}
@@ -1606,13 +1659,24 @@ func broadcastRatingOnChain(cfg *config.Config, providerPubkeyHex string, rating
 	}
 
 	client := connectRPCWithConfig(cfg)
+	defer client.Shutdown()
+
+	addressType := cfg.Client.AddressType
+	if strings.ToLower(addressType) == "auto" || addressType == "" {
+		detected, err := blockchain.DetectAddressType(client)
+		if err != nil {
+			addressType = "p2pkh"
+		} else {
+			addressType = detected
+		}
+	}
 
 	clientKey, err := getOrCreateClientKey(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to get client key: %w", err)
 	}
 
-	return blockchain.AnnounceRating(client, providerPubKey, clientKey, rating, "bcvpn-client", 6, "conservative")
+	return blockchain.AnnounceRating(client, providerPubKey, clientKey, rating, "bcvpn-client", 6, "conservative", addressType)
 }
 
 func getOrCreateClientKey(cfg *config.Config) (*btcec.PrivateKey, error) {
@@ -2245,7 +2309,7 @@ func parseBandwidthLimitToKbps(v string) uint32 {
 	return kbps
 }
 
-func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainParams *chaincfg.Params, endpoints []*geoip.EnrichedVPNEndpoint, clientCfg *config.ClientConfig, secCfg *config.SecurityConfig, dryRun bool, autoReconnect bool, autoReconnectMaxAttempts int, autoReconnectInterval string, autoReconnectMaxInterval string) {
+func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainParams *chaincfg.Params, addressType string, endpoints []*geoip.EnrichedVPNEndpoint, clientCfg *config.ClientConfig, secCfg *config.SecurityConfig, dryRun bool, autoReconnect bool, autoReconnectMaxAttempts int, autoReconnectInterval string, autoReconnectMaxInterval string) {
 	// Write client PID file for management (stop/disconnect)
 	dir, err := config.AppConfigDir()
 	if err != nil {
@@ -2291,7 +2355,7 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 	// Initialize spending manager if limits are enabled
 	var spendingMgr *tunnel.SpendingManager
 	if clientCfg.SpendingLimitEnabled || clientCfg.AutoRechargeEnabled {
-		spendingMgr = tunnel.NewSpendingManager(clientCfg, client, providerAddr, localKey, selectedEndpoint.Endpoint.PublicKey)
+		spendingMgr = tunnel.NewSpendingManager(clientCfg, client, providerAddr, localKey, selectedEndpoint.Endpoint.PublicKey, addressType)
 		// Check if payment would exceed limits
 		paymentAmount := selectedEndpoint.Endpoint.Price
 		if err := spendingMgr.RecordPayment(paymentAmount); err != nil {
@@ -2322,7 +2386,7 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 			log.Fatalf("Cannot proceed: automatic networking privileges are required before payment: %v", err)
 		}
 		fmt.Printf("Sending payment of %d sats to provider...\n", selectedEndpoint.Endpoint.Price)
-		txHash, err := blockchain.SendPayment(client, providerAddr, selectedEndpoint.Endpoint.Price, localKey.PubKey())
+		txHash, err := blockchain.SendPayment(client, providerAddr, selectedEndpoint.Endpoint.Price, localKey.PubKey(), addressType)
 		if err != nil {
 			log.Fatalf("Failed to send payment: %v", err)
 		}

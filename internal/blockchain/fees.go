@@ -10,9 +10,20 @@ import (
 	"github.com/btcsuite/btcd/rpcclient"
 )
 
+func clampFeeTarget(target int64) int64 {
+	if target <= 0 {
+		return 6
+	}
+	if target > 1008 {
+		return 1008
+	}
+	return target
+}
+
 // estimateDynamicFeePerKbWithMode fetches a feerate from the node using the
 // given confirmation target (in blocks) and estimation mode.
 func estimateDynamicFeePerKbWithMode(ctx context.Context, client *rpcclient.Client, targetBlocks int64, mode btcjson.EstimateSmartFeeMode) (btcutil.Amount, error) {
+	targetBlocks = clampFeeTarget(targetBlocks)
 	feeRate, err := withRetry(ctx, "EstimateSmartFee", 4, 500*time.Millisecond, func() (*btcjson.EstimateSmartFeeResult, error) {
 		return client.EstimateSmartFee(targetBlocks, &mode)
 	})

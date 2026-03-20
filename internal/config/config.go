@@ -75,11 +75,12 @@ type ProviderConfig struct {
 	AnnouncementInterval         string   `json:"announcement_interval"` // e.g. "24h"
 	TunIP                        string   `json:"tun_ip"`
 	TunSubnet                    string   `json:"tun_subnet"`
-	MetricsListenAddr            string   `json:"metrics_listen_addr"`       // e.g. "127.0.0.1:9090"
-	MaxSessionDurationSecs       int      `json:"max_session_duration_secs"` // 0 = no limit
-	AnnouncementFeeTargetBlocks  int      `json:"announcement_fee_target_blocks"`
-	AnnouncementFeeMode          string   `json:"announcement_fee_mode"` // "conservative" or "economical"
-	ThroughputProbePort          int      `json:"throughput_probe_port"` // 0 = disable provider-assisted probes
+	MetricsListenAddr            string   `json:"metrics_listen_addr"`            // e.g. "127.0.0.1:9090"
+	MaxSessionDurationSecs       int      `json:"max_session_duration_secs"`      // 0 = no limit
+	AnnouncementFeeTargetBlocks  int      `json:"announcement_fee_target_blocks"` // 0 = auto (6 blocks)
+	AnnouncementFeeMode          string   `json:"announcement_fee_mode"`          // "conservative" or "economical"
+	AddressType                  string   `json:"address_type"`                   // "auto", "p2pkh", "p2sh", "bech32", "bech32m". Auto probes the node.
+	ThroughputProbePort          int      `json:"throughput_probe_port"`          // 0 = disable provider-assisted probes
 	WebSocketFallbackPort        int      `json:"websocket_fallback_port"`
 	HeartbeatInterval            string   `json:"heartbeat_interval"`             // e.g. "5m"
 	PaymentMonitorInterval       string   `json:"payment_monitor_interval"`       // e.g. "1m"
@@ -94,6 +95,7 @@ type ProviderConfig struct {
 }
 
 type ClientConfig struct {
+	AddressType                string   `json:"address_type"` // "auto", "p2pkh", "p2sh", "bech32", "bech32m". Auto probes the node.
 	InterfaceName              string   `json:"interface_name"`
 	TunIP                      string   `json:"tun_ip"`
 	TunSubnet                  string   `json:"tun_subnet"`
