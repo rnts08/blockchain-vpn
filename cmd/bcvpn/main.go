@@ -332,6 +332,8 @@ func main() {
 			log.Printf("Using configured address type: %s", addressType)
 		}
 
+		feeCfg := blockchain.NewFeeConfig(cfg.RPC.MinRelayFee, cfg.RPC.DefaultFeeKb)
+
 		authManager := auth.NewAuthManager()
 
 		providerKey, err := getProviderKey(cfg, *startProviderKeyPassEnv)
@@ -367,7 +369,7 @@ func main() {
 			defer providerWG.Done()
 			ticker := time.NewTicker(24 * time.Hour)
 			defer ticker.Stop()
-			if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode, addressType); err != nil {
+			if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode, addressType, feeCfg); err != nil {
 				log.Printf("Initial service announcement failed: %v", err)
 			}
 			for {
@@ -375,7 +377,7 @@ func main() {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode, addressType); err != nil {
+					if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode, addressType, feeCfg); err != nil {
 						log.Printf("Scheduled re-announcement failed: %v", err)
 					}
 				}
@@ -395,7 +397,7 @@ func main() {
 				case <-ctx.Done():
 					return
 				case <-hbTicker.C:
-					if err := blockchain.AnnounceHeartbeat(client, providerKey.PubKey(), protocol.AvailabilityFlagAvailable, addressType); err != nil {
+					if err := blockchain.AnnounceHeartbeat(client, providerKey.PubKey(), protocol.AvailabilityFlagAvailable, addressType, feeCfg); err != nil {
 						log.Printf("Scheduled heartbeat broadcast failed: %v", err)
 					}
 				}
@@ -526,6 +528,8 @@ func main() {
 			log.Printf("Using configured address type: %s", addressType)
 		}
 
+		feeCfg := blockchain.NewFeeConfig(cfg.RPC.MinRelayFee, cfg.RPC.DefaultFeeKb)
+
 		providerKey, err := getProviderKey(cfg, *rebroadcastKeyPassEnv)
 		if err != nil {
 			log.Fatalf("Failed to get provider key: %v", err)
@@ -542,7 +546,7 @@ func main() {
 		endpoint := buildProviderEndpoint(&cfg.Provider, announceIP, announcePort, providerKey, 0)
 
 		log.Println("Re-broadcasting service announcement...")
-		if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode, addressType); err != nil {
+		if err := blockchain.AnnounceService(client, endpoint, cfg.Provider.AnnouncementFeeTargetBlocks, cfg.Provider.AnnouncementFeeMode, addressType, feeCfg); err != nil {
 			log.Fatalf("Service announcement failed: %v", err)
 		}
 		log.Println("Service announcement re-broadcasted successfully.")
@@ -577,7 +581,7 @@ func main() {
 			log.Fatalf("Failed to get genesis block hash from RPC: %v", err)
 		}
 
-		chainParams := detectChain(genesisHash, cfg.RPC.Network)
+		_ = detectChain(genesisHash, cfg.RPC.Network)
 
 		cachePath, err := blockchain.DefaultScanCachePath()
 		if err != nil {
@@ -679,7 +683,7 @@ func main() {
 		}
 		fmt.Println()
 
-		interactiveConnect(ctx, client, chainParams, addressType, filteredEndpoints, &cfg.Client, &cfg.Security, *scanDryRun, *connectAutoReconnect, *connectAutoReconnectMaxAttempts, *connectAutoReconnectInterval, *connectAutoReconnectMaxInterval)
+		interactiveConnect(ctx, client, blockchain.NewFeeConfig(cfg.RPC.MinRelayFee, cfg.RPC.DefaultFeeKb), addressType, filteredEndpoints, &cfg.Client, &cfg.Security, *scanDryRun, *connectAutoReconnect, *connectAutoReconnectMaxAttempts, *connectAutoReconnectInterval, *connectAutoReconnectMaxInterval)
 
 	case "connect":
 		if len(os.Args) < 3 {
@@ -1675,7 +1679,9 @@ func broadcastRatingOnChain(cfg *config.Config, providerPubkeyHex string, rating
 		return fmt.Errorf("failed to get client key: %w", err)
 	}
 
-	return blockchain.AnnounceRating(client, providerPubKey, clientKey, rating, "bcvpn-client", 6, "conservative", addressType)
+	feeCfg := blockchain.NewFeeConfig(cfg.RPC.MinRelayFee, cfg.RPC.DefaultFeeKb)
+
+	return blockchain.AnnounceRating(client, providerPubKey, clientKey, rating, "bcvpn-client", 6, "conservative", addressType, feeCfg)
 }
 
 func getOrCreateClientKey(cfg *config.Config) (*btcec.PrivateKey, error) {
@@ -1902,21 +1908,38 @@ func getDefaultRPCHost(network string) string {
 // readRPCCookie attempts to read the RPC cookie file and extract credentials.
 // It returns username and password (or empty string if cookie not found/invalid).
 func readRPCCookie(cfg *config.Config) (string, string, error) {
-	// Determine cookie path: use configured cookie file or default location
 	cookiePath := strings.TrimSpace(cfg.RPC.CookieFile)
 	if cookiePath == "" {
-		// Try to derive from RPC host's data directory, or use common defaults
-		// For simplicity, check standard locations based on OS and network
 		home, _ := os.UserHomeDir()
+		cookieDir := strings.TrimSpace(cfg.RPC.CookieDir)
+		if cookieDir == "" {
+			cookieDir = ".ordexcoin"
+		}
+		cookieDirRegTx := strings.TrimSpace(cfg.RPC.CookieDirRegTx)
+		cookieDirTest3 := strings.TrimSpace(cfg.RPC.CookieDirTest3)
+		cookieDirSignet := strings.TrimSpace(cfg.RPC.CookieDirSignet)
+
+		network := strings.ToLower(strings.TrimSpace(cfg.RPC.Network))
+		var subDir string
+		switch network {
+		case "regtest", "regression":
+			subDir = cookieDirRegTx
+		case "testnet", "testnet3", "testnet4":
+			subDir = cookieDirTest3
+		case "signet":
+			subDir = cookieDirSignet
+		}
 
 		commonPaths := []string{
-			filepath.Join(home, ".ordexcoin", ".cookie"),
-			filepath.Join(home, ".ordexcoin", "regtest", ".cookie"),
-			filepath.Join(home, ".ordexcoin", "testnet3", ".cookie"),
-			filepath.Join(home, ".ordexcoin", "signet", ".cookie"),
-			"/var/lib/ordexcoin/.cookie",
-			"C:\\ProgramData\\OrdExcoin\\.cookie",
+			filepath.Join(home, cookieDir, ".cookie"),
 		}
+		if subDir != "" {
+			commonPaths = append(commonPaths, filepath.Join(home, cookieDir, subDir, ".cookie"))
+		}
+		commonPaths = append(commonPaths,
+			"/var/lib/"+strings.Split(cookieDir, "/")[0]+"/.cookie",
+			"C:\\ProgramData\\OrdExcoin\\.cookie",
+		)
 		for _, p := range commonPaths {
 			if _, err := os.Stat(p); err == nil {
 				cookiePath = p
@@ -2320,7 +2343,7 @@ func parseBandwidthLimitToKbps(v string) uint32 {
 	return kbps
 }
 
-func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainParams *chaincfg.Params, addressType string, endpoints []*geoip.EnrichedVPNEndpoint, clientCfg *config.ClientConfig, secCfg *config.SecurityConfig, dryRun bool, autoReconnect bool, autoReconnectMaxAttempts int, autoReconnectInterval string, autoReconnectMaxInterval string) {
+func interactiveConnect(ctx context.Context, client *rpcclient.Client, feeCfg blockchain.FeeConfig, addressType string, endpoints []*geoip.EnrichedVPNEndpoint, clientCfg *config.ClientConfig, secCfg *config.SecurityConfig, dryRun bool, autoReconnect bool, autoReconnectMaxAttempts int, autoReconnectInterval string, autoReconnectMaxInterval string) {
 	// Write client PID file for management (stop/disconnect)
 	dir, err := config.AppConfigDir()
 	if err != nil {
@@ -2356,17 +2379,17 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 	fmt.Printf("\nGenerated temporary client public key: %s\n", hex.EncodeToString(localKey.PubKey().SerializeCompressed()))
 
 	fmt.Println("\nDeriving provider's payment address from announcement transaction...")
-	providerAddr, err := blockchain.GetProviderPaymentAddress(client, selectedEndpoint.TxID, chainParams)
+	providerAddr, err := blockchain.GetProviderPaymentAddress(client, selectedEndpoint.TxID)
 	if err != nil {
 		log.Fatalf("Could not get provider payment address: %v", err)
 	}
-	fmt.Printf("Provider's payment address: %s\n", providerAddr.String())
+	fmt.Printf("Provider's payment address: %s\n", providerAddr)
 	fmt.Printf("Payment required: %d satoshis\n", selectedEndpoint.Endpoint.Price)
 
 	// Initialize spending manager if limits are enabled
 	var spendingMgr *tunnel.SpendingManager
 	if clientCfg.SpendingLimitEnabled || clientCfg.AutoRechargeEnabled {
-		spendingMgr = tunnel.NewSpendingManager(clientCfg, client, providerAddr, localKey, selectedEndpoint.Endpoint.PublicKey, addressType)
+		spendingMgr = tunnel.NewSpendingManager(clientCfg, client, providerAddr, localKey, selectedEndpoint.Endpoint.PublicKey, addressType, feeCfg)
 		// Check if payment would exceed limits
 		paymentAmount := selectedEndpoint.Endpoint.Price
 		if err := spendingMgr.RecordPayment(paymentAmount); err != nil {
@@ -2397,11 +2420,11 @@ func interactiveConnect(ctx context.Context, client *rpcclient.Client, chainPara
 			log.Fatalf("Cannot proceed: automatic networking privileges are required before payment: %v", err)
 		}
 		fmt.Printf("Sending payment of %d sats to provider...\n", selectedEndpoint.Endpoint.Price)
-		txHash, err := blockchain.SendPayment(client, providerAddr, selectedEndpoint.Endpoint.Price, localKey.PubKey(), addressType)
+		txHash, err := blockchain.SendPayment(client, providerAddr, selectedEndpoint.Endpoint.Price, localKey.PubKey(), addressType, feeCfg)
 		if err != nil {
 			log.Fatalf("Failed to send payment: %v", err)
 		}
-		fmt.Printf("Payment sent: %s\n", txHash.String())
+		fmt.Printf("Payment sent: %s\n", txHash)
 
 		// Wait for payment to be confirmed (provider requires confirmations before authorizing)
 		fmt.Printf("Waiting for payment confirmation...\n")

@@ -4,27 +4,26 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcjson"
-	"github.com/btcsuite/btcd/btcutil"
 )
 
 func TestDeterministicSelectCoins(t *testing.T) {
 	tests := []struct {
 		name      string
-		targetSat int64
+		targetSat uint64
 		unspent   []btcjson.ListUnspentResult
 		wantCount int
-		wantTotal int64
+		wantTotal uint64
 	}{
 		{
 			name:      "exact single match",
-			targetSat: 2000,
+			targetSat: 3000,
 			unspent: []btcjson.ListUnspentResult{
 				{TxID: "c", Vout: 0, Amount: 0.00003},
 				{TxID: "a", Vout: 0, Amount: 0.00002},
 				{TxID: "b", Vout: 0, Amount: 0.00001},
 			},
 			wantCount: 1,
-			wantTotal: 2000,
+			wantTotal: 3000,
 		},
 		{
 			name:      "single greater preferred over accumulation",
@@ -52,15 +51,14 @@ func TestDeterministicSelectCoins(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			target := btcutil.Amount(tt.targetSat)
-			selected, total, err := deterministicSelectCoins(tt.unspent, target)
+			selected, total, err := deterministicSelectCoins(tt.unspent, tt.targetSat)
 			if err != nil {
 				t.Fatalf("deterministicSelectCoins returned error: %v", err)
 			}
 			if len(selected) != tt.wantCount {
 				t.Fatalf("selected count mismatch: got %d want %d", len(selected), tt.wantCount)
 			}
-			if int64(total) != tt.wantTotal {
+			if total != tt.wantTotal {
 				t.Fatalf("selected total mismatch: got %d want %d", total, tt.wantTotal)
 			}
 		})

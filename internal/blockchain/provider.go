@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"net"
 	"strings"
@@ -17,7 +18,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcjson"
-	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
@@ -27,7 +27,6 @@ import (
 	"blockchain-vpn/internal/protocol"
 )
 
-// signWithSecp256k1 creates an ECDSA signature using the secp256k1 curve.
 func signWithSecp256k1(privKey *btcec.PrivateKey, message []byte) ([]byte, error) {
 	ecdsaPriv := &ecdsa.PrivateKey{
 		D: new(big.Int).SetBytes(privKey.Serialize()),
@@ -43,12 +42,10 @@ func signWithSecp256k1(privKey *btcec.PrivateKey, message []byte) ([]byte, error
 	return sig, nil
 }
 
-// ecdsaSignature represents an ECDSA signature with r and s values.
 type ecdsaSignature struct {
 	R, S *big.Int
 }
 
-// verifyASN1Signature verifies an ASN.1 encoded ECDSA signature.
 func verifyASN1Signature(pub *ecdsa.PublicKey, hash, sigASN1 []byte) bool {
 	var sig ecdsaSignature
 	if _, err := asn1.Unmarshal(sigASN1, &sig); err != nil {
@@ -57,50 +54,27 @@ func verifyASN1Signature(pub *ecdsa.PublicKey, hash, sigASN1 []byte) bool {
 	return ecdsa.Verify(pub, hash, sig.R, sig.S)
 }
 
-// DetectAddressType probes the node to determine the appropriate address type for wallet
-// operations. It first checks existing UTXOs (from scriptPubKey hex), then falls back to
-// probing with getrawchangeaddress and getnewaddress. Returns the address type string
-// ("p2pkh", "bech32", etc.) or an error.
 func DetectAddressType(client *rpcclient.Client) (string, error) {
 	candidateTypes := []string{"p2pkh", "p2sh", "bech32", "bech32m", "legacy"}
 
-	// Method 1: Inspect existing UTXOs from listunspent
 	unspent, err := client.ListUnspentMin(0)
 	if err == nil && len(unspent) > 0 {
 		for _, utxo := range unspent {
-			// Try scriptPubKey hex first
 			if utxo.ScriptPubKey != "" {
-				hexBytes, err := hex.DecodeString(utxo.ScriptPubKey)
-				if err == nil && len(hexBytes) >= 2 {
-					scriptClass := txscript.GetScriptClass(hexBytes)
-					switch scriptClass {
-					case txscript.PubKeyHashTy:
-						return "p2pkh", nil
-					case txscript.ScriptHashTy:
-						return "p2sh", nil
-					case txscript.WitnessV0PubKeyHashTy:
-						return "bech32", nil
-					case txscript.WitnessV0ScriptHashTy:
-						return "bech32m", nil
-					case txscript.WitnessV1TaprootTy:
-						return "bech32m", nil
-					}
-					hexLower := strings.ToLower(utxo.ScriptPubKey)
-					if strings.HasPrefix(hexLower, "76a9") {
-						return "p2pkh", nil
-					}
-					if strings.HasPrefix(hexLower, "a914") {
-						return "p2sh", nil
-					}
-					if strings.HasPrefix(hexLower, "0014") {
-						return "bech32", nil
-					}
-					if strings.HasPrefix(hexLower, "0020") {
-						return "bech32m", nil
-					}
+				hexLower := strings.ToLower(utxo.ScriptPubKey)
+				if strings.HasPrefix(hexLower, "76a9") {
+					return "p2pkh", nil
+				}
+				if strings.HasPrefix(hexLower, "a914") {
+					return "p2sh", nil
+				}
+				if strings.HasPrefix(hexLower, "0014") {
+					return "bech32", nil
+				}
+				if strings.HasPrefix(hexLower, "0020") {
+					return "bech32m", nil
 				}
 			}
-			// Try to determine from address string prefix (OrdexCoin addresses start with 'o')
 			if utxo.Address != "" {
 				addr := strings.TrimSpace(utxo.Address)
 				if len(addr) > 0 {
@@ -117,7 +91,6 @@ func DetectAddressType(client *rpcclient.Client) (string, error) {
 		}
 	}
 
-	// Method 2: Probe getrawchangeaddress with common types
 	for _, addrType := range candidateTypes {
 		_, err := client.GetRawChangeAddress(addrType)
 		if err == nil {
@@ -125,7 +98,6 @@ func DetectAddressType(client *rpcclient.Client) (string, error) {
 		}
 	}
 
-	// Method 3: Probe getnewaddress as fallback
 	for _, addrType := range candidateTypes {
 		_, err := client.GetNewAddress(addrType)
 		if err == nil {
@@ -136,43 +108,31 @@ func DetectAddressType(client *rpcclient.Client) (string, error) {
 	return "", fmt.Errorf("could not detect address type: no usable UTXOs found and all address type probes failed")
 }
 
-// This file provides a basic example of a VPN provider application that
-// broadcasts its service information onto the blockchain.
-
-// AnnounceService uses the provided RPC client to broadcast a transaction
-// with an OP_RETURN output containing the VPN service details.
-func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, feeTargetBlocks int, feeMode string, addressType string) error {
-	// 4. Encode endpoint data into OP_RETURN payload (v2 metadata-first format).
+func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, feeTargetBlocks int, feeMode string, addressType string, cfg FeeConfig) error {
 	payload, err := endpoint.EncodePayloadV2()
 	if err != nil {
 		return fmt.Errorf("error encoding payload: %w", err)
 	}
 	log.Printf("Encoded service announcement payload (%d bytes)", len(payload))
 
-	// 5. Create the OP_RETURN script.
 	opReturnScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN).AddData(payload).Script()
 	if err != nil {
 		return fmt.Errorf("error creating OP_RETURN script: %w", err)
 	}
 
-	// 6. Estimate Fee
-	feePerKb, err := estimateDynamicFeePerKbWithMode(context.Background(), client, int64(feeTargetBlocks), FeeMode(feeMode))
+	feePerKb, err := estimateDynamicFeePerKbWithMode(context.Background(), client, int64(feeTargetBlocks), FeeMode(feeMode), cfg)
 	if err != nil {
 		return fmt.Errorf("failed to determine dynamic fee: %w", err)
 	}
 
-	// Estimate size: 1 input, 2 outputs (op_return, change) ~ 250 bytes
 	estimatedSize := 250
-	requiredFee := btcutil.Amount(float64(feePerKb) * float64(estimatedSize) / 1000.0)
+	requiredFee := feePerKb * uint64(estimatedSize) / 1000
 
-	// 7. Coin Selection
-	// We need enough for fee (since output is 0 value OP_RETURN)
 	utxos, totalInput, changeScript, err := selectCoinsForTx(client, requiredFee)
 	if err != nil {
 		return err
 	}
 
-	// 8. Create the raw transaction.
 	tx := wire.NewMsgTx(wire.TxVersion)
 	for _, utxo := range utxos {
 		txHash, _ := chainhash.NewHashFromStr(utxo.TxID)
@@ -180,14 +140,11 @@ func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, f
 		tx.AddTxIn(txIn)
 	}
 
-	opReturnOutput := wire.NewTxOut(0, opReturnScript)
 	changeAmount := totalInput - requiredFee
-	changeOutput := wire.NewTxOut(int64(changeAmount), changeScript)
 
-	tx.AddTxOut(opReturnOutput)
-	tx.AddTxOut(changeOutput)
+	tx.AddTxOut(wire.NewTxOut(0, opReturnScript))
+	tx.AddTxOut(wire.NewTxOut(int64(changeAmount), changeScript))
 
-	// 9. Sign and broadcast the transaction.
 	signedTx, complete, err := client.SignRawTransactionWithWallet(tx)
 	if err != nil {
 		return fmt.Errorf("error signing transaction: %w", err)
@@ -200,12 +157,11 @@ func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, f
 		return fmt.Errorf("error sending transaction: %w", err)
 	}
 
-	log.Printf("Successfully broadcasted announcement transaction: %s\n", txHash.String())
+	log.Printf("Successfully broadcasted announcement transaction: %s\n", txHash)
 	return nil
 }
 
-// AnnounceHeartbeat broadcasts provider availability flags for discovery freshness.
-func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags uint8, addressType string) error {
+func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags uint8, addressType string, cfg FeeConfig) error {
 	payload, err := protocol.EncodeHeartbeatPayload(pubKey, flags)
 	if err != nil {
 		return fmt.Errorf("error encoding heartbeat payload: %w", err)
@@ -215,11 +171,11 @@ func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags 
 		return fmt.Errorf("error creating OP_RETURN script: %w", err)
 	}
 
-	feePerKb, err := estimateDynamicFeePerKb(context.Background(), client, 6)
+	feePerKb, err := estimateDynamicFeePerKb(context.Background(), client, 6, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to determine dynamic fee: %w", err)
 	}
-	requiredFee := btcutil.Amount(float64(feePerKb) * 250.0 / 1000.0)
+	requiredFee := feePerKb * 250 / 1000
 	utxos, totalInput, changeScript, err := selectCoinsForTx(client, requiredFee)
 	if err != nil {
 		return err
@@ -242,12 +198,11 @@ func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags 
 	if err != nil {
 		return fmt.Errorf("error sending transaction: %w", err)
 	}
-	log.Printf("Successfully broadcasted provider heartbeat transaction: %s\n", txHash.String())
+	log.Printf("Successfully broadcasted provider heartbeat transaction: %s\n", txHash)
 	return nil
 }
 
-// AnnouncePriceUpdate broadcasts a lightweight transaction to update the provider's price.
-func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newPrice uint64, feeTargetBlocks int, feeMode string, addressType string) error {
+func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newPrice uint64, feeTargetBlocks int, feeMode string, addressType string, cfg FeeConfig) error {
 	payload, err := protocol.EncodePriceUpdatePayload(pubKey, newPrice)
 	if err != nil {
 		return fmt.Errorf("error encoding price update payload: %w", err)
@@ -258,14 +213,13 @@ func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newP
 		return fmt.Errorf("error creating OP_RETURN script: %w", err)
 	}
 
-	// Estimate Fee
-	feePerKb, err := estimateDynamicFeePerKbWithMode(context.Background(), client, int64(feeTargetBlocks), FeeMode(feeMode))
+	feePerKb, err := estimateDynamicFeePerKbWithMode(context.Background(), client, int64(feeTargetBlocks), FeeMode(feeMode), cfg)
 	if err != nil {
 		return fmt.Errorf("failed to determine dynamic fee: %w", err)
 	}
 
 	estimatedSize := 250
-	requiredFee := btcutil.Amount(float64(feePerKb) * float64(estimatedSize) / 1000.0)
+	requiredFee := feePerKb * uint64(estimatedSize) / 1000
 
 	utxos, totalInput, changeScript, err := selectCoinsForTx(client, requiredFee)
 	if err != nil {
@@ -286,7 +240,6 @@ func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newP
 	tx.AddTxOut(opReturnOutput)
 	tx.AddTxOut(changeOutput)
 
-	// Sign and broadcast.
 	signedTx, complete, err := client.SignRawTransactionWithWallet(tx)
 	if err != nil || !complete {
 		return fmt.Errorf("error signing transaction: %w", err)
@@ -297,12 +250,11 @@ func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newP
 		return fmt.Errorf("error sending transaction: %w", err)
 	}
 
-	log.Printf("Successfully broadcasted price update transaction: %s\n", txHash.String())
+	log.Printf("Successfully broadcasted price update transaction: %s\n", txHash)
 	return nil
 }
 
-// AnnounceRating broadcasts a reputation/rating for a provider on the blockchain.
-func AnnounceRating(client *rpcclient.Client, providerPubKey *btcec.PublicKey, clientPrivKey *btcec.PrivateKey, score uint8, source string, feeTargetBlocks int, feeMode string, addressType string) error {
+func AnnounceRating(client *rpcclient.Client, providerPubKey *btcec.PublicKey, clientPrivKey *btcec.PrivateKey, score uint8, source string, feeTargetBlocks int, feeMode string, addressType string, cfg FeeConfig) error {
 	repPayload := &protocol.ReputationPayload{
 		SubjectPublicKey: providerPubKey,
 		Score:            score,
@@ -331,12 +283,12 @@ func AnnounceRating(client *rpcclient.Client, providerPubKey *btcec.PublicKey, c
 		return fmt.Errorf("error creating OP_RETURN script: %w", err)
 	}
 
-	feePerKb, err := estimateDynamicFeePerKbWithMode(context.Background(), client, int64(feeTargetBlocks), FeeMode(feeMode))
+	feePerKb, err := estimateDynamicFeePerKbWithMode(context.Background(), client, int64(feeTargetBlocks), FeeMode(feeMode), cfg)
 	if err != nil {
 		return fmt.Errorf("failed to determine dynamic fee: %w", err)
 	}
 
-	requiredFee := btcutil.Amount(float64(feePerKb) * 250.0 / 1000.0)
+	requiredFee := feePerKb * 250 / 1000
 
 	utxos, totalInput, changeScript, err := selectCoinsForTx(client, requiredFee)
 	if err != nil {
@@ -365,12 +317,10 @@ func AnnounceRating(client *rpcclient.Client, providerPubKey *btcec.PublicKey, c
 		return fmt.Errorf("error sending transaction: %w", err)
 	}
 
-	log.Printf("Successfully broadcasted rating transaction: %s (provider=%s, score=%d)\n", txHash.String(), hex.EncodeToString(providerPubKey.SerializeCompressed()), score)
+	log.Printf("Successfully broadcasted rating transaction: %s (provider=%s, score=%d)\n", txHash, hex.EncodeToString(providerPubKey.SerializeCompressed()), score)
 	return nil
 }
 
-// StartEchoServer starts a simple UDP echo server on the given port.
-// This is used by clients to measure latency. It's a blocking function.
 func StartEchoServer(ctx context.Context, port int) error {
 	addr := net.UDPAddr{
 		Port: port,
@@ -388,7 +338,7 @@ func StartEchoServer(ctx context.Context, port int) error {
 		conn.Close()
 	}()
 
-	buf := make([]byte, 128) // Small buffer is fine for echo
+	buf := make([]byte, 128)
 	for {
 		n, remoteaddr, err := conn.ReadFromUDP(buf)
 		if err != nil {
@@ -408,28 +358,24 @@ func StartEchoServer(ctx context.Context, port int) error {
 	}
 }
 
-// PaymentMonitorCfg holds configuration for the payment monitor to interpret payments.
 type PaymentMonitorCfg struct {
 	Price                 uint64
 	PricingMethod         string
 	TimeUnitSecs          uint32
 	DataUnitBytes         uint32
 	MaxSessionSecs        int
-	RequiredConfirmations int // Minimum confirmations before authorizing peer (default: 1)
+	RequiredConfirmations int
 }
 
-// MonitorPayments checks for incoming transactions to the wallet.
-// It polls the blockchain periodically for new payments.
 func MonitorPayments(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, pmCfg PaymentMonitorCfg, pollingInterval time.Duration) {
-	// Start tracking from the current best block to avoid listing old transactions.
-	var lastBlockHash *chainhash.Hash
+	var lastBlockHash string
 	payments := newPaymentTracker()
 
 	info, err := withRetry(ctx, "GetBlockChainInfo", 5, 1*time.Second, func() (*btcjson.GetBlockChainInfoResult, error) {
 		return client.GetBlockChainInfo()
 	})
 	if err == nil {
-		lastBlockHash, _ = chainhash.NewHashFromStr(info.BestBlockHash)
+		lastBlockHash = info.BestBlockHash
 	} else {
 		log.Printf("Warning: could not initialize monitor from best block: %v", err)
 	}
@@ -438,8 +384,7 @@ func MonitorPayments(ctx context.Context, client *rpcclient.Client, authManager 
 	runPaymentMonitorPolling(ctx, client, authManager, pmCfg, lastBlockHash, payments, pollingInterval)
 }
 
-// runPaymentMonitorPolling is a fallback for when block notifications are not available.
-func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, pmCfg PaymentMonitorCfg, lastBlockHash *chainhash.Hash, payments *paymentTracker, interval time.Duration) {
+func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, authManager *auth.AuthManager, pmCfg PaymentMonitorCfg, lastBlockHash string, payments *paymentTracker, interval time.Duration) {
 	if interval <= 0 {
 		interval = 1 * time.Minute
 	}
@@ -451,7 +396,11 @@ func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, aut
 			return
 		case <-ticker.C:
 			result, err := withRetry(ctx, "ListSinceBlock", 5, 1*time.Second, func() (*btcjson.ListSinceBlockResult, error) {
-				return client.ListSinceBlock(lastBlockHash)
+				var lastBlock *chainhash.Hash
+				if lastBlockHash != "" {
+					lastBlock, _ = chainhash.NewHashFromStr(lastBlockHash)
+				}
+				return client.ListSinceBlock(lastBlock)
 			})
 			if err != nil {
 				log.Printf("Error checking payments (polling): %v", err)
@@ -460,33 +409,24 @@ func runPaymentMonitorPolling(ctx context.Context, client *rpcclient.Client, aut
 			for _, tx := range result.Transactions {
 				processTxForPayment(ctx, client, tx.TxID, tx.Amount, tx.Confirmations, authManager, pmCfg, payments)
 			}
-			if hash, err := chainhash.NewHashFromStr(result.LastBlock); err == nil {
-				lastBlockHash = hash
-			}
+			lastBlockHash = result.LastBlock
 		}
 	}
 }
 
-// processBlockForPayments iterates through transactions in a block and processes them.
 func processBlockForPayments(ctx context.Context, client *rpcclient.Client, block *btcjson.GetBlockVerboseTxResult, authManager *auth.AuthManager, pmCfg PaymentMonitorCfg, payments *paymentTracker) {
 	for _, tx := range block.Tx {
-		// We need to check if the transaction involves our wallet.
-		// GetRawTransactionVerbose doesn't tell us this directly.
-		// A more robust way is to use `listsinceblock` as in the polling method,
-		// or to use `walletnotify` if available.
-		// For simplicity, we'll just re-fetch the tx to see if it's a wallet tx.
 		txHash, err := chainhash.NewHashFromStr(tx.Txid)
 		if err != nil {
 			continue
 		}
 		txDetails, err := client.GetTransaction(txHash)
-		if err == nil && txDetails.Amount > 0 { // A simple check for received payments
+		if err == nil && txDetails.Amount > 0 {
 			processTxForPayment(ctx, client, tx.Txid, txDetails.Amount, int64(txDetails.Confirmations), authManager, pmCfg, payments)
 		}
 	}
 }
 
-// GetProviderAddresses returns all addresses controlled by the wallet that have UTXOs.
 func GetProviderAddresses(client *rpcclient.Client) ([]string, error) {
 	unspent, err := client.ListUnspent()
 	if err != nil {
@@ -500,7 +440,6 @@ func GetProviderAddresses(client *rpcclient.Client) ([]string, error) {
 			seen[u.Address] = true
 		}
 	}
-	// Fallback to change address if list is empty
 	if len(addresses) == 0 {
 		addr, err := client.GetRawChangeAddress("")
 		if err == nil {
@@ -510,9 +449,6 @@ func GetProviderAddresses(client *rpcclient.Client) ([]string, error) {
 	return addresses, nil
 }
 
-// processTxForPayment checks a single transaction for a valid payment payload.
-// It verifies the actual amount paid to the provider's address (not just wallet balance change)
-// and ensures it meets or exceeds the service price. It then authorizes the peer based on pricing model.
 func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid string, amount float64, confirmations int64, authManager *auth.AuthManager, pmCfg PaymentMonitorCfg, payments *paymentTracker) {
 	if confirmations < 0 {
 		payments.handleRemovedTx(txid, authManager)
@@ -521,7 +457,7 @@ func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid str
 
 	minConfirmations := pmCfg.RequiredConfirmations
 	if minConfirmations <= 0 {
-		minConfirmations = 1 // Default to 1 confirmation for security
+		minConfirmations = 1
 	}
 	if confirmations < int64(minConfirmations) {
 		log.Printf("Payment %s: waiting for confirmations (%d/%d)", txid, confirmations, minConfirmations)
@@ -556,7 +492,7 @@ func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid str
 		}
 		addr := vout.ScriptPubKey.Addresses[0]
 		if addressSet[addr] {
-			totalToProvider += uint64(vout.Value * 1e8)
+			totalToProvider += uint64(math.Round(vout.Value * 1e8))
 		}
 
 		pkScript, err := hex.DecodeString(vout.ScriptPubKey.Hex)
@@ -583,13 +519,11 @@ func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid str
 		return
 	}
 
-	// Compute authorization based on pricing method
 	var duration time.Duration
 	var dataQuota uint64
 
 	switch strings.ToLower(pmCfg.PricingMethod) {
 	case "session", "":
-		// Default: 24 hours, capped by max session duration if set
 		duration = 24 * time.Hour
 		if pmCfg.MaxSessionSecs > 0 {
 			maxDur := time.Duration(pmCfg.MaxSessionSecs) * time.Second
@@ -598,7 +532,6 @@ func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid str
 			}
 		}
 	case "time":
-		// Payment amount buys time units
 		if pmCfg.Price == 0 {
 			log.Printf("Payment %s: price is zero, cannot calculate time units", txid)
 			return
@@ -610,14 +543,12 @@ func processTxForPayment(ctx context.Context, client *rpcclient.Client, txid str
 		}
 		duration = time.Duration(secs) * time.Second
 	case "data":
-		// Payment amount buys data units
 		if pmCfg.Price == 0 {
 			log.Printf("Payment %s: price is zero, cannot calculate data units", txid)
 			return
 		}
 		units := totalToProvider / pmCfg.Price
 		dataQuota = units * uint64(pmCfg.DataUnitBytes)
-		// For data, we may still set a time limit (max session duration) or default 24h
 		if pmCfg.MaxSessionSecs > 0 {
 			duration = time.Duration(pmCfg.MaxSessionSecs) * time.Second
 		} else {

@@ -24,13 +24,19 @@ type Config struct {
 }
 
 type RPCConfig struct {
-	Host        string `json:"host"`
-	User        string `json:"user"`
-	Pass        string `json:"pass"`
-	EnableTLS   bool   `json:"enable_tls"`   // Enable TLS for RPC connections (recommended for production)
-	Network     string `json:"network"`      // "mainnet", "testnet", "regtest", "simnet", or "auto"
-	TokenSymbol string `json:"token_symbol"` // Display symbol for amounts (e.g., "BTC", "LTC", "ORDEX")
-	CookieFile  string `json:"cookie_file"`  // Path to RPC cookie file (optional, auto-detected if empty)
+	Host            string `json:"host"`
+	User            string `json:"user"`
+	Pass            string `json:"pass"`
+	EnableTLS       bool   `json:"enable_tls"`        // Enable TLS for RPC connections (recommended for production)
+	Network         string `json:"network"`           // "mainnet", "testnet", "regtest", "simnet", or "auto"
+	TokenSymbol     string `json:"token_symbol"`      // Display symbol for amounts (e.g., "BTC", "LTC", "ORDEX")
+	CookieFile      string `json:"cookie_file"`       // Path to RPC cookie file (optional, auto-detected if empty)
+	CookieDir       string `json:"cookie_dir"`        // Blockchain data directory for cookie auto-detection (e.g., ".ordexcoin")
+	CookieDirRegTx  string `json:"cookie_dir_regtx"`  // Subdirectory for regtest cookie (e.g., "regtest")
+	CookieDirTest3  string `json:"cookie_dir_test3"`  // Subdirectory for testnet3 cookie (e.g., "testnet3")
+	CookieDirSignet string `json:"cookie_dir_signet"` // Subdirectory for signet cookie (e.g., "signet")
+	MinRelayFee     uint64 `json:"min_relay_fee"`     // Minimum relay fee in base units (0 = auto)
+	DefaultFeeKb    uint64 `json:"default_fee_kb"`    // Default fee per KB in base units when estimation fails (0 = 1000)
 }
 
 type LoggingConfig struct {
@@ -284,6 +290,15 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.Client.MaxParallelTunnels <= 0 {
 		cfg.Client.MaxParallelTunnels = 1
 	}
+	if cfg.RPC.TokenSymbol == "" {
+		cfg.RPC.TokenSymbol = "OXC"
+	}
+	if cfg.RPC.MinRelayFee == 0 {
+		cfg.RPC.MinRelayFee = 1000
+	}
+	if cfg.RPC.DefaultFeeKb == 0 {
+		cfg.RPC.DefaultFeeKb = 1000
+	}
 
 	if cfg.Provider.HealthCheckInterval == "" {
 		cfg.Provider.HealthCheckInterval = "30s"
@@ -326,12 +341,15 @@ func GenerateDefaultConfig(path string) error {
 
 	cfg := Config{
 		RPC: RPCConfig{
-			Host:        "localhost:25173",
-			User:        "rpcuser",
-			Pass:        rpcPass,
-			EnableTLS:   false,
-			Network:     "mainnet",
-			TokenSymbol: "OXC",
+			Host:            "localhost:25173",
+			User:            "rpcuser",
+			Pass:            rpcPass,
+			EnableTLS:       false,
+			Network:         "mainnet",
+			CookieDir:       ".ordexcoin",
+			CookieDirRegTx:  "regtest",
+			CookieDirTest3:  "testnet3",
+			CookieDirSignet: "signet",
 		},
 		Logging: LoggingConfig{
 			Format: "text",

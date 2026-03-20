@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"blockchain-vpn/internal/blockchain"
 	"blockchain-vpn/internal/config"
 	"github.com/btcsuite/btcd/btcec/v2"
 )
@@ -26,7 +27,7 @@ func TestSpendingManager_NewSpendingManager(t *testing.T) {
 		t.Fatalf("NewPrivateKey: %v", err)
 	}
 
-	sm := NewSpendingManager(cfg, nil, nil, privKey, privKey.PubKey(), "p2pkh")
+	sm := NewSpendingManager(cfg, nil, "", privKey, privKey.PubKey(), "p2pkh", blockchain.NewFeeConfig(0, 0))
 
 	if sm == nil {
 		t.Fatal("NewSpendingManager returned nil")
@@ -79,7 +80,7 @@ func TestSpendingManager_RecordPayment(t *testing.T) {
 		MaxSessionSpendingSats: 500,
 	}
 
-	sm := NewSpendingManager(cfg, nil, nil, privKey, privKey.PubKey(), "p2pkh")
+	sm := NewSpendingManager(cfg, nil, "", privKey, privKey.PubKey(), "p2pkh", blockchain.NewFeeConfig(0, 0))
 	// Pre-seed balance to avoid balance limit; we're testing spending limits
 	sm.balance = 10000
 
@@ -104,7 +105,7 @@ func TestSpendingManager_RecordPayment(t *testing.T) {
 
 	// Test session spending limit
 	t.Run("session spending limit enforced", func(t *testing.T) {
-		sm2 := NewSpendingManager(cfg, nil, nil, privKey, privKey.PubKey(), "p2pkh")
+		sm2 := NewSpendingManager(cfg, nil, "", privKey, privKey.PubKey(), "p2pkh", blockchain.NewFeeConfig(0, 0))
 		sm2.balance = 10000   // pre-seed
 		sm2.SetSessionStart() // captures current spentToday (0)
 		// sessionStartSpent = spentToday (0). We try to record 600 > maxSessionSpend=500
@@ -138,7 +139,7 @@ func TestSpendingManager_ShouldDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPrivateKey: %v", err)
 	}
-	sm := NewSpendingManager(cfg, nil, nil, privKey, privKey.PubKey(), "p2pkh")
+	sm := NewSpendingManager(cfg, nil, "", privKey, privKey.PubKey(), "p2pkh", blockchain.NewFeeConfig(0, 0))
 	sm.balance = 10000 // pre-seed to allow payments
 
 	// Initially should not disconnect
@@ -168,7 +169,7 @@ func TestSpendingManager_ShouldDisconnect(t *testing.T) {
 		SpendingLimitSats:     1000,
 		AutoDisconnectOnLimit: false,
 	}
-	sm2 := NewSpendingManager(cfg2, nil, nil, privKey, privKey.PubKey(), "p2pkh")
+	sm2 := NewSpendingManager(cfg2, nil, "", privKey, privKey.PubKey(), "p2pkh", blockchain.NewFeeConfig(0, 0))
 	sm2.balance = 10000
 	if err := sm2.RecordPayment(1000); err != nil {
 		t.Errorf("RecordPayment(1000) = %v", err)
@@ -188,7 +189,7 @@ func TestSpendingManager_GetRemainingBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPrivateKey: %v", err)
 	}
-	sm := NewSpendingManager(cfg, nil, nil, privKey, privKey.PubKey(), "p2pkh")
+	sm := NewSpendingManager(cfg, nil, "", privKey, privKey.PubKey(), "p2pkh", blockchain.NewFeeConfig(0, 0))
 	sm.balance = 10000 // pre-seed
 
 	// Initially full budget
@@ -212,7 +213,7 @@ func TestSpendingManager_GetRemainingBudget(t *testing.T) {
 
 	// With limit disabled, should be unlimited (max uint64)
 	cfg2 := &config.ClientConfig{SpendingLimitEnabled: false}
-	sm2 := NewSpendingManager(cfg2, nil, nil, privKey, privKey.PubKey(), "p2pkh")
+	sm2 := NewSpendingManager(cfg2, nil, "", privKey, privKey.PubKey(), "p2pkh", blockchain.NewFeeConfig(0, 0))
 	sm2.balance = 10000
 	if got := sm2.GetRemainingBudget(); got != ^uint64(0) {
 		t.Errorf("GetRemainingBudget (unlimited) = %d, want max uint64", got)
@@ -226,7 +227,7 @@ func TestSpendingManager_SetSessionStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPrivateKey: %v", err)
 	}
-	sm := NewSpendingManager(cfg, nil, nil, privKey, privKey.PubKey(), "p2pkh")
+	sm := NewSpendingManager(cfg, nil, "", privKey, privKey.PubKey(), "p2pkh", blockchain.NewFeeConfig(0, 0))
 	sm.balance = 10000 // pre-seed
 
 	if err := sm.RecordPayment(100); err != nil {
@@ -252,7 +253,7 @@ func TestSpendingManager_AddCredits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPrivateKey: %v", err)
 	}
-	sm := NewSpendingManager(cfg, nil, nil, privKey, privKey.PubKey(), "p2pkh")
+	sm := NewSpendingManager(cfg, nil, "", privKey, privKey.PubKey(), "p2pkh", blockchain.NewFeeConfig(0, 0))
 
 	sm.AddCredits(500)
 	if sm.balance != 500 {
@@ -270,7 +271,7 @@ func TestSpendingManager_Stop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPrivateKey: %v", err)
 	}
-	sm := NewSpendingManager(&config.ClientConfig{}, nil, nil, privKey, privKey.PubKey(), "p2pkh")
+	sm := NewSpendingManager(&config.ClientConfig{}, nil, "", privKey, privKey.PubKey(), "p2pkh", blockchain.NewFeeConfig(0, 0))
 
 	sm.Stop()
 }
@@ -281,7 +282,7 @@ func TestSpendingManager_GetBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPrivateKey: %v", err)
 	}
-	sm := NewSpendingManager(cfg, nil, nil, privKey, privKey.PubKey(), "p2pkh")
+	sm := NewSpendingManager(cfg, nil, "", privKey, privKey.PubKey(), "p2pkh", blockchain.NewFeeConfig(0, 0))
 
 	if got := sm.GetBalance(); got != 0 {
 		t.Errorf("GetBalance() = %d, want 0", got)
@@ -304,7 +305,7 @@ func TestSpendingManager_PaymentBeforeBalanceCheck(t *testing.T) {
 		AutoRechargeEnabled:  false,
 		SpendingLimitEnabled: false, // no spending limit, only balance check
 	}
-	sm := NewSpendingManager(cfg, nil, nil, privKey, privKey.PubKey(), "p2pkh")
+	sm := NewSpendingManager(cfg, nil, "", privKey, privKey.PubKey(), "p2pkh", blockchain.NewFeeConfig(0, 0))
 	sm.balance = 50
 
 	// Payment of 100 exceeds balance

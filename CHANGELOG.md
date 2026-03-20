@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.1] - 2026-03-20
+
+### Refactoring: Blockchain-Agnostic Public API
+
+The blockchain package public API has been refactored to eliminate Bitcoin/btcd-specific type leakage, making the code more portable to any UTXO-based blockchain.
+
+#### Internal Types Removed from Public API
+- Replaced `btcutil.Amount` with `uint64` throughout (blockchain amounts are always base units)
+- Replaced `btcutil.Address` with `string` in function signatures (`SendPayment`, `GetProviderPaymentAddress`)
+- Replaced `*chainhash.Hash` with `string` for transaction hashes
+- Removed `*chaincfg.Params` from `GetProviderPaymentAddress` (no longer needed)
+- `FeeConfig` struct replaces ad-hoc fee parameter passing
+
+#### New Configuration Fields (RPCConfig)
+- `CookieDir` — blockchain data directory for cookie auto-detection (default: `.ordexcoin`)
+- `CookieDirRegTx` — subdirectory for regtest cookie (default: `regtest`)
+- `CookieDirTest3` — subdirectory for testnet3 cookie (default: `testnet3`)
+- `CookieDirSignet` — subdirectory for signet cookie (default: `signet`)
+- `MinRelayFee` — minimum relay fee in base units (default: 1000)
+- `DefaultFeeKb` — default fee per KB when estimation fails (default: 1000)
+
+#### Fee Calculation
+- Fee estimation (`estimateDynamicFeePerKb`) now returns `uint64` (sats/KB) instead of `btcutil.Amount`
+- All announcement and payment functions now accept a `FeeConfig` parameter for configurable fee floors
+- Fee rate conversion: `BTC_per_KB * 1e5 = sats/KB` (correct for Bitcoin Core RPC `estimatesmartfee` output)
+
+#### Remaining btcd Dependencies
+All remaining btcd imports (`wire`, `txscript`, `btcjson`, `rpcclient`, `btcec`, `chainhash`) are now confined to the internal implementation layer. The public API of `internal/blockchain` uses only plain Go types, making future blockchain support straightforward.
+
+#### Updated Function Signatures
+- `AnnounceService(client, endpoint, feeTarget, feeMode, addressType, feeConfig)`
+- `AnnounceHeartbeat(client, pubKey, flags, addressType, feeConfig)`
+- `AnnouncePriceUpdate(client, pubKey, price, feeTarget, feeMode, addressType, feeConfig)`
+- `AnnounceRating(client, providerPubKey, clientPrivKey, score, source, feeTarget, feeMode, addressType, feeConfig)`
+- `SendPayment(client, providerAddress, amount, clientPubKey, addressType, feeConfig)` — providerAddress is now `string`
+- `GetProviderPaymentAddress(client, txid)` — returns `string`, no longer needs chainParams
+- `WaitForConfirmations(client, txHash, confirmations, interval)` — txHash is now `string`
+- `NewSpendingManager(cfg, client, providerAddr, localKey, providerPubKey, addressType, feeConfig)` — providerAddr is now `string`
+
 ## [0.8.0] - 2026-03-20
 
 ### Breaking Changes

@@ -217,13 +217,9 @@ func TestSendRawTransactionMockRPC(t *testing.T) {
 		t.Fatalf("sendRawTransaction failed: %v", err)
 	}
 
-	if txHash == nil {
-		t.Fatal("expected non-nil txHash")
-	}
-
 	expected := "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234"
-	if txHash.String() != expected {
-		t.Errorf("txHash mismatch: got %s, want %s", txHash.String(), expected)
+	if txHash != expected {
+		t.Errorf("txHash mismatch: got %s, want %s", txHash, expected)
 	}
 
 	if receivedTxHex == "" {
@@ -254,8 +250,8 @@ func TestSendRawTransactionRPCError(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for RPC error response")
 	}
-	if txHash != nil {
-		t.Error("expected nil txHash on error")
+	if txHash != "" {
+		t.Errorf("expected empty txHash on error, got %q", txHash)
 	}
 }
 

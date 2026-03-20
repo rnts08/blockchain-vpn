@@ -7,13 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcjson"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
@@ -44,90 +43,76 @@ func GetPaymentVerification(advertisedPrice uint64, amountSatoshis uint64) (uint
 	return amountSatoshis, nil
 }
 
-// GetProviderPaymentAddress inspects the announcement transaction to find the
-// address that funded it. This is considered the provider's payment address.
-// If params is nil (unknown blockchain), returns the raw address string as a
-// stringAddress wrapper that implements btcutil.Address.
-func GetProviderPaymentAddress(client *rpcclient.Client, announcementTxID string, params *chaincfg.Params) (btcutil.Address, error) {
+func GetProviderPaymentAddress(client *rpcclient.Client, announcementTxID string) (string, error) {
 	txHash, err := chainhash.NewHashFromStr(announcementTxID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid announcement txid: %w", err)
+		return "", fmt.Errorf("invalid announcement txid: %w", err)
 	}
 
-	// Get the announcement transaction itself.
 	txVerbose, err := withRetry(context.Background(), "GetRawTransactionVerbose(announcement)", 4, 500*time.Millisecond, func() (*btcjson.TxRawResult, error) {
 		return client.GetRawTransactionVerbose(txHash)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not get raw announcement transaction: %w", err)
+		return "", fmt.Errorf("could not get raw announcement transaction: %w", err)
 	}
 
 	if len(txVerbose.Vin) == 0 {
-		return nil, fmt.Errorf("announcement transaction has no inputs")
+		return "", fmt.Errorf("announcement transaction has no inputs")
 	}
 
-	// Use the first input to find the source address.
 	vin := txVerbose.Vin[0]
 	if vin.IsCoinBase() {
-		return nil, fmt.Errorf("announcement transaction input is a coinbase, cannot determine address")
+		return "", fmt.Errorf("announcement transaction input is a coinbase, cannot determine address")
 	}
 
-	// Get the transaction that the announcement is spending from.
 	prevTxHash, err := chainhash.NewHashFromStr(vin.Txid)
 	if err != nil {
-		return nil, fmt.Errorf("invalid previous txid: %w", err)
+		return "", fmt.Errorf("invalid previous txid: %w", err)
 	}
 	prevTxVerbose, err := withRetry(context.Background(), "GetRawTransactionVerbose(previous)", 4, 500*time.Millisecond, func() (*btcjson.TxRawResult, error) {
 		return client.GetRawTransactionVerbose(prevTxHash)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not get raw previous transaction: %w", err)
+		return "", fmt.Errorf("could not get raw previous transaction: %w", err)
 	}
 
 	if int(vin.Vout) >= len(prevTxVerbose.Vout) {
-		return nil, fmt.Errorf("announcement transaction vin refers to out-of-bounds vout")
+		return "", fmt.Errorf("announcement transaction vin refers to out-of-bounds vout")
 	}
 
-	// Get the output that was spent.
 	spentVout := prevTxVerbose.Vout[vin.Vout]
 	if len(spentVout.ScriptPubKey.Addresses) == 0 {
-		return nil, fmt.Errorf("previous transaction output has no addresses")
+		return "", fmt.Errorf("previous transaction output has no addresses")
 	}
 
-	// The first address is the provider's payment address.
-	rawAddr := spentVout.ScriptPubKey.Addresses[0]
-	if params == nil {
-		// Unknown blockchain - return raw address string wrapped as stringAddress
-		return newStringAddress(rawAddr), nil
+	return spentVout.ScriptPubKey.Addresses[0], nil
+}
+
+type txBroadcaster interface {
+	RawRequest(method string, params []json.RawMessage) (json.RawMessage, error)
+}
+
+func sendRawTransaction(client txBroadcaster, tx *wire.MsgTx) (string, error) {
+	var buf bytes.Buffer
+	if err := tx.Serialize(&buf); err != nil {
+		return "", fmt.Errorf("failed to serialize transaction: %w", err)
 	}
-	addr, err := btcutil.DecodeAddress(rawAddr, params)
+	txHex := hex.EncodeToString(buf.Bytes())
+
+	params := []json.RawMessage{json.RawMessage(`"` + txHex + `"`)}
+	result, err := client.RawRequest("sendrawtransaction", params)
 	if err != nil {
-		return nil, fmt.Errorf("could not decode provider address: %w", err)
+		return "", fmt.Errorf("sendrawtransaction failed: %w", err)
 	}
-	return addr, nil
+
+	var txidStr string
+	if err := json.Unmarshal(result, &txidStr); err != nil {
+		return "", fmt.Errorf("failed to parse txid from sendrawtransaction response: %w", err)
+	}
+	return txidStr, nil
 }
 
-// stringAddress wraps a raw address string to implement btcutil.Address interface.
-// This is used when chain params are unknown (blockchain-agnostic mode).
-type stringAddress string
-
-func (s stringAddress) String() string                 { return string(s) }
-func (s stringAddress) EncodeAddress() string          { return string(s) }
-func (s stringAddress) ScriptAddress() []byte          { return nil }
-func (s stringAddress) IsValid() bool                  { return len(s) > 0 }
-func (s stringAddress) IsForNet(*chaincfg.Params) bool { return true }
-
-// newStringAddress creates a stringAddress wrapper from a raw address string.
-func newStringAddress(addr string) btcutil.Address {
-	return stringAddress(addr)
-}
-
-// selectCoins selects a set of unspent transaction outputs (UTXOs) that sum up
-// to at least the target amount. It returns the selected UTXOs, the total value,
-// and an error if insufficient funds are found.
-func selectCoins(client *rpcclient.Client, targetAmount btcutil.Amount) ([]btcjson.ListUnspentResult, btcutil.Amount, error) {
-	// List all unspent outputs.
-	// In a real application, you might want to filter by min/max confirmations.
+func selectCoins(client *rpcclient.Client, targetAmount uint64) ([]btcjson.ListUnspentResult, uint64, error) {
 	unspent, err := client.ListUnspent()
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list unspent outputs: %w", err)
@@ -136,18 +121,14 @@ func selectCoins(client *rpcclient.Client, targetAmount btcutil.Amount) ([]btcjs
 	return deterministicSelectCoins(unspent, targetAmount)
 }
 
-// deterministicSelectCoins chooses coins with a deterministic strategy:
-// 1) single-UTXO exact match
-// 2) smallest single UTXO that covers target
-// 3) ascending accumulation (smallest-first) until target
-func deterministicSelectCoins(unspent []btcjson.ListUnspentResult, targetAmount btcutil.Amount) ([]btcjson.ListUnspentResult, btcutil.Amount, error) {
+func deterministicSelectCoins(unspent []btcjson.ListUnspentResult, targetAmount uint64) ([]btcjson.ListUnspentResult, uint64, error) {
 	type entry struct {
 		utxo   btcjson.ListUnspentResult
-		amount btcutil.Amount
+		amount uint64
 	}
 	entries := make([]entry, 0, len(unspent))
 	for _, u := range unspent {
-		amount, _ := btcutil.NewAmount(u.Amount)
+		amount := uint64(math.Round(u.Amount * 1e8))
 		entries = append(entries, entry{utxo: u, amount: amount})
 	}
 
@@ -161,23 +142,20 @@ func deterministicSelectCoins(unspent []btcjson.ListUnspentResult, targetAmount 
 		return entries[i].utxo.Vout < entries[j].utxo.Vout
 	})
 
-	// Prefer exact match.
 	for _, e := range entries {
 		if e.amount == targetAmount {
 			return []btcjson.ListUnspentResult{e.utxo}, e.amount, nil
 		}
 	}
 
-	// Then smallest single coin over target.
 	for _, e := range entries {
 		if e.amount > targetAmount {
 			return []btcjson.ListUnspentResult{e.utxo}, e.amount, nil
 		}
 	}
 
-	// Finally accumulate largest first to minimize number of inputs and fee impact.
 	var selected []btcjson.ListUnspentResult
-	var total btcutil.Amount
+	var total uint64
 	for i := len(entries) - 1; i >= 0; i-- {
 		e := entries[i]
 		selected = append(selected, e.utxo)
@@ -187,13 +165,10 @@ func deterministicSelectCoins(unspent []btcjson.ListUnspentResult, targetAmount 
 		}
 	}
 
-	return nil, 0, fmt.Errorf("insufficient funds: have %v, need %v", total, targetAmount)
+	return nil, 0, fmt.Errorf("insufficient funds: have %d, need %d", total, targetAmount)
 }
 
-// selectCoinsForTx selects UTXOs and returns the change script derived from the first UTXO.
-// This avoids calling GetRawChangeAddress and PayToAddrScript, which fail on custom chains
-// where the wallet address format is unknown to btcutil's chain params.
-func selectCoinsForTx(client *rpcclient.Client, targetAmount btcutil.Amount) ([]btcjson.ListUnspentResult, btcutil.Amount, []byte, error) {
+func selectCoinsForTx(client *rpcclient.Client, targetAmount uint64) ([]btcjson.ListUnspentResult, uint64, []byte, error) {
 	utxos, totalInput, err := selectCoins(client, targetAmount)
 	if err != nil {
 		return nil, 0, nil, err
@@ -208,116 +183,66 @@ func selectCoinsForTx(client *rpcclient.Client, targetAmount btcutil.Amount) ([]
 	return utxos, totalInput, changeScript, nil
 }
 
-// txBroadcaster is the interface for submitting raw transactions to a node.
-// Both *rpcclient.Client and test mocks implement this.
-type txBroadcaster interface {
-	RawRequest(method string, params []json.RawMessage) (json.RawMessage, error)
-}
-
-// sendRawTransaction broadcasts a signed transaction using raw JSON-RPC request.
-// This bypasses the btcd/rpcclient SendRawTransaction method which may have
-// incompatible parameter signatures on custom chains (e.g., OrdexCoin).
-func sendRawTransaction(client txBroadcaster, tx *wire.MsgTx) (*chainhash.Hash, error) {
-	var buf bytes.Buffer
-	if err := tx.Serialize(&buf); err != nil {
-		return nil, fmt.Errorf("failed to serialize transaction: %w", err)
-	}
-	txHex := hex.EncodeToString(buf.Bytes())
-
-	params := []json.RawMessage{json.RawMessage(`"` + txHex + `"`)}
-	result, err := client.RawRequest("sendrawtransaction", params)
-	if err != nil {
-		return nil, fmt.Errorf("sendrawtransaction failed: %w", err)
-	}
-
-	var txidStr string
-	if err := json.Unmarshal(result, &txidStr); err != nil {
-		return nil, fmt.Errorf("failed to parse txid from sendrawtransaction response: %w", err)
-	}
-	return chainhash.NewHashFromStr(txidStr)
-}
-
-// SendPayment sends the specified amount to the provider's address.
-func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amountSatoshis uint64, clientPubKey *btcec.PublicKey, addressType string) (*chainhash.Hash, error) {
-	// 1. Create the OP_RETURN script with the client's public key.
+func SendPayment(client *rpcclient.Client, providerAddress string, amountSatoshis uint64, clientPubKey *btcec.PublicKey, addressType string, cfg FeeConfig) (string, error) {
 	paymentPayload, err := protocol.EncodePaymentPayload(clientPubKey)
 	if err != nil {
-		return nil, fmt.Errorf("could not encode payment payload: %w", err)
+		return "", fmt.Errorf("could not encode payment payload: %w", err)
 	}
 	opReturnScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN).AddData(paymentPayload).Script()
 	if err != nil {
-		return nil, fmt.Errorf("could not create OP_RETURN script: %w", err)
+		return "", fmt.Errorf("could not create OP_RETURN script: %w", err)
 	}
 
-	// 2. Create the payment output to the provider.
-	providerScript, err := txscript.PayToAddrScript(providerAddress)
+	providerScript, err := hex.DecodeString(providerAddress)
 	if err != nil {
-		return nil, fmt.Errorf("could not create provider payment script: %w", err)
+		providerScript = []byte(providerAddress)
 	}
-	providerOutput := wire.NewTxOut(int64(amountSatoshis), providerScript)
 
-	// 3. Estimate Fee
-	// We estimate fee for a target of 6 blocks (approx 1 hour).
-	feePerKb, err := estimateDynamicFeePerKb(context.Background(), client, 6)
+	feePerKb, err := estimateDynamicFeePerKb(context.Background(), client, 6, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to determine dynamic fee: %w", err)
+		return "", fmt.Errorf("failed to determine dynamic fee: %w", err)
 	}
 
-	// Estimated transaction size (P2PKH input ~148 bytes, P2PKH output ~34 bytes, OP_RETURN ~40-50 bytes)
-	// We'll assume 1 input and 3 outputs (provider, op_return, change) for initial estimation.
-	// 148 + 34 + 50 + 34 + 10 (overhead) ~= 276 bytes.
-	// Let's be conservative and estimate 300 bytes per input/output set for coin selection.
 	estimatedSize := 300
-	requiredFee := btcutil.Amount(float64(feePerKb) * float64(estimatedSize) / 1000.0)
+	requiredFee := feePerKb * uint64(estimatedSize) / 1000
 
-	// 4. Coin Selection
-	targetAmount := btcutil.Amount(amountSatoshis) + requiredFee
+	targetAmount := amountSatoshis + requiredFee
 	utxos, totalInput, changeScript, err := selectCoinsForTx(client, targetAmount)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	// 5. Create Transaction Inputs
 	tx := wire.NewMsgTx(wire.TxVersion)
 	for _, utxo := range utxos {
 		txHash, err := chainhash.NewHashFromStr(utxo.TxID)
 		if err != nil {
-			return nil, fmt.Errorf("invalid txid %s: %w", utxo.TxID, err)
+			return "", fmt.Errorf("invalid txid %s: %w", utxo.TxID, err)
 		}
 		outPoint := wire.NewOutPoint(txHash, utxo.Vout)
 		txIn := wire.NewTxIn(outPoint, nil, nil)
 		tx.AddTxIn(txIn)
 	}
 
-	// 6. Create Outputs
-	opReturnOutput := wire.NewTxOut(0, opReturnScript)
-	tx.AddTxOut(providerOutput)
-	tx.AddTxOut(opReturnOutput)
+	tx.AddTxOut(wire.NewTxOut(int64(amountSatoshis), providerScript))
+	tx.AddTxOut(wire.NewTxOut(0, opReturnScript))
 
-	// 7. Calculate Change
-	// Recalculate fee based on actual transaction size (signed size approximation)
-	// We can't know exact signed size before signing, but we can approximate.
-	// Or we can just use the conservative estimate from before.
-	changeAmount := totalInput - btcutil.Amount(amountSatoshis) - requiredFee
-
+	changeAmount := totalInput - amountSatoshis - requiredFee
 	changeOutput := wire.NewTxOut(int64(changeAmount), changeScript)
 	tx.AddTxOut(changeOutput)
 
-	// 8. Sign and send.
 	signedTx, complete, err := client.SignRawTransactionWithWallet(tx)
 	if err != nil || !complete {
-		return nil, fmt.Errorf("failed to sign payment transaction: %w", err)
+		return "", fmt.Errorf("failed to sign payment transaction: %w", err)
 	}
 
 	txHash, err := sendRawTransaction(client, signedTx)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	// Record payment in history
 	record := history.PaymentRecord{
-		TxID:      txHash.String(),
-		Provider:  providerAddress.String(),
+		TxID:      txHash,
+		Provider:  providerAddress,
 		Amount:    amountSatoshis,
 		Timestamp: time.Now(),
 	}
@@ -328,14 +253,12 @@ func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amou
 	return txHash, nil
 }
 
-// WaitForConfirmations waits for a transaction to reach the specified number of confirmations.
-// It polls the blockchain and returns when the threshold is met or the context is cancelled.
-func WaitForConfirmations(ctx context.Context, client *rpcclient.Client, txHash *chainhash.Hash, requiredConfirmations int, pollInterval time.Duration) (int64, error) {
+func WaitForConfirmations(ctx context.Context, client *rpcclient.Client, txHash string, requiredConfirmations int, pollInterval time.Duration) (int64, error) {
 	if client == nil {
 		return 0, errors.New("client is nil")
 	}
-	if txHash == nil {
-		return 0, errors.New("txHash is nil")
+	if txHash == "" {
+		return 0, errors.New("txHash is empty")
 	}
 	if requiredConfirmations <= 0 {
 		requiredConfirmations = 1
@@ -347,12 +270,17 @@ func WaitForConfirmations(ctx context.Context, client *rpcclient.Client, txHash 
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
+	txHashObj, err := chainhash.NewHashFromStr(txHash)
+	if err != nil {
+		return 0, fmt.Errorf("invalid txHash: %w", err)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return 0, ctx.Err()
 		case <-ticker.C:
-			tx, err := client.GetTransaction(txHash)
+			tx, err := client.GetTransaction(txHashObj)
 			if err != nil {
 				continue
 			}

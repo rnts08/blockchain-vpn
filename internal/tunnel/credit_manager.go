@@ -11,7 +11,6 @@ import (
 	"blockchain-vpn/internal/config"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/rpcclient"
 )
 
@@ -40,15 +39,19 @@ type SpendingManager struct {
 	rechargeInterval time.Duration
 
 	client         *rpcclient.Client
-	providerAddr   btcutil.Address
+	providerAddr   string
 	localKey       *btcec.PrivateKey
 	providerPubKey *btcec.PublicKey
 	addressType    string
+	feeConfig      blockchain.FeeConfig
 	stopped        chan struct{}
 }
 
+// FeeConfig is an alias for blockchain.FeeConfig.
+type FeeConfig = blockchain.FeeConfig
+
 // NewSpendingManager creates a SpendingManager from client config.
-func NewSpendingManager(cfg *config.ClientConfig, client *rpcclient.Client, providerAddr btcutil.Address, localKey *btcec.PrivateKey, providerPubKey *btcec.PublicKey, addressType string) *SpendingManager {
+func NewSpendingManager(cfg *config.ClientConfig, client *rpcclient.Client, providerAddr string, localKey *btcec.PrivateKey, providerPubKey *btcec.PublicKey, addressType string, feeCfg blockchain.FeeConfig) *SpendingManager {
 	sm := &SpendingManager{
 		balance:           0,
 		minBalance:        cfg.AutoRechargeMinBalance,
@@ -127,7 +130,7 @@ func (sm *SpendingManager) checkAndRecharge(ctx context.Context) {
 		log.Printf("Spending manager: balance %d sats below threshold %d sats, recharging...",
 			sm.balance, sm.rechargeThreshold)
 
-		txHash, err := blockchain.SendPayment(sm.client, sm.providerAddr, sm.rechargeAmount, sm.localKey.PubKey(), sm.addressType)
+		txHash, err := blockchain.SendPayment(sm.client, sm.providerAddr, sm.rechargeAmount, sm.localKey.PubKey(), sm.addressType, sm.feeConfig)
 		if err != nil {
 			log.Printf("Spending manager: failed to send recharge payment: %v", err)
 			return
@@ -140,7 +143,7 @@ func (sm *SpendingManager) checkAndRecharge(ctx context.Context) {
 		sm.spentToday += sm.rechargeAmount
 
 		log.Printf("Spending manager: recharged %d sats, new balance: %d sats (tx: %s)",
-			sm.rechargeAmount, sm.balance, txHash.String())
+			sm.rechargeAmount, sm.balance, txHash)
 	}
 }
 
