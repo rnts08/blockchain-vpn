@@ -39,6 +39,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
+	"golang.org/x/term"
 )
 
 // handleError logs the error and exits with code 1.
@@ -1982,6 +1983,13 @@ func waitForServerReady(ctx context.Context, client *rpcclient.Client) error {
 	}
 }
 
+func readPassword(prompt string) ([]byte, error) {
+	fmt.Print(prompt)
+	pass, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	return pass, err
+}
+
 func getProviderKey(cfg *config.Config, passwordEnv string) (*btcec.PrivateKey, error) {
 	keyPath := cfg.Provider.PrivateKeyFile
 	resolvedMode, err := crypto.ResolveKeyStorageMode(cfg.Security.KeyStorageMode)
@@ -1997,7 +2005,6 @@ func getProviderKey(cfg *config.Config, passwordEnv string) (*btcec.PrivateKey, 
 		return key, nil
 	}
 
-	reader := bufio.NewReader(os.Stdin)
 	passwordFromEnv := []byte{}
 	if name := strings.TrimSpace(passwordEnv); name != "" {
 		value := strings.TrimSpace(os.Getenv(name))
@@ -2009,9 +2016,11 @@ func getProviderKey(cfg *config.Config, passwordEnv string) (*btcec.PrivateKey, 
 	if _, err := os.Stat(keyPath); err == nil {
 		password := passwordFromEnv
 		if len(password) == 0 {
-			fmt.Print("Enter password to decrypt provider key: ")
-			pass, _ := reader.ReadString('\n')
-			password = []byte(strings.TrimSpace(pass))
+			pass, err := readPassword("Enter password to decrypt provider key: ")
+			if err != nil {
+				return nil, fmt.Errorf("failed to read password: %w", err)
+			}
+			password = []byte(strings.TrimSpace(string(pass)))
 		}
 		key, err := crypto.LoadAndDecryptKey(keyPath, password)
 		if err != nil {
@@ -2024,14 +2033,18 @@ func getProviderKey(cfg *config.Config, passwordEnv string) (*btcec.PrivateKey, 
 	fmt.Println("No provider key found. Let's create a new encrypted key.")
 	password := passwordFromEnv
 	if len(password) == 0 {
-		fmt.Print("Enter new password for provider key: ")
-		pass1, _ := reader.ReadString('\n')
-		fmt.Print("Confirm new password: ")
-		pass2, _ := reader.ReadString('\n')
-		if strings.TrimSpace(pass1) != strings.TrimSpace(pass2) {
+		pass1, err := readPassword("Enter new password for provider key: ")
+		if err != nil {
+			return nil, fmt.Errorf("failed to read password: %w", err)
+		}
+		pass2, err := readPassword("Confirm new password: ")
+		if err != nil {
+			return nil, fmt.Errorf("failed to read password: %w", err)
+		}
+		if strings.TrimSpace(string(pass1)) != strings.TrimSpace(string(pass2)) {
 			return nil, fmt.Errorf("passwords do not match")
 		}
-		password = []byte(strings.TrimSpace(pass1))
+		password = []byte(strings.TrimSpace(string(pass1)))
 	}
 	if len(password) == 0 {
 		return nil, fmt.Errorf("password cannot be empty")

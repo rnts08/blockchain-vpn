@@ -58,52 +58,76 @@ func verifyASN1Signature(pub *ecdsa.PublicKey, hash, sigASN1 []byte) bool {
 }
 
 // DetectAddressType probes the node to determine the appropriate address type for wallet
-// operations. It first checks existing UTXOs, then falls back to probing with getrawchangeaddress.
-// Returns the address type string ("p2pkh", "bech32", etc.) or an error.
+// operations. It first checks existing UTXOs (from scriptPubKey hex), then falls back to
+// probing with getrawchangeaddress and getnewaddress. Returns the address type string
+// ("p2pkh", "bech32", etc.) or an error.
 func DetectAddressType(client *rpcclient.Client) (string, error) {
-	candidateTypes := []string{"p2pkh", "p2sh", "bech32", "bech32m"}
+	candidateTypes := []string{"p2pkh", "p2sh", "bech32", "bech32m", "legacy"}
 
+	// Method 1: Inspect existing UTXOs from listunspent
 	unspent, err := client.ListUnspentMin(0)
 	if err == nil && len(unspent) > 0 {
 		for _, utxo := range unspent {
-			if utxo.ScriptPubKey == "" {
-				continue
+			// Try scriptPubKey hex first
+			if utxo.ScriptPubKey != "" {
+				hexBytes, err := hex.DecodeString(utxo.ScriptPubKey)
+				if err == nil && len(hexBytes) >= 2 {
+					scriptClass := txscript.GetScriptClass(hexBytes)
+					switch scriptClass {
+					case txscript.PubKeyHashTy:
+						return "p2pkh", nil
+					case txscript.ScriptHashTy:
+						return "p2sh", nil
+					case txscript.WitnessV0PubKeyHashTy:
+						return "bech32", nil
+					case txscript.WitnessV0ScriptHashTy:
+						return "bech32m", nil
+					case txscript.WitnessV1TaprootTy:
+						return "bech32m", nil
+					}
+					hexLower := strings.ToLower(utxo.ScriptPubKey)
+					if strings.HasPrefix(hexLower, "76a9") {
+						return "p2pkh", nil
+					}
+					if strings.HasPrefix(hexLower, "a914") {
+						return "p2sh", nil
+					}
+					if strings.HasPrefix(hexLower, "0014") {
+						return "bech32", nil
+					}
+					if strings.HasPrefix(hexLower, "0020") {
+						return "bech32m", nil
+					}
+				}
 			}
-			hexBytes, err := hex.DecodeString(utxo.ScriptPubKey)
-			if err != nil || len(hexBytes) < 2 {
-				continue
-			}
-			scriptClass := txscript.GetScriptClass(hexBytes)
-			switch scriptClass {
-			case txscript.PubKeyHashTy:
-				return "p2pkh", nil
-			case txscript.ScriptHashTy:
-				return "p2sh", nil
-			case txscript.WitnessV0PubKeyHashTy:
-				return "bech32", nil
-			case txscript.WitnessV0ScriptHashTy:
-				return "bech32m", nil
-			case txscript.WitnessV1TaprootTy:
-				return "bech32m", nil
-			}
-			hexLower := strings.ToLower(utxo.ScriptPubKey)
-			if strings.HasPrefix(hexLower, "76a9") {
-				return "p2pkh", nil
-			}
-			if strings.HasPrefix(hexLower, "a914") {
-				return "p2sh", nil
-			}
-			if strings.HasPrefix(hexLower, "0014") {
-				return "bech32", nil
-			}
-			if strings.HasPrefix(hexLower, "0020") {
-				return "bech32m", nil
+			// Try to determine from address string prefix (OrdexCoin addresses start with 'o')
+			if utxo.Address != "" {
+				addr := strings.TrimSpace(utxo.Address)
+				if len(addr) > 0 {
+					switch addr[0] {
+					case 'o', 'O':
+						return "p2pkh", nil
+					case '1', '3':
+						return "p2sh", nil
+					case 'b', 'B', 't':
+						return "bech32", nil
+					}
+				}
 			}
 		}
 	}
 
+	// Method 2: Probe getrawchangeaddress with common types
 	for _, addrType := range candidateTypes {
 		_, err := client.GetRawChangeAddress(addrType)
+		if err == nil {
+			return addrType, nil
+		}
+	}
+
+	// Method 3: Probe getnewaddress as fallback
+	for _, addrType := range candidateTypes {
+		_, err := client.GetNewAddress(addrType)
 		if err == nil {
 			return addrType, nil
 		}

@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.9] - 2026-03-20
+
+### Fix: Provider Key Password Masking
+- Provider key password input now masked using terminal echo suppression
+- Password characters not echoed to terminal during input
+
+### Fix: NAT Traversal Timeout
+- Added 10-second timeout to NAT traversal (UPnP/NAT-PMP discovery)
+- Prevents indefinite hang when no NAT/router is available or UPnP is disabled
+
+### Fix: Improved Address Type Detection
+- Enhanced `DetectAddressType()` to also check UTXO address string prefix
+- Added `GetNewAddress` probing as additional fallback method
+- Added "legacy" as candidate address type
+- Handles OrdexCoin addresses starting with 'o' correctly
+
+---
+
 ## [0.7.8] - 2026-03-20
 
 ### Fix: Auto-Detect Wallet Address Type

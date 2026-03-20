@@ -27,12 +27,16 @@ func DiscoverAndMapPorts(ctx context.Context, internalTCPPort, internalUDPPort i
 		mapWithNATPMP,
 	}
 
+	natTimeout := 10 * time.Second
+	natCtx, cancel := context.WithTimeout(ctx, natTimeout)
+	defer cancel()
+
 	var lastErr error
 	for _, m := range mappers {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+		if err := natCtx.Err(); err != nil {
+			return nil, fmt.Errorf("NAT traversal timed out after %v: %w", natTimeout, err)
 		}
-		res, err := m(ctx, internalTCPPort, internalUDPPort)
+		res, err := m(natCtx, internalTCPPort, internalUDPPort)
 		if err == nil {
 			return res, nil
 		}
