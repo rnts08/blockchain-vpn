@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.7] - 2026-03-20
+
+### Fix: Scanner Performance and Defaults
+- Changed default `--startblock` to -1000 (last 1000 blocks from tip)
+- Added support for negative startblock values (relative to tip)
+- Removed verbose log spam for non-VPN transactions during scan
+
+---
+
 ## [0.7.6] - 2026-03-20
 
 ### Feature: Blockchain-Agnostic Support

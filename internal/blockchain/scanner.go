@@ -61,7 +61,14 @@ func ScanForVPNs(client *rpcclient.Client, startBlock int64, cache *ScanCache, r
 		return nil, nil, err
 	}
 
+	// Handle negative startBlock as relative to tip
 	effectiveStart := startBlock
+	if startBlock < 0 {
+		effectiveStart = count + startBlock
+		if effectiveStart < 0 {
+			effectiveStart = 0
+		}
+	}
 	if cache != nil && cache.LastScannedHeight > effectiveStart {
 		effectiveStart = cache.LastScannedHeight
 	}
@@ -93,7 +100,6 @@ func ScanForVPNs(client *rpcclient.Client, startBlock int64, cache *ScanCache, r
 
 				payload, err := protocol.ExtractScriptPayload(pkScript)
 				if err != nil {
-					log.Printf("[scanner] No valid VPN payload in tx %s vout %d: %v", tx.Txid, vout.N, err)
 					continue
 				}
 

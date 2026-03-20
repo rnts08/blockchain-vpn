@@ -223,7 +223,7 @@ func main() {
 	setupCmd := flag.NewFlagSet("setup", flag.ExitOnError)
 
 	// Scan specific flags
-	scanStartBlock := scanCmd.Int64("startblock", 0, "Block height to start scanning from (0 for full scan)")
+	scanStartBlock := scanCmd.Int64("startblock", -1000, "Block height to start scanning from (negative = relative to tip, e.g. -1000 = last 1000 blocks)")
 	scanSortBy := scanCmd.String("sort", "latency", "Sort providers by 'price', 'country', 'latency', 'bandwidth', 'capacity', or 'score'")
 	scanCountry := scanCmd.String("country", "", "Filter providers by country code (e.g., US, DE)")
 	scanMaxPrice := scanCmd.Uint64("max-price", 0, "Filter providers with price <= this value (units depend on pricing method) (0 disables)")
