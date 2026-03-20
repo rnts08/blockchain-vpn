@@ -389,9 +389,6 @@ func main() {
 			hbTicker := time.NewTicker(hbInterval)
 			defer hbTicker.Stop()
 
-			if err := blockchain.AnnounceHeartbeat(client, providerKey.PubKey(), protocol.AvailabilityFlagAvailable, addressType); err != nil {
-				log.Printf("Initial heartbeat broadcast failed: %v", err)
-			}
 			for {
 				select {
 				case <-ctx.Done():
