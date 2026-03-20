@@ -208,10 +208,16 @@ func selectCoinsForTx(client *rpcclient.Client, targetAmount btcutil.Amount) ([]
 	return utxos, totalInput, changeScript, nil
 }
 
+// txBroadcaster is the interface for submitting raw transactions to a node.
+// Both *rpcclient.Client and test mocks implement this.
+type txBroadcaster interface {
+	RawRequest(method string, params []json.RawMessage) (json.RawMessage, error)
+}
+
 // sendRawTransaction broadcasts a signed transaction using raw JSON-RPC request.
 // This bypasses the btcd/rpcclient SendRawTransaction method which may have
 // incompatible parameter signatures on custom chains (e.g., OrdexCoin).
-func sendRawTransaction(client *rpcclient.Client, tx *wire.MsgTx) (*chainhash.Hash, error) {
+func sendRawTransaction(client txBroadcaster, tx *wire.MsgTx) (*chainhash.Hash, error) {
 	var buf bytes.Buffer
 	if err := tx.Serialize(&buf); err != nil {
 		return nil, fmt.Errorf("failed to serialize transaction: %w", err)

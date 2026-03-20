@@ -3,7 +3,9 @@ package nat
 import (
 	"context"
 	"net"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestPortMappingResultFields(t *testing.T) {
@@ -60,6 +62,19 @@ func TestDiscoverAndMapPortsContextCancel(t *testing.T) {
 	_, err := DiscoverAndMapPorts(ctx, 51820, 51820)
 	if err == nil {
 		t.Error("expected error for cancelled context")
+	}
+}
+
+func TestDiscoverAndMapPortsTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+
+	_, err := DiscoverAndMapPorts(ctx, 51820, 51820)
+	if err == nil {
+		t.Error("expected error for timed out context")
+	}
+	if !strings.Contains(err.Error(), "timed out") && err != context.DeadlineExceeded {
+		t.Logf("got error: %v", err)
 	}
 }
 
