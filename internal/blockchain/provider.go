@@ -195,7 +195,7 @@ func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, f
 	if !complete {
 		return fmt.Errorf("transaction signing incomplete")
 	}
-	txHash, err := client.SendRawTransaction(signedTx, true)
+	txHash, err := sendRawTransaction(client, signedTx)
 	if err != nil {
 		return fmt.Errorf("error sending transaction: %w", err)
 	}
@@ -238,7 +238,7 @@ func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags 
 	if err != nil || !complete {
 		return fmt.Errorf("error signing transaction: %w", err)
 	}
-	txHash, err := client.SendRawTransaction(signedTx, true)
+	txHash, err := sendRawTransaction(client, signedTx)
 	if err != nil {
 		return fmt.Errorf("error sending transaction: %w", err)
 	}
@@ -292,7 +292,7 @@ func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newP
 		return fmt.Errorf("error signing transaction: %w", err)
 	}
 
-	txHash, err := client.SendRawTransaction(signedTx, true)
+	txHash, err := sendRawTransaction(client, signedTx)
 	if err != nil {
 		return fmt.Errorf("error sending transaction: %w", err)
 	}
@@ -360,7 +360,7 @@ func AnnounceRating(client *rpcclient.Client, providerPubKey *btcec.PublicKey, c
 		return fmt.Errorf("error signing transaction: %w", err)
 	}
 
-	txHash, err := client.SendRawTransaction(signedTx, true)
+	txHash, err := sendRawTransaction(client, signedTx)
 	if err != nil {
 		return fmt.Errorf("error sending transaction: %w", err)
 	}

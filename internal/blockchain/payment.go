@@ -1,8 +1,10 @@
 package blockchain
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -206,6 +208,29 @@ func selectCoinsForTx(client *rpcclient.Client, targetAmount btcutil.Amount) ([]
 	return utxos, totalInput, changeScript, nil
 }
 
+// sendRawTransaction broadcasts a signed transaction using raw JSON-RPC request.
+// This bypasses the btcd/rpcclient SendRawTransaction method which may have
+// incompatible parameter signatures on custom chains (e.g., OrdexCoin).
+func sendRawTransaction(client *rpcclient.Client, tx *wire.MsgTx) (*chainhash.Hash, error) {
+	var buf bytes.Buffer
+	if err := tx.Serialize(&buf); err != nil {
+		return nil, fmt.Errorf("failed to serialize transaction: %w", err)
+	}
+	txHex := hex.EncodeToString(buf.Bytes())
+
+	params := []json.RawMessage{json.RawMessage(`"` + txHex + `"`)}
+	result, err := client.RawRequest("sendrawtransaction", params)
+	if err != nil {
+		return nil, fmt.Errorf("sendrawtransaction failed: %w", err)
+	}
+
+	var txidStr string
+	if err := json.Unmarshal(result, &txidStr); err != nil {
+		return nil, fmt.Errorf("failed to parse txid from sendrawtransaction response: %w", err)
+	}
+	return chainhash.NewHashFromStr(txidStr)
+}
+
 // SendPayment sends the specified amount to the provider's address.
 func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amountSatoshis uint64, clientPubKey *btcec.PublicKey, addressType string) (*chainhash.Hash, error) {
 	// 1. Create the OP_RETURN script with the client's public key.
@@ -278,7 +303,7 @@ func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amou
 		return nil, fmt.Errorf("failed to sign payment transaction: %w", err)
 	}
 
-	txHash, err := client.SendRawTransaction(signedTx, true)
+	txHash, err := sendRawTransaction(client, signedTx)
 	if err != nil {
 		return nil, err
 	}

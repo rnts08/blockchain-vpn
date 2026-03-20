@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.11] - 2026-03-20
+
+### Fix: Use RawRequest for sendrawtransaction
+- Call `sendrawtransaction` via `RawRequest` with minimal params `[hex]`
+- Bypasses btcd/rpcclient `SendRawTransaction` which sends incompatible parameters
+- OrdexCoin's modified RPC rejects the standard `[hex, allowHighFees]` signature
+- Works across all blockchain announce/send functions
+
+---
+
 ## [0.7.9] - 2026-03-20
 
 ### Fix: Provider Key Password Masking
