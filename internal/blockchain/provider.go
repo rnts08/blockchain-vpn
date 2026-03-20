@@ -167,7 +167,7 @@ func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, f
 
 	// 7. Coin Selection
 	// We need enough for fee (since output is 0 value OP_RETURN)
-	utxos, totalInput, err := selectCoins(client, requiredFee)
+	utxos, totalInput, changeScript, err := selectCoinsForTx(client, requiredFee)
 	if err != nil {
 		return err
 	}
@@ -182,15 +182,6 @@ func AnnounceService(client *rpcclient.Client, endpoint *protocol.VPNEndpoint, f
 
 	opReturnOutput := wire.NewTxOut(0, opReturnScript)
 	changeAmount := totalInput - requiredFee
-
-	changeAddr, err := client.GetRawChangeAddress(addressType)
-	if err != nil {
-		return fmt.Errorf("error getting change address: %w", err)
-	}
-	changeScript, err := txscript.PayToAddrScript(changeAddr)
-	if err != nil {
-		return fmt.Errorf("error creating change script: %w", err)
-	}
 	changeOutput := wire.NewTxOut(int64(changeAmount), changeScript)
 
 	tx.AddTxOut(opReturnOutput)
@@ -229,7 +220,7 @@ func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags 
 		return fmt.Errorf("failed to determine dynamic fee: %w", err)
 	}
 	requiredFee := btcutil.Amount(float64(feePerKb) * 250.0 / 1000.0)
-	utxos, totalInput, err := selectCoins(client, requiredFee)
+	utxos, totalInput, changeScript, err := selectCoinsForTx(client, requiredFee)
 	if err != nil {
 		return err
 	}
@@ -240,14 +231,6 @@ func AnnounceHeartbeat(client *rpcclient.Client, pubKey *btcec.PublicKey, flags 
 		tx.AddTxIn(wire.NewTxIn(wire.NewOutPoint(txHash, utxo.Vout), nil, nil))
 	}
 	changeAmount := totalInput - requiredFee
-	changeAddr, err := client.GetRawChangeAddress(addressType)
-	if err != nil {
-		return fmt.Errorf("error getting change address: %w", err)
-	}
-	changeScript, err := txscript.PayToAddrScript(changeAddr)
-	if err != nil {
-		return fmt.Errorf("error creating change script: %w", err)
-	}
 	tx.AddTxOut(wire.NewTxOut(0, opReturnScript))
 	tx.AddTxOut(wire.NewTxOut(int64(changeAmount), changeScript))
 
@@ -284,7 +267,7 @@ func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newP
 	estimatedSize := 250
 	requiredFee := btcutil.Amount(float64(feePerKb) * float64(estimatedSize) / 1000.0)
 
-	utxos, totalInput, err := selectCoins(client, requiredFee)
+	utxos, totalInput, changeScript, err := selectCoinsForTx(client, requiredFee)
 	if err != nil {
 		return err
 	}
@@ -297,14 +280,6 @@ func AnnouncePriceUpdate(client *rpcclient.Client, pubKey *btcec.PublicKey, newP
 	}
 	changeAmount := totalInput - requiredFee
 
-	changeAddr, err := client.GetRawChangeAddress(addressType)
-	if err != nil {
-		return fmt.Errorf("error getting change address: %w", err)
-	}
-	changeScript, err := txscript.PayToAddrScript(changeAddr)
-	if err != nil {
-		return fmt.Errorf("error creating change script: %w", err)
-	}
 	changeOutput := wire.NewTxOut(int64(changeAmount), changeScript)
 
 	opReturnOutput := wire.NewTxOut(0, opReturnScript)
@@ -363,7 +338,7 @@ func AnnounceRating(client *rpcclient.Client, providerPubKey *btcec.PublicKey, c
 
 	requiredFee := btcutil.Amount(float64(feePerKb) * 250.0 / 1000.0)
 
-	utxos, totalInput, err := selectCoins(client, requiredFee)
+	utxos, totalInput, changeScript, err := selectCoinsForTx(client, requiredFee)
 	if err != nil {
 		return err
 	}
@@ -375,15 +350,6 @@ func AnnounceRating(client *rpcclient.Client, providerPubKey *btcec.PublicKey, c
 		tx.AddTxIn(txIn)
 	}
 	changeAmount := totalInput - requiredFee
-
-	changeAddr, err := client.GetRawChangeAddress(addressType)
-	if err != nil {
-		return fmt.Errorf("error getting change address: %w", err)
-	}
-	changeScript, err := txscript.PayToAddrScript(changeAddr)
-	if err != nil {
-		return fmt.Errorf("error creating change script: %w", err)
-	}
 
 	opReturnOutput := wire.NewTxOut(0, opReturnScript)
 	tx.AddTxOut(opReturnOutput)

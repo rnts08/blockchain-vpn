@@ -2,6 +2,7 @@ package blockchain
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -187,6 +188,24 @@ func deterministicSelectCoins(unspent []btcjson.ListUnspentResult, targetAmount 
 	return nil, 0, fmt.Errorf("insufficient funds: have %v, need %v", total, targetAmount)
 }
 
+// selectCoinsForTx selects UTXOs and returns the change script derived from the first UTXO.
+// This avoids calling GetRawChangeAddress and PayToAddrScript, which fail on custom chains
+// where the wallet address format is unknown to btcutil's chain params.
+func selectCoinsForTx(client *rpcclient.Client, targetAmount btcutil.Amount) ([]btcjson.ListUnspentResult, btcutil.Amount, []byte, error) {
+	utxos, totalInput, err := selectCoins(client, targetAmount)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	if len(utxos) == 0 || utxos[0].ScriptPubKey == "" {
+		return nil, 0, nil, fmt.Errorf("no usable UTXOs with scriptPubKey found")
+	}
+	changeScript, err := hex.DecodeString(utxos[0].ScriptPubKey)
+	if err != nil {
+		return nil, 0, nil, fmt.Errorf("failed to decode change scriptPubKey: %w", err)
+	}
+	return utxos, totalInput, changeScript, nil
+}
+
 // SendPayment sends the specified amount to the provider's address.
 func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amountSatoshis uint64, clientPubKey *btcec.PublicKey, addressType string) (*chainhash.Hash, error) {
 	// 1. Create the OP_RETURN script with the client's public key.
@@ -222,7 +241,7 @@ func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amou
 
 	// 4. Coin Selection
 	targetAmount := btcutil.Amount(amountSatoshis) + requiredFee
-	utxos, totalInput, err := selectCoins(client, targetAmount)
+	utxos, totalInput, changeScript, err := selectCoinsForTx(client, targetAmount)
 	if err != nil {
 		return nil, err
 	}
@@ -250,14 +269,6 @@ func SendPayment(client *rpcclient.Client, providerAddress btcutil.Address, amou
 	// Or we can just use the conservative estimate from before.
 	changeAmount := totalInput - btcutil.Amount(amountSatoshis) - requiredFee
 
-	changeAddr, err := client.GetRawChangeAddress(addressType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get change address: %w", err)
-	}
-	changeScript, err := txscript.PayToAddrScript(changeAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create change script: %w", err)
-	}
 	changeOutput := wire.NewTxOut(int64(changeAmount), changeScript)
 	tx.AddTxOut(changeOutput)
 
