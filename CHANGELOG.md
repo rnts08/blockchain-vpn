@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.12] - 2026-03-20
+
+### Fix: Minimum Fee Fallback for New Chains
+- `estimateDynamicFeePerKbWithMode` now returns a minimum feerate (1000 sats/KB) when fee estimation fails
+- Fallback is triggered when `EstimateSmartFee` and `GetNetworkInfo` return no valid feerate
+- Handles fresh chains with no fee history (e.g., OrdexCoin at genesis)
+- Heartbeat and other announcements no longer fail with 0-fee transactions
+
+---
+
 ## [0.7.11] - 2026-03-20
 
 ### Fix: Use RawRequest for sendrawtransaction

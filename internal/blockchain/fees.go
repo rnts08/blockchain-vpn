@@ -2,7 +2,6 @@ package blockchain
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
@@ -20,8 +19,15 @@ func clampFeeTarget(target int64) int64 {
 	return target
 }
 
+var defaultMinFeePerKb = btcutil.Amount(1000)
+
+func setDefaultMinFee(feePerKb btcutil.Amount) {
+	defaultMinFeePerKb = feePerKb
+}
+
 // estimateDynamicFeePerKbWithMode fetches a feerate from the node using the
-// given confirmation target (in blocks) and estimation mode.
+// given confirmation target (in blocks) and estimation mode. Falls back to a
+// minimum feerate when the node has no fee history (e.g., new chains).
 func estimateDynamicFeePerKbWithMode(ctx context.Context, client *rpcclient.Client, targetBlocks int64, mode btcjson.EstimateSmartFeeMode) (btcutil.Amount, error) {
 	targetBlocks = clampFeeTarget(targetBlocks)
 	feeRate, err := withRetry(ctx, "EstimateSmartFee", 4, 500*time.Millisecond, func() (*btcjson.EstimateSmartFeeResult, error) {
@@ -40,11 +46,14 @@ func estimateDynamicFeePerKbWithMode(ctx context.Context, client *rpcclient.Clie
 	if nErr == nil && networkInfo != nil && networkInfo.RelayFee > 0 {
 		amount, convErr := btcutil.NewAmount(networkInfo.RelayFee)
 		if convErr == nil && amount > 0 {
+			if amount < defaultMinFeePerKb {
+				return defaultMinFeePerKb, nil
+			}
 			return amount, nil
 		}
 	}
 
-	return 0, fmt.Errorf("could not determine dynamic fee rate from node")
+	return defaultMinFeePerKb, nil
 }
 
 // estimateDynamicFeePerKb is the default-mode convenience wrapper (conservative, 6 blocks).
